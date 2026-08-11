@@ -5,6 +5,7 @@ Endpoints for blog post generation.
 import sys
 import os
 import re
+import logging
 from html import unescape
 from difflib import SequenceMatcher
 from uuid import uuid4
@@ -13,18 +14,29 @@ from datetime import datetime
 from dateutil.parser import isoparse
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-# Add parent directory to path
+# Add the repository and api directories before importing shared API helpers.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from job_lifecycle import (
+    ACTIVE_JOB_STATUSES,
+    is_active_job_conflict,
+    isoformat_utc,
+    list_active_jobs,
+    reconcile_stale_jobs,
+    transition_job,
+)
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class GenerationConfig(BaseModel):
     """Configuration for blog post generation"""
-    batch_size: int = 10
-    search_days_back: int = 30
+    batch_size: int = Field(default=10, ge=1, le=10)
+    search_days_back: int = Field(default=30, ge=1, le=90)
     model: str = "gpt-4"
     use_placeholder_images: bool = False
     use_legacy_orchestrator: bool = False
@@ -59,101 +71,142 @@ def run_generation_task(job_id: str, config: dict):
     Background task to run blog generation.
     Updates job status in Supabase as it progresses.
     """
-    try:
-        from supabase_storage import get_supabase_client
-        supabase = get_supabase_client()
-        
-        # Update job status to running
-        supabase.table("job_queue").update({
+    from supabase_storage import get_supabase_client
+
+    supabase = get_supabase_client()
+    if supabase is None:
+        logger.error("Cannot run generation job %s: Supabase is not configured", job_id)
+        return
+
+    claimed = transition_job(
+        supabase,
+        job_id,
+        ("pending",),
+        {
             "status": "running",
-            "started_at": datetime.utcnow().isoformat()
-        }).eq("id", job_id).execute()
-        
-        # Run the blog generation workflow
+            "started_at": isoformat_utc(),
+            "error": None,
+        },
+    )
+    if not claimed:
+        logger.info("Generation job %s was no longer pending; skipping execution", job_id)
+        return
+
+    try:
         from blog_post_generator import run_generation
-        
+
+        use_langgraph = not config.get("use_legacy_orchestrator", False)
         result = run_generation(
             model=config.get("model", "gpt-4"),
             use_placeholder_images=config.get("use_placeholder_images", False),
             batch_size=config.get("batch_size", 10),
             search_days_back=config.get("search_days_back", 30),
-            use_langgraph=not config.get("use_legacy_orchestrator", False)
+            use_langgraph=use_langgraph,
+            job_id=job_id,
         )
 
-        # Get posts from result - handle both LangGraph and legacy return structures
-        final_posts = []
+        final_state = result.get("final_state") or {}
+        if final_state:
+            final_posts = final_state.get("final_posts", [])
+            # LangGraph owns persistence so posts are written exactly once.
+            inserted_count = int(final_state.get("db_inserted", 0) or 0)
+            persistence_errors = list(final_state.get("persistence_errors", []) or [])
+        else:
+            # The legacy orchestrator does not write blog_posts to Supabase.
+            final_posts = [
+                post for post in (result.get("results") or [])
+                if post.get("success", True)
+            ]
+            inserted_count = 0
+            persistence_errors = []
 
-        # Try LangGraph structure first (final_state.final_posts)
-        if result.get("final_state"):
-            final_posts = result["final_state"].get("final_posts", [])
-        # Fallback to legacy structure (results array)
-        elif result.get("results"):
-            final_posts = result["results"]
-
-        # Limit final_posts to configured batch_size to prevent over-generation
         configured_batch_size = config.get("batch_size", 10)
-        if len(final_posts) > configured_batch_size:
-            final_posts = final_posts[:configured_batch_size]
+        final_posts = final_posts[:configured_batch_size]
 
-        # Store generated posts in database
-        inserted_count = 0
-        for post in final_posts:
-            try:
-                # Handle key differences between LangGraph and legacy
-                # LangGraph uses: html, original_link
-                # Legacy uses: file_path (need to read HTML from file)
-                html_content = post.get("html", "")
-                
-                # If no html, try to read from file_path (legacy)
-                if not html_content and post.get("file_path"):
-                    try:
-                        with open(post["file_path"], "r") as f:
-                            html_content = f.read()
-                    except Exception:
-                        pass
-                
-                # Get article URL (different key names)
-                article_url = post.get("original_link", "") or post.get("source_url", "")
-                
-                supabase.table("blog_posts").insert({
-                    "id": str(uuid4()),
-                    "title": post.get("title", ""),
-                    "html_content": html_content,
-                    "image_url": post.get("image_url", ""),
-                    "category": post.get("category", "SHOPPERS").upper(),
-                    "status": "draft",
-                    "article_url": article_url,
-                    "job_id": job_id,
-                    "created_at": datetime.utcnow().isoformat()
-                }).execute()
-                inserted_count += 1
-            except Exception as insert_err:
-                pass
+        if not final_state:
+            for post in final_posts:
+                current_job = (
+                    supabase.table("job_queue")
+                    .select("status")
+                    .eq("id", job_id)
+                    .single()
+                    .execute()
+                )
+                if not current_job.data or current_job.data.get("status") != "running":
+                    logger.info("Generation job %s was cancelled before persistence", job_id)
+                    return
 
-        # Update job status to completed
-        supabase.table("job_queue").update({
-            "status": "completed",
-            "completed_at": datetime.utcnow().isoformat(),
-            "result": {
-                "posts_generated": inserted_count,
-                "errors": result.get("errors", [])
-            }
-        }).eq("id", job_id).execute()
-        
-    except Exception as e:
-        # Update job status to failed
+                try:
+                    html_content = post.get("html", "")
+                    if not html_content and post.get("file_path"):
+                        with open(post["file_path"], "r", encoding="utf-8") as post_file:
+                            html_content = post_file.read()
+
+                    article_url = post.get("original_link", "") or post.get("source_url", "")
+                    supabase.table("blog_posts").insert({
+                        "id": str(uuid4()),
+                        "title": post.get("title", ""),
+                        "html_content": html_content,
+                        "image_url": post.get("image_url", ""),
+                        "category": post.get("category", "SHOPPERS").upper(),
+                        "status": "draft",
+                        "article_url": article_url,
+                        "job_id": job_id,
+                        "created_at": isoformat_utc(),
+                    }).execute()
+                    inserted_count += 1
+                except Exception as insert_error:
+                    message = f"Failed to persist '{post.get('title', 'untitled')}': {insert_error}"
+                    persistence_errors.append(message)
+                    logger.exception(message)
+
+        if not final_posts:
+            raise RuntimeError("Generation completed without producing any blog posts")
+        if inserted_count == 0:
+            details = "; ".join(persistence_errors[:3])
+            raise RuntimeError(
+                "Generation produced posts but none were saved to Supabase"
+                + (f": {details}" if details else "")
+            )
+
+        generation_errors = list(result.get("errors", []) or [])
+        if result.get("error"):
+            generation_errors.append(str(result["error"]))
+        generation_errors.extend(persistence_errors)
+
+        completed = transition_job(
+            supabase,
+            job_id,
+            ("running",),
+            {
+                "status": "completed",
+                "completed_at": isoformat_utc(),
+                "result": {
+                    "posts_generated": inserted_count,
+                    "posts_attempted": len(final_posts),
+                    "errors": generation_errors,
+                },
+                "error": None,
+            },
+        )
+        if not completed:
+            logger.info("Generation job %s finished after it was cancelled", job_id)
+
+    except Exception as error:
+        logger.exception("Generation job %s failed", job_id)
         try:
-            from supabase_storage import get_supabase_client
-            supabase = get_supabase_client()
-            if supabase:
-                supabase.table("job_queue").update({
+            transition_job(
+                supabase,
+                job_id,
+                ACTIVE_JOB_STATUSES,
+                {
                     "status": "failed",
-                    "completed_at": datetime.utcnow().isoformat(),
-                    "error": str(e)
-                }).eq("id", job_id).execute()
-        except:
-            pass
-        raise
+                    "completed_at": isoformat_utc(),
+                    "error": str(error)[:4000],
+                },
+            )
+        except Exception:
+            logger.exception("Could not persist failure state for generation job %s", job_id)
 
 
 @router.post("/run", response_model=GenerationResponse)
@@ -172,18 +225,39 @@ async def run_generation_endpoint(
         if supabase is None:
             raise HTTPException(status_code=503, detail="Supabase not configured")
         
+        reconcile_stale_jobs(supabase)
+        active_jobs = list_active_jobs(supabase)
+        if active_jobs:
+            active_job = active_jobs[0]
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "A generation job is already active "
+                    f"({active_job['id']}, status: {active_job['status']}). "
+                    "Wait for it to finish or mark it cancelled before starting another."
+                ),
+            )
+
         job_id = str(uuid4())
         
         # Create job record
-        supabase.table("job_queue").insert({
-            "id": job_id,
-            "status": "pending",
-            "config": config.model_dump(),
-            "started_at": None,
-            "completed_at": None,
-            "result": None,
-            "error": None
-        }).execute()
+        try:
+            supabase.table("job_queue").insert({
+                "id": job_id,
+                "status": "pending",
+                "config": config.model_dump(),
+                "started_at": None,
+                "completed_at": None,
+                "result": None,
+                "error": None,
+            }).execute()
+        except Exception as insert_error:
+            if is_active_job_conflict(insert_error):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Another generation job started at the same time. Refresh to view it.",
+                ) from insert_error
+            raise
         
         # Start background task
         background_tasks.add_task(run_generation_task, job_id, config.model_dump())
@@ -191,7 +265,7 @@ async def run_generation_endpoint(
         return GenerationResponse(
             job_id=job_id,
             status="pending",
-            message="Generation started. Use /api/jobs/{job_id} to track progress.",
+            message="Generation accepted. Use /api/jobs/{job_id} to track progress.",
             config=config
         )
         

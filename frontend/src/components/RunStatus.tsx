@@ -10,6 +10,7 @@ interface Job {
     batch_size?: number
     model?: string
   }
+  created_at?: string | null
   started_at: string | null
   completed_at: string | null
   result?: {
@@ -80,7 +81,7 @@ export function RunStatus({ jobs, className, onCancel }: RunStatusProps) {
                   </p>
                   <div className="flex items-center gap-3 mt-1">
                     <p className="text-xs text-stone-500 ">
-                      {formatDate(job.started_at || job.completed_at)}
+                      {formatDate(job.started_at || job.completed_at || job.created_at || null)}
                     </p>
                     {job.started_at && (
                       <div className="flex items-center gap-1 text-xs text-stone-500 ">
@@ -105,6 +106,11 @@ export function RunStatus({ jobs, className, onCancel }: RunStatusProps) {
                       {job.result.posts_generated} posts
                     </p>
                   )}
+                  {job.error && (
+                    <p className="mt-1 max-w-md text-xs text-red-700" title={job.error}>
+                      {job.error}
+                    </p>
+                  )}
                 </div>
                 {(job.status === 'pending' || job.status === 'running') && onCancel && (
                   <button
@@ -113,7 +119,7 @@ export function RunStatus({ jobs, className, onCancel }: RunStatusProps) {
                       onCancel(job.id)
                     }}
                     className="p-2 rounded-lg text-red-500 hover:bg-red-100 transition-colors"
-                    title="Cancel job"
+                    title="Mark job cancelled"
                   >
                     <Ban className="w-4 h-4" />
                   </button>

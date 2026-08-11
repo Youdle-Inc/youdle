@@ -1,10 +1,11 @@
 {
-  "builds": [
-    {
-      "src": "api/main.py",
-      "use": "@vercel/python"
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/main.py": {
+      "maxDuration": 800,
+      "excludeFiles": "{frontend/**,tests/**,api/blog_posts/**,memory/**,**/__pycache__/**}"
     }
-  ],
+  },
   "routes": [
     {
       "src": "/(.*)",

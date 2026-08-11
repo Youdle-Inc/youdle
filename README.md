@@ -198,6 +198,11 @@ Run the SQL schema in your Supabase SQL Editor:
 # Copy the contents of api/schema.sql and run in Supabase
 ```
 
+> **Existing databases:** `api/schema.sql` drops tables. Do not run it against
+> production. Apply the additive files in `api/migrations/` instead. The
+> generation stabilization patch requires
+> `api/migrations/002_stabilize_generation_jobs.sql`.
+
 #### 2. Start FastAPI Backend
 
 ```bash
@@ -231,8 +236,26 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```env
 SUPABASE_URL=your-supabase-url
 SUPABASE_KEY=your-supabase-key
+# Must stay above Vercel's 800-second function limit plus a safety buffer.
+GENERATION_STALE_AFTER_SECONDS=900
 # ... other keys
 ```
+
+### Vercel generation stabilization
+
+The API runtime is pinned to Python 3.12 in `.python-version`, which is supported
+by Vercel's current Python runtime.
+
+The API deployment uses an 800-second function limit and therefore requires a
+Vercel Pro or Enterprise project with Fluid Compute. Dashboard generation runs
+are limited to one active job, and normal dashboard polling marks abandoned
+jobs failed after `GENERATION_STALE_AFTER_SECONDS`.
+
+This is a guardrail for the current FastAPI `BackgroundTasks` implementation,
+not durable execution. A later migration should move generation to Vercel
+Workflows or Queues. The Tuesday GitHub workflow still runs independently and
+does not participate in the dashboard job lock, so avoid starting a dashboard
+run while that workflow is active.
 
 ### Dashboard Pages
 

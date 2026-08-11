@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS job_queue (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS job_queue_one_active ON job_queue ((1))
+    WHERE status IN ('pending', 'running');
+
 -- Step 2: Create blog_posts table
 CREATE TABLE IF NOT EXISTS blog_posts (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

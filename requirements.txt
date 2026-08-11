@@ -39,18 +39,13 @@ sendgrid>=6.9.0
 # Async HTTP for concurrent operations
 aiohttp>=3.9.0
 
-# Vector similarity (for learning system)
-numpy>=1.24.0
-
-# Optional: sentence embeddings for semantic search
-sentence-transformers>=2.2.0
-
 # Utilities
 python-dotenv>=1.0.0
 httpx>=0.25.0
 requests>=2.31.0
 tenacity>=8.2.0
 pytz>=2024.1
+python-dateutil>=2.8.0
 
 # Spell checking for newsletter subjects
 pyspellchecker>=0.7.0

@@ -47,6 +47,7 @@ class BlogPostState(TypedDict):
     search_days_back: int
     model: str
     use_placeholder_images: bool
+    job_id: Optional[str]
     
     # Search results
     search_results: Dict[str, Any]
@@ -84,6 +85,8 @@ class BlogPostState(TypedDict):
     
     # Saved file paths
     saved_files: List[str]
+    db_inserted: int
+    persistence_errors: List[str]
     
     # Processing cache (for deduplication)
     processed_urls: Dict[str, str]
@@ -101,7 +104,10 @@ class BlogPostState(TypedDict):
 # CONFIGURATION
 # ============================================================================
 
-BLOG_POSTS_DIR = "blog_posts"
+BLOG_POSTS_DIR = os.getenv(
+    "BLOG_POSTS_DIR",
+    "/tmp/blog_posts" if os.getenv("VERCEL") else "blog_posts",
+)
 MAX_REGENERATIONS = 2
 MAX_WORKERS = 4
 
@@ -119,7 +125,8 @@ def create_initial_state(
     batch_size: int = 30,
     search_days_back: int = 30,
     model: str = "gpt-4",
-    use_placeholder_images: bool = False
+    use_placeholder_images: bool = False,
+    job_id: Optional[str] = None,
 ) -> BlogPostState:
     """Create the initial state for the workflow."""
     return BlogPostState(
@@ -127,6 +134,7 @@ def create_initial_state(
         search_days_back=search_days_back,
         model=model,
         use_placeholder_images=use_placeholder_images,
+        job_id=job_id,
         search_results={},
         articles=[],
         shoppers_articles=[],
@@ -143,6 +151,8 @@ def create_initial_state(
         uploaded_urls=[],
         final_posts=[],
         saved_files=[],
+        db_inserted=0,
+        persistence_errors=[],
         processed_urls={},
         errors=[],
         logs=[],
@@ -860,7 +870,11 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
 
     saved_files = []
     db_inserted = 0
+    persistence_errors = []
     processed_urls = state.get("processed_urls", {}).copy()
+    job_id = state.get("job_id")
+    if supabase is None and job_id:
+        persistence_errors.append("Supabase was unavailable while saving generated posts")
 
     for post in final_posts:
         try:
@@ -916,10 +930,12 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
                         "category": post.get("category", "SHOPPERS").upper(),
                         "status": "draft",
                         "article_url": post.get("original_link", ""),
+                        "job_id": job_id,
                         "created_at": datetime.now().isoformat()
                     }).execute()
                     db_inserted += 1
                 except Exception as db_err:
+                    persistence_errors.append(str(db_err))
                     logs.append(f"  ⚠ DB insert failed for {post.get('title', 'unknown')[:30]}: {str(db_err)}")
 
             logs.append(f"  ✓ Saved {filename}.html")
@@ -927,12 +943,17 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
         except Exception as e:
             logs.append(f"  ✗ Error saving post: {str(e)}")
     
+    if job_id and db_inserted < len(final_posts) and not persistence_errors:
+        persistence_errors.append("One or more generated posts were not persisted")
+
     logs.append(f"Saved {len(saved_files)} blog posts to {BLOG_POSTS_DIR}/")
     if supabase:
         logs.append(f"Inserted {db_inserted} posts into Supabase database")
     
     return {
         "saved_files": saved_files,
+        "db_inserted": db_inserted,
+        "persistence_errors": persistence_errors,
         "processed_urls": processed_urls,
         "end_time": datetime.now().isoformat(),
         "logs": logs
@@ -964,6 +985,10 @@ def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
         return {"logs": logs}
 
     final_posts = state.get("final_posts", [])
+    if state.get("job_id") and state.get("db_inserted", 0) < len(final_posts):
+        logs.append("  Skipping Blogger draft push because not all posts were persisted")
+        return {"logs": logs}
+
     pushed = 0
 
     for post in final_posts:
@@ -1073,7 +1098,8 @@ def run_blog_post_workflow(
     batch_size: int = 30,
     search_days_back: int = 30,
     model: str = "gpt-4",
-    use_placeholder_images: bool = False
+    use_placeholder_images: bool = False,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the complete blog post generation workflow using LangGraph.
@@ -1099,7 +1125,8 @@ def run_blog_post_workflow(
         batch_size=batch_size,
         search_days_back=search_days_back,
         model=model,
-        use_placeholder_images=use_placeholder_images
+        use_placeholder_images=use_placeholder_images,
+        job_id=job_id,
     )
     
     # Run the workflow

@@ -10,8 +10,16 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-# Add parent directory to path
+# Add the repository and api directories before importing shared API helpers.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from job_lifecycle import (
+    ACTIVE_JOB_STATUSES,
+    isoformat_utc,
+    reconcile_stale_jobs,
+    transition_job,
+)
 
 router = APIRouter()
 
@@ -21,6 +29,7 @@ class JobStatus(BaseModel):
     id: str
     status: str
     config: Optional[dict]
+    created_at: Optional[str]
     started_at: Optional[str]
     completed_at: Optional[str]
     result: Optional[dict]
@@ -50,6 +59,8 @@ async def list_jobs(
         if supabase is None:
             return JobListResponse(jobs=[], total=0)
 
+        reconcile_stale_jobs(supabase)
+
         # Get total count
         count_query = supabase.table("job_queue").select("id", count="exact")
         if status:
@@ -58,7 +69,7 @@ async def list_jobs(
         total = count_result.count if count_result.count else 0
 
         # Get jobs
-        query = supabase.table("job_queue").select("*").order("started_at", desc=True)
+        query = supabase.table("job_queue").select("*").order("created_at", desc=True)
 
         if status:
             query = query.eq("status", status)
@@ -84,6 +95,8 @@ async def get_job(job_id: str):
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        reconcile_stale_jobs(supabase)
         
         result = supabase.table("job_queue").select("*").eq("id", job_id).single().execute()
         
@@ -122,8 +135,10 @@ async def get_job_posts(job_id: str):
 @router.delete("/{job_id}")
 async def cancel_job(job_id: str):
     """
-    Cancel a pending or running job.
-    Note: This only updates the status - it doesn't actually stop a running process.
+    Mark a pending or running job as cancelled.
+
+    The current generator checks this state before persistence and completion,
+    but a blocking model call that is already in progress cannot be interrupted.
     """
     try:
         from supabase_storage import get_supabase_client
@@ -135,17 +150,35 @@ async def cancel_job(job_id: str):
         if not job.data:
             raise HTTPException(status_code=404, detail="Job not found")
         
-        if job.data["status"] in ["completed", "failed"]:
-            raise HTTPException(status_code=400, detail=f"Cannot cancel job with status: {job.data['status']}")
-        
-        # Update status to cancelled
-        result = supabase.table("job_queue").update({
-            "status": "cancelled",
-            "completed_at": datetime.utcnow().isoformat(),
-            "error": "Cancelled by user"
-        }).eq("id", job_id).execute()
-        
-        return {"message": "Job cancelled", "job_id": job_id}
+        current_status = job.data["status"]
+        if current_status == "cancelled":
+            return {"message": "Job was already marked cancelled", "job_id": job_id}
+        if current_status not in ACTIVE_JOB_STATUSES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot cancel job with status: {current_status}",
+            )
+
+        cancelled = transition_job(
+            supabase,
+            job_id,
+            ACTIVE_JOB_STATUSES,
+            {
+                "status": "cancelled",
+                "completed_at": isoformat_utc(),
+                "error": "Marked cancelled by user",
+            },
+        )
+        if not cancelled:
+            raise HTTPException(
+                status_code=409,
+                detail="The job changed state before it could be cancelled. Refresh and try again.",
+            )
+
+        return {
+            "message": "Job marked cancelled; in-flight model calls may take time to stop",
+            "job_id": job_id,
+        }
         
     except HTTPException:
         raise

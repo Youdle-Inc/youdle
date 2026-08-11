@@ -23,7 +23,7 @@ const navigation = [
   { name: 'Media Library', href: '/media', icon: ImageIcon },
   { name: 'Newsletters', href: '/newsletters', icon: Mail },
   { name: 'Review', href: '/review', icon: CheckSquare },
-  // { name: 'Jobs', href: '/jobs', icon: Activity },
+  { name: 'Jobs', href: '/jobs', icon: Activity },
   { name: 'Actions', href: '/actions', icon: PlayCircle },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]
@@ -78,10 +78,10 @@ export function Sidebar() {
       {/* Status indicator */}
       <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-stone-200">
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-stone-50">
-          <div className="w-2 h-2 rounded-full bg-youdle-500 animate-pulse" />
-          <span className="text-xs text-stone-600">System Online</span>
+          <div className="w-2 h-2 rounded-full bg-stone-400" />
+          <span className="text-xs text-stone-600">System status</span>
         </div>
-        <p className="text-xs text-stone-400 mt-2 px-3">Real-time updates enabled</p>
+        <p className="text-xs text-stone-400 mt-2 px-3">See Dashboard for live checks</p>
       </div>
     </aside>
   )

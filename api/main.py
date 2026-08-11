@@ -17,6 +17,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Add current directory to path so we can import routes
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+from job_lifecycle import reconcile_stale_jobs
+
 app = FastAPI(
     title="Youdle Blog Agent API",
     description="API for managing blog post generation, article search, and content review",
@@ -71,10 +73,64 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
+    """Report live API/database health and provider configuration."""
+    checks = {
+        "api": {
+            "status": "available",
+            "message": "FastAPI is responding",
+        }
+    }
+
+    try:
+        from supabase_storage import get_supabase_client
+
+        supabase = get_supabase_client()
+        if supabase is None:
+            raise RuntimeError("Supabase is not configured")
+        supabase.table("job_queue").select("id").limit(1).execute()
+        checks["supabase"] = {
+            "status": "available",
+            "message": "Database query succeeded",
+        }
+    except Exception as error:
+        checks["supabase"] = {
+            "status": "unavailable",
+            "message": f"Database check failed ({type(error).__name__})",
+        }
+
+    provider_variables = {
+        "openai": ("OPENAI_API_KEY",),
+        "exa": ("EXA_API_KEY",),
+        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "imgbb": ("IMGBB_API_KEY",),
+        "blogger": (
+            "BLOGGER_BLOG_ID",
+            "BLOGGER_CLIENT_ID",
+            "BLOGGER_CLIENT_SECRET",
+            "BLOGGER_REFRESH_TOKEN",
+        ),
+        "mailchimp": ("MAILCHIMP_API_KEY", "MAILCHIMP_LIST_ID"),
+        "github": ("GITHUB_TOKEN", "GITHUB_OWNER", "GITHUB_REPO"),
+    }
+    for provider, variables in provider_variables.items():
+        configured = all(os.getenv(variable) for variable in variables)
+        if provider == "gemini":
+            configured = any(os.getenv(variable) for variable in variables)
+        checks[provider] = {
+            "status": "configured" if configured else "not_configured",
+            "message": "Credentials present" if configured else "Credentials missing",
+        }
+
+    overall_status = (
+        "healthy"
+        if checks["supabase"]["status"] == "available"
+        else "degraded"
+    )
     return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat()
+        "status": overall_status,
+        "service": "Youdle Blog Agent API",
+        "checks": checks,
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -84,6 +140,10 @@ async def get_stats():
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        if supabase is None:
+            raise RuntimeError("Supabase is not configured")
+        reconcile_stale_jobs(supabase)
         
         # Get counts from database
         jobs_result = supabase.table("job_queue").select("id, status").execute()

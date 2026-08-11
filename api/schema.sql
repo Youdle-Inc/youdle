@@ -1,6 +1,7 @@
 -- Supabase Schema for Youdle Dashboard
 -- Run this SQL in your Supabase SQL Editor
--- NOTE: This will create tables if they don't exist
+-- WARNING: This bootstrap schema drops and recreates tables. Use only for a
+-- new database; existing databases must use the additive migrations instead.
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -24,6 +25,8 @@ CREATE TABLE job_queue (
 -- Index for faster status queries
 CREATE INDEX idx_job_queue_status ON job_queue(status);
 CREATE INDEX idx_job_queue_started_at ON job_queue(started_at DESC);
+CREATE UNIQUE INDEX job_queue_one_active ON job_queue ((1))
+    WHERE status IN ('pending', 'running');
 
 -- ============================================================================
 -- Blog Posts Table (REQUIRED for dashboard)
@@ -116,13 +119,6 @@ CREATE TABLE newsletter_posts (
 CREATE INDEX idx_newsletter_posts_newsletter ON newsletter_posts(newsletter_id);
 CREATE INDEX idx_newsletter_posts_blog_post ON newsletter_posts(blog_post_id);
 
--- Trigger for newsletters updated_at
-DROP TRIGGER IF EXISTS update_newsletters_updated_at ON newsletters;
-CREATE TRIGGER update_newsletters_updated_at
-    BEFORE UPDATE ON newsletters
-    FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
-
 -- ============================================================================
 -- Row Level Security (RLS)
 -- Enable RLS but allow all operations for now (no auth)
@@ -158,6 +154,13 @@ BEGIN
     RETURN NEW;
 END;
 $$ language 'plpgsql';
+
+-- Trigger for newsletters updated_at
+DROP TRIGGER IF EXISTS update_newsletters_updated_at ON newsletters;
+CREATE TRIGGER update_newsletters_updated_at
+    BEFORE UPDATE ON newsletters
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
 -- Trigger for blog_posts updated_at
 DROP TRIGGER IF EXISTS update_blog_posts_updated_at ON blog_posts;
