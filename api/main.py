@@ -43,6 +43,9 @@ if extra_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    # Vercel creates a different hostname for each preview deployment. Allow
+    # those HTTPS preview origins without opening the API to every website.
+    allow_origin_regex=r"^https://[a-z0-9-]+\.vercel\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
