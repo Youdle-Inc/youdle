@@ -9,7 +9,7 @@ import {
   ShoppingCart,
   AlertOctagon
 } from 'lucide-react'
-import { api, SystemStats } from '@/lib/api'
+import { API_BASE_URL, api, HealthResponse, SystemStats } from '@/lib/api'
 import { StatsCard } from '@/components/StatsCard'
 import { RunStatus } from '@/components/RunStatus'
 import { QuickActions } from '@/components/QuickActions'
@@ -30,27 +30,54 @@ export default function DashboardPage() {
   })
 
   // Fetch system stats
-  const { data: stats, isLoading: statsLoading, refetch: refetchStats } = useQuery<SystemStats>({
+  const {
+    data: stats,
+    isLoading: statsLoading,
+    isError: statsRequestFailed,
+    refetch: refetchStats,
+  } = useQuery<SystemStats>({
     queryKey: ['stats'],
     queryFn: () => api.getStats(),
     refetchInterval: 30000, // Refresh every 30 seconds
   })
 
   // Fetch recent jobs
-  const { data: jobsData, isLoading: jobsLoading, refetch: refetchJobs } = useQuery({
+  const {
+    data: jobsData,
+    isError: jobsRequestFailed,
+    refetch: refetchJobs,
+  } = useQuery({
     queryKey: ['recentJobs'],
     queryFn: async () => {
       const data = await api.listJobs({ limit: 5 })
       // Sort jobs by started_at or completed_at, latest first
       const sortedJobs = [...(data.jobs || [])].sort((a, b) => {
-        const aDate = new Date(a.started_at || a.completed_at || 0).getTime()
-        const bDate = new Date(b.started_at || b.completed_at || 0).getTime()
+        const aDate = new Date(a.started_at || a.completed_at || a.created_at || 0).getTime()
+        const bDate = new Date(b.started_at || b.completed_at || b.created_at || 0).getTime()
         return bDate - aDate
       })
       return { ...data, jobs: sortedJobs }
     },
     refetchInterval: 10000, // Refresh every 10 seconds
   })
+
+  const {
+    data: health,
+    isLoading: healthLoading,
+    isError: healthRequestFailed,
+  } = useQuery<HealthResponse>({
+    queryKey: ['health'],
+    queryFn: () => api.healthCheck(),
+    refetchInterval: 30000,
+    retry: 1,
+  })
+
+  const statsUnavailable = statsRequestFailed || Boolean(stats?.error)
+  const activeJob = jobsData?.jobs?.find(
+    (job) => job.status === 'pending' || job.status === 'running'
+  )
+  const apiAvailable = health?.checks?.api?.status === 'available'
+  const supabaseAvailable = health?.checks?.supabase?.status === 'available'
 
   const handleSearchPreview = () => {
     window.location.href = '/articles'
@@ -84,27 +111,35 @@ export default function DashboardPage() {
       <NewsletterReadinessCard />
 
       {/* Stats Grid */}
+      {(statsUnavailable || jobsRequestFailed || cancelMutation.isError) && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          {cancelMutation.isError
+            ? `Could not mark the job cancelled: ${cancelMutation.error.message}`
+            : 'Some dashboard data is unavailable. No missing data has been treated as zero.'}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
         <StatsCard
           title="Total Posts"
-          value={statsLoading ? '...' : formatNumber(stats?.posts.total || 0)}
-          subtitle={`${stats?.posts.draft || 0} drafts`}
+          value={statsLoading ? '...' : statsUnavailable ? '—' : formatNumber(stats?.posts.total || 0)}
+          subtitle={statsUnavailable ? 'Unavailable' : `${stats?.posts.draft || 0} drafts`}
           icon={FileText}
         />
         <StatsCard
           title="Running Jobs"
-          value={statsLoading ? '...' : stats?.jobs.running || 0}
-          subtitle={`${stats?.jobs.completed || 0} completed`}
+          value={statsLoading ? '...' : statsUnavailable ? '—' : stats?.jobs.running || 0}
+          subtitle={statsUnavailable ? 'Unavailable' : `${stats?.jobs.completed || 0} completed`}
           icon={Activity}
         />
         <StatsCard
           title="Shoppers Articles"
-          value={statsLoading ? '...' : formatNumber(stats?.posts.by_category?.shoppers || 0)}
+          value={statsLoading ? '...' : statsUnavailable ? '—' : formatNumber(stats?.posts.by_category?.shoppers || 0)}
           icon={ShoppingCart}
         />
         <StatsCard
           title="Recall Alerts"
-          value={statsLoading ? '...' : formatNumber(stats?.posts.by_category?.recall || 0)}
+          value={statsLoading ? '...' : statsUnavailable ? '—' : formatNumber(stats?.posts.by_category?.recall || 0)}
           icon={AlertOctagon}
         />
       </div>
@@ -116,7 +151,7 @@ export default function DashboardPage() {
           <div>
             <p className="text-sm text-black  font-medium">Published</p>
             <p className="text-2xl font-bold text-black ">
-              {stats?.posts.published || 0}
+              {statsUnavailable ? '—' : stats?.posts.published || 0}
             </p>
           </div>
         </div>
@@ -126,7 +161,7 @@ export default function DashboardPage() {
           <div>
             <p className="text-sm text-black font-medium">Reviewed</p>
             <p className="text-2xl font-bold text-black ">
-              {stats?.posts.reviewed || 0}
+              {statsUnavailable ? '—' : stats?.posts.reviewed || 0}
             </p>
           </div>
         </div>
@@ -136,7 +171,7 @@ export default function DashboardPage() {
           <div>
             <p className="text-sm text-black  font-medium">Failed Jobs</p>
             <p className="text-2xl font-bold text-black ">
-              {stats?.jobs.failed || 0}
+              {statsUnavailable ? '—' : stats?.jobs.failed || 0}
             </p>
           </div>
         </div>
@@ -146,30 +181,50 @@ export default function DashboardPage() {
       <QuickActions 
         onSearchPreview={handleSearchPreview}
         onStartGeneration={handleStartGeneration}
+        hasActiveJob={Boolean(activeJob)}
       />
 
       {/* Recent Jobs */}
-      <RunStatus
-        jobs={jobsData?.jobs || []}
-        onCancel={(jobId) => cancelMutation.mutate(jobId)}
-      />
+      {jobsRequestFailed ? (
+        <div className="rounded-2xl bg-white border border-stone-200 p-6">
+          <h3 className="text-lg font-semibold text-stone-900 mb-2">Recent Runs</h3>
+          <p className="text-sm text-red-700">Jobs could not be loaded from the API.</p>
+        </div>
+      ) : (
+        <RunStatus
+          jobs={jobsData?.jobs || []}
+          onCancel={(jobId) => cancelMutation.mutate(jobId)}
+        />
+      )}
 
       {/* API Status */}
       <div className="rounded-2xl bg-white border border-stone-200 p-6">
         <h3 className="text-lg font-semibold text-stone-900 mb-4">System Status</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex items-center gap-3 p-3 rounded-xl bg-midnight-50">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+            <div className={`w-3 h-3 rounded-full ${
+              healthLoading ? 'bg-yellow-500' : apiAvailable ? 'bg-green-500' : 'bg-red-500'
+            }`} />
             <div>
               <p className="text-sm font-medium text-stone-900">FastAPI Backend</p>
-              <p className="text-xs text-stone-500">http://localhost:8000</p>
+              <p className="text-xs text-stone-500">
+                {healthRequestFailed ? 'Unavailable' : healthLoading ? 'Checking…' : API_BASE_URL}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-3 p-3 rounded-xl bg-midnight-50">
-            <div className="w-3 h-3 rounded-full bg-green-500 animate-pulse" />
+            <div className={`w-3 h-3 rounded-full ${
+              healthLoading ? 'bg-yellow-500' : supabaseAvailable ? 'bg-green-500' : 'bg-red-500'
+            }`} />
             <div>
               <p className="text-sm font-medium text-stone-900">Supabase</p>
-              <p className="text-xs text-stone-500">Connected</p>
+              <p className="text-xs text-stone-500">
+                {healthRequestFailed
+                  ? 'Not checked'
+                  : healthLoading
+                    ? 'Checking…'
+                    : health?.checks?.supabase?.message || 'Not checked'}
+              </p>
             </div>
           </div>
         </div>

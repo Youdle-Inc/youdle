@@ -4,6 +4,7 @@ FastAPI server that wraps the Python blog generation pipeline.
 """
 import sys
 import os
+import logging
 from uuid import uuid4
 from datetime import datetime
 from typing import Optional
@@ -16,6 +17,10 @@ from pydantic import BaseModel
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Add current directory to path so we can import routes
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from job_lifecycle import reconcile_stale_jobs
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Youdle Blog Agent API",
@@ -78,10 +83,64 @@ async def root():
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
+    """Report live API/database health and provider configuration."""
+    checks = {
+        "api": {
+            "status": "available",
+            "message": "FastAPI is responding",
+        }
+    }
+
+    try:
+        from supabase_storage import get_supabase_client
+
+        supabase = get_supabase_client()
+        if supabase is None:
+            raise RuntimeError("Supabase is not configured")
+        supabase.table("job_queue").select("id").limit(1).execute()
+        checks["supabase"] = {
+            "status": "available",
+            "message": "Database query succeeded",
+        }
+    except Exception as error:
+        checks["supabase"] = {
+            "status": "unavailable",
+            "message": f"Database check failed ({type(error).__name__})",
+        }
+
+    provider_variables = {
+        "openai": ("OPENAI_API_KEY",),
+        "exa": ("EXA_API_KEY",),
+        "gemini": ("GEMINI_API_KEY", "GOOGLE_API_KEY"),
+        "imgbb": ("IMGBB_API_KEY",),
+        "blogger": (
+            "BLOGGER_BLOG_ID",
+            "BLOGGER_CLIENT_ID",
+            "BLOGGER_CLIENT_SECRET",
+            "BLOGGER_REFRESH_TOKEN",
+        ),
+        "mailchimp": ("MAILCHIMP_API_KEY", "MAILCHIMP_LIST_ID"),
+        "github": ("GITHUB_TOKEN", "GITHUB_OWNER", "GITHUB_REPO"),
+    }
+    for provider, variables in provider_variables.items():
+        configured = all(os.getenv(variable) for variable in variables)
+        if provider == "gemini":
+            configured = any(os.getenv(variable) for variable in variables)
+        checks[provider] = {
+            "status": "configured" if configured else "not_configured",
+            "message": "Credentials present" if configured else "Credentials missing",
+        }
+
+    overall_status = (
+        "healthy"
+        if checks["supabase"]["status"] == "available"
+        else "degraded"
+    )
     return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat()
+        "status": overall_status,
+        "service": "Youdle Blog Agent API",
+        "checks": checks,
+        "timestamp": datetime.utcnow().isoformat(),
     }
 
 
@@ -91,6 +150,10 @@ async def get_stats():
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        if supabase is None:
+            raise RuntimeError("Supabase is not configured")
+        reconcile_stale_jobs(supabase)
         
         # Get counts from database
         jobs_result = supabase.table("job_queue").select("id, status").execute()
@@ -147,17 +210,11 @@ async def get_stats():
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
-        # Return empty stats if database not configured
-        return {
-            "jobs": {"total": 0, "running": 0, "completed": 0, "failed": 0},
-            "posts": {
-                "total": 0, "draft": 0, "reviewed": 0, "published": 0,
-                "by_category": {"shoppers": 0, "recall": 0}
-            },
-            "newsletters": {"total": 0, "draft": 0, "scheduled": 0, "sent": 0},
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        logger.exception("Could not load dashboard statistics")
+        raise HTTPException(
+            status_code=503,
+            detail="Database statistics are temporarily unavailable",
+        ) from e
 
 
 @app.get("/api/newsletter-readiness")
@@ -182,7 +239,10 @@ async def get_newsletter_readiness():
         status = check_publish_status()
 
         if not status.get("success"):
-            return status
+            raise HTTPException(
+                status_code=503,
+                detail=status.get("error", "Newsletter readiness is unavailable"),
+            )
 
         # Calculate next Thursday 9 AM CST
         tz = pytz.timezone('America/Chicago')
@@ -217,12 +277,14 @@ async def get_newsletter_readiness():
             "next_newsletter": next_thursday.isoformat(),
             "timestamp": datetime.utcnow().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        logger.exception("Could not calculate newsletter readiness")
+        raise HTTPException(
+            status_code=503,
+            detail="Newsletter readiness is temporarily unavailable",
+        ) from e
 
 
 if __name__ == "__main__":

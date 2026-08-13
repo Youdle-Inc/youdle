@@ -8,25 +8,59 @@ import { api } from '@/lib/api'
 interface QuickActionsProps {
   onSearchPreview?: () => void
   onStartGeneration?: (jobId: string) => void
+  hasActiveJob?: boolean
   className?: string
 }
 
-export function QuickActions({ onSearchPreview, onStartGeneration, className }: QuickActionsProps) {
+interface SavedGenerationConfig {
+  batchSize?: number
+  searchDaysBack?: number
+  model?: string
+  usePlaceholderImages?: boolean
+  useLegacyOrchestrator?: boolean
+}
+
+export function QuickActions({
+  onSearchPreview,
+  onStartGeneration,
+  hasActiveJob = false,
+  className,
+}: QuickActionsProps) {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSearching, setIsSearching] = useState(false)
+  const [generationMessage, setGenerationMessage] = useState<string | null>(null)
+  const [generationError, setGenerationError] = useState<string | null>(null)
 
   const handleStartGeneration = async () => {
+    if (hasActiveJob) return
+
     setIsGenerating(true)
+    setGenerationMessage(null)
+    setGenerationError(null)
     try {
+      const savedConfig = localStorage.getItem('youdle_config')
+      let preferences: SavedGenerationConfig = {}
+      if (savedConfig) {
+        try {
+          preferences = JSON.parse(savedConfig)
+        } catch {
+          preferences = {}
+        }
+      }
+      const batchSize = Math.min(10, Math.max(1, Number(preferences.batchSize) || 6))
+      const searchDaysBack = Math.min(90, Math.max(1, Number(preferences.searchDaysBack) || 3))
       const response = await api.startGeneration({
-        batch_size: 6,
-        search_days_back: 3,
-        model: 'gpt-4',
-        use_placeholder_images: false,
+        batch_size: batchSize,
+        search_days_back: searchDaysBack,
+        model: preferences.model ?? 'gpt-4',
+        use_placeholder_images: preferences.usePlaceholderImages ?? false,
+        use_legacy_orchestrator: preferences.useLegacyOrchestrator ?? false,
       })
+      setGenerationMessage(`Generation accepted as job ${response.job_id.slice(0, 8)}.`)
       onStartGeneration?.(response.job_id)
     } catch (error) {
       console.error('Failed to start generation:', error)
+      setGenerationError(error instanceof Error ? error.message : 'Failed to start generation')
     } finally {
       setIsGenerating(false)
     }
@@ -48,7 +82,7 @@ export function QuickActions({ onSearchPreview, onStartGeneration, className }: 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <button
           onClick={handleStartGeneration}
-          disabled={isGenerating}
+          disabled={isGenerating || hasActiveJob}
           className={cn(
             'group relative flex items-center justify-center gap-3 px-6 py-4 rounded-xl font-semibold text-sm transition-all duration-200',
             'bg-white text-youdle-700',
@@ -64,7 +98,7 @@ export function QuickActions({ onSearchPreview, onStartGeneration, className }: 
               <Play className="w-4 h-4" />
             )}
           </div>
-          <span>Start Generation</span>
+          <span>{hasActiveJob ? 'Generation in progress' : 'Start Generation'}</span>
         </button>
 
         <button
@@ -99,6 +133,13 @@ export function QuickActions({ onSearchPreview, onStartGeneration, className }: 
           <span>Review Posts</span>
         </a>
       </div>
+
+      {generationMessage && (
+        <p className="mt-4 text-sm text-green-700">{generationMessage}</p>
+      )}
+      {generationError && (
+        <p role="alert" className="mt-4 text-sm text-red-700">{generationError}</p>
+      )}
     </div>
   )
 }

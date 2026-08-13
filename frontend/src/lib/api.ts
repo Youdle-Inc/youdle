@@ -3,7 +3,12 @@
  * Utilities for communicating with the Python backend.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const configuredApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim()
+const defaultApiUrl = process.env.NODE_ENV === 'development'
+  ? 'http://localhost:8000'
+  : 'https://youdle.vercel.app'
+
+export const API_BASE_URL = (configuredApiUrl || defaultApiUrl).replace(/\/+$/, '')
 
 // Types
 export interface SearchResult {
@@ -40,6 +45,18 @@ export interface GenerationResponse {
   status: string
   message: string
   config: GenerationConfig
+}
+
+export interface ServiceHealthCheck {
+  status: 'available' | 'unavailable' | 'configured' | 'not_configured'
+  message: string
+}
+
+export interface HealthResponse {
+  status: 'healthy' | 'degraded'
+  service: string
+  checks: Record<string, ServiceHealthCheck>
+  timestamp: string
 }
 
 export interface SystemStats {
@@ -118,6 +135,14 @@ export interface BlogPostUpdate {
   html_content?: string
   image_url?: string | null
   category?: 'SHOPPERS' | 'RECALL'
+}
+
+export interface ReviewSubmission {
+  rating: number
+  comment?: string
+  feedback_type: 'general' | 'content' | 'formatting' | 'accuracy' | 'tone'
+  mark_reviewed: boolean
+  submission_id: string
 }
 
 export interface BloggerStatus {
@@ -254,25 +279,52 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`
-    
-    const response = await fetch(url, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-      throw new Error(error.detail || `HTTP ${response.status}`)
+    try {
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
+      })
+
+      const responseText = await response.text()
+      let responseBody: any = null
+      if (responseText) {
+        try {
+          responseBody = JSON.parse(responseText)
+        } catch {
+          responseBody = responseText
+        }
+      }
+
+      if (!response.ok) {
+        const detail = typeof responseBody === 'object' && responseBody?.detail
+          ? responseBody.detail
+          : responseBody
+        const message = typeof detail === 'string'
+          ? detail
+          : `API request failed with HTTP ${response.status}`
+        throw new Error(message)
+      }
+
+      return responseBody as T
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('The API request timed out after 30 seconds')
+      }
+      throw error
+    } finally {
+      clearTimeout(timeoutId)
     }
-
-    return response.json()
   }
 
   // Health check
-  async healthCheck(): Promise<{ status: string; timestamp: string }> {
+  async healthCheck(): Promise<HealthResponse> {
     return this.request('/api/health')
   }
 
@@ -343,6 +395,13 @@ class ApiClient {
   async updatePostStatus(postId: string, status: string): Promise<any> {
     return this.request(`/api/generate/posts/${postId}/status?status=${status}`, {
       method: 'PATCH',
+    })
+  }
+
+  async submitPostReview(postId: string, review: ReviewSubmission): Promise<any> {
+    return this.request(`/api/generate/posts/${postId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(review),
     })
   }
 

@@ -21,9 +21,10 @@ export default function JobsPage() {
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
 
   // Fetch jobs
-  const { data: jobsData, isLoading } = useQuery({
+  const { data: jobsData, isLoading, isError: jobsFailed } = useQuery({
     queryKey: ['jobs', statusFilter],
     queryFn: () => api.listJobs({ status: statusFilter || undefined, limit: 50 }),
+    refetchInterval: 10000,
   })
 
   // Fetch selected job details
@@ -45,6 +46,8 @@ export default function JobsPage() {
     mutationFn: (jobId: string) => api.cancelJob(jobId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] })
+      queryClient.invalidateQueries({ queryKey: ['jobDetails'] })
+      queryClient.invalidateQueries({ queryKey: ['stats'] })
     },
   })
 
@@ -80,13 +83,13 @@ export default function JobsPage() {
           Jobs
         </h1>
         <p className="mt-2 text-stone-500">
-          Monitor generation jobs and view their results. Real-time updates enabled.
+          Monitor generation jobs and view their results. Status refreshes automatically.
         </p>
       </div>
 
       {/* Status Filters */}
       <div className="flex items-center gap-2">
-        {[null, 'pending', 'running', 'completed', 'failed'].map((status) => (
+        {[null, 'pending', 'running', 'completed', 'failed', 'cancelled'].map((status) => (
           <button
             key={status || 'all'}
             onClick={() => setStatusFilter(status)}
@@ -111,7 +114,19 @@ export default function JobsPage() {
             </div>
           )}
 
-          {!isLoading && jobs.length === 0 && (
+          {jobsFailed && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              Jobs could not be loaded from the API. The list below is not current.
+            </div>
+          )}
+
+          {cancelMutation.isError && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              Could not mark the job cancelled: {cancelMutation.error.message}
+            </div>
+          )}
+
+          {!isLoading && !jobsFailed && jobs.length === 0 && (
             <div className="text-center py-16 rounded-2xl bg-white border border-stone-200">
               <Activity className="w-12 h-12 text-stone-600 mx-auto mb-4" />
               <h3 className="text-lg font-semibold text-stone-900 mb-2">
@@ -128,9 +143,8 @@ export default function JobsPage() {
             const isSelected = selectedJob === job.id
 
             return (
-              <button
+              <div
                 key={job.id}
-                onClick={() => setSelectedJob(job.id)}
                 className={cn(
                   'w-full text-left p-4 rounded-xl border transition-all',
                   isSelected
@@ -139,54 +153,59 @@ export default function JobsPage() {
                 )}
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className={cn(
-                      'flex items-center justify-center w-10 h-10 rounded-lg',
-                      job.status === 'running' ? 'bg-blue-100 dark:bg-blue-900/30' :
-                      job.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30' :
-                      job.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30' :
-                      'bg-midnight-100'
-                    )}>
-                      <StatusIcon className={cn(
-                        'w-5 h-5',
-                        job.status === 'running' && 'animate-spin text-blue-600 dark:text-blue-400',
-                        job.status === 'completed' && 'text-green-600 dark:text-green-400',
-                        job.status === 'failed' && 'text-red-600 dark:text-red-400',
-                        job.status === 'pending' && 'text-yellow-600 dark:text-yellow-400',
-                        job.status === 'cancelled' && 'text-stone-500'
-                      )} />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedJob(job.id)}
+                    className="flex min-w-0 flex-1 items-center justify-between text-left"
+                    aria-pressed={isSelected}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={cn(
+                        'flex items-center justify-center w-10 h-10 rounded-lg',
+                        job.status === 'running' ? 'bg-blue-100 dark:bg-blue-900/30' :
+                        job.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30' :
+                        job.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30' :
+                        'bg-midnight-100'
+                      )}>
+                        <StatusIcon className={cn(
+                          'w-5 h-5',
+                          job.status === 'running' && 'animate-spin text-blue-600 dark:text-blue-400',
+                          job.status === 'completed' && 'text-green-600 dark:text-green-400',
+                          job.status === 'failed' && 'text-red-600 dark:text-red-400',
+                          job.status === 'pending' && 'text-yellow-600 dark:text-yellow-400',
+                          job.status === 'cancelled' && 'text-stone-500'
+                        )} />
+                      </div>
+
+                      <div>
+                        <p className="font-medium text-stone-900">
+                          {job.config?.batch_size || 10} articles • {job.config?.model || 'gpt-4'}
+                        </p>
+                        <p className="text-sm text-stone-500">
+                          {formatRelativeTime(job.started_at || job.completed_at || job.created_at)}
+                        </p>
+                      </div>
                     </div>
-                    
-                    <div>
-                      <p className="font-medium text-stone-900">
-                        {job.config?.batch_size || 10} articles • {job.config?.model || 'gpt-4'}
-                      </p>
-                      <p className="text-sm text-stone-500">
-                        {formatRelativeTime(job.started_at || job.completed_at)}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
+
                     <span className={cn(
                       'px-2.5 py-1 rounded-lg text-xs font-medium',
                       getStatusColor(job.status)
                     )}>
                       {job.status}
                     </span>
-                    
-                    {(job.status === 'pending' || job.status === 'running') && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          cancelMutation.mutate(job.id)
-                        }}
-                        className="p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
-                      >
-                        <Ban className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
+                  </button>
+
+                  {(job.status === 'pending' || job.status === 'running') && (
+                    <button
+                      type="button"
+                      onClick={() => cancelMutation.mutate(job.id)}
+                      disabled={cancelMutation.isPending}
+                      title="Mark job cancelled"
+                      className="ml-2 p-1.5 rounded-lg text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30 transition-colors"
+                    >
+                      <Ban className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
                 
                 {job.result?.posts_generated !== undefined && (
@@ -200,7 +219,7 @@ export default function JobsPage() {
                     Error: {job.error}
                   </p>
                 )}
-              </button>
+              </div>
             )
           })}
         </div>

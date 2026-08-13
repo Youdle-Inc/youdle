@@ -16,7 +16,7 @@ import {
   Power,
   PowerOff
 } from 'lucide-react'
-import { api, Workflow, WorkflowRun } from '@/lib/api'
+import { api, API_BASE_URL, Workflow, WorkflowRun } from '@/lib/api'
 import { cn, formatRelativeTime } from '@/lib/utils'
 import { TriggerWorkflowModal } from '@/components/TriggerWorkflowModal'
 
@@ -40,20 +40,38 @@ export default function ActionsPage() {
   const [workflowToTrigger, setWorkflowToTrigger] = useState<Workflow | null>(null)
 
   // Check if GitHub Actions is configured
-  const { data: status, isLoading: statusLoading } = useQuery({
+  const {
+    data: status,
+    isLoading: statusLoading,
+    isError: statusFailed,
+    error: statusError,
+    refetch: refetchStatus,
+  } = useQuery({
     queryKey: ['actionsStatus'],
     queryFn: () => api.getActionsStatus(),
   })
 
   // Fetch workflows
-  const { data: workflowsData, isLoading: workflowsLoading, refetch: refetchWorkflows } = useQuery({
+  const {
+    data: workflowsData,
+    isLoading: workflowsLoading,
+    isError: workflowsFailed,
+    error: workflowsError,
+    refetch: refetchWorkflows,
+  } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => api.listWorkflows(),
-    enabled: status?.configured,
+    enabled: status?.configured === true,
   })
 
   // Fetch runs for selected workflow
-  const { data: runsData, isLoading: runsLoading } = useQuery({
+  const {
+    data: runsData,
+    isLoading: runsLoading,
+    isError: runsFailed,
+    error: runsError,
+    refetch: refetchRuns,
+  } = useQuery({
     queryKey: ['workflowRuns', selectedWorkflow?.id],
     queryFn: () =>
       selectedWorkflow ? api.listWorkflowRuns(selectedWorkflow.id, { limit: 20 }) : null,
@@ -103,6 +121,40 @@ export default function ActionsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <RefreshCw className="w-8 h-8 text-youdle-500 animate-spin" />
+      </div>
+    )
+  }
+
+  // A network, CORS, or API URL error previously rendered an empty Actions page.
+  if (statusFailed) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div>
+          <h1 className="text-3xl font-bold text-stone-900">Actions</h1>
+          <p className="mt-2 text-stone-500">Manage GitHub Actions workflows</p>
+        </div>
+        <div role="alert" className="rounded-2xl bg-red-50 border border-red-200 p-6">
+          <div className="flex items-start gap-4">
+            <AlertCircle className="w-6 h-6 text-red-600 flex-shrink-0" />
+            <div className="min-w-0">
+              <h3 className="font-semibold text-red-900">Could not reach the Actions API</h3>
+              <p className="mt-1 text-sm text-red-700">
+                {statusError?.message || 'The Actions status request failed.'}
+              </p>
+              <p className="mt-2 break-all text-xs text-red-600">
+                API: {API_BASE_URL}/api/actions/status
+              </p>
+              <button
+                type="button"
+                onClick={() => refetchStatus()}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-100 px-3 py-2 text-sm font-medium text-red-800 hover:bg-red-200"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     )
   }
@@ -178,6 +230,27 @@ export default function ActionsPage() {
           {workflowsLoading && (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="w-6 h-6 text-youdle-500 animate-spin" />
+            </div>
+          )}
+
+          {workflowsFailed && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <p className="font-medium">Workflows could not be loaded.</p>
+              <p className="mt-1">{workflowsError?.message || 'The GitHub workflows request failed.'}</p>
+              <button
+                type="button"
+                onClick={() => refetchWorkflows()}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-100 px-3 py-2 font-medium hover:bg-red-200"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!workflowsLoading && !workflowsFailed && workflows.length === 0 && (
+            <div className="rounded-xl border border-stone-200 bg-white p-4 text-sm text-stone-600">
+              No workflows were returned for {status?.owner}/{status?.repo}.
             </div>
           )}
 
@@ -310,7 +383,22 @@ export default function ActionsPage() {
             </div>
           )}
 
-          {selectedWorkflow && !runsLoading && runs.length === 0 && (
+          {selectedWorkflow && runsFailed && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+              <p className="font-medium">Workflow runs could not be loaded.</p>
+              <p className="mt-1">{runsError?.message || 'The workflow runs request failed.'}</p>
+              <button
+                type="button"
+                onClick={() => refetchRuns()}
+                className="mt-3 inline-flex items-center gap-2 rounded-lg bg-red-100 px-3 py-2 font-medium hover:bg-red-200"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Retry
+              </button>
+            </div>
+          )}
+
+          {selectedWorkflow && !runsLoading && !runsFailed && runs.length === 0 && (
             <div className="text-center py-16 rounded-2xl bg-white border border-stone-200">
               <Clock className="w-12 h-12 text-stone-400 mx-auto mb-4" />
               <p className="text-stone-500">No runs found for this workflow</p>

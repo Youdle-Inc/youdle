@@ -11,7 +11,11 @@ try:
 except ImportError:
     pass
 
-from supabase_storage import get_supabase_client, get_supabase_storage, SupabaseStorage
+from supabase_storage import (
+    SupabaseStorage,
+    get_supabase_storage,
+    normalize_feedback_type,
+)
 from example_store import ExampleStore
 
 
@@ -21,7 +25,7 @@ class FeedbackCollector:
     Integrates with the learning system.
     """
     
-    FEEDBACK_TYPES = ["structure", "content", "tone", "completeness", "overall"]
+    FEEDBACK_TYPES = ["structure", "content", "tone", "completeness", "general"]
     
     def __init__(self, supabase_client: Optional[SupabaseStorage] = None):
         """
@@ -30,7 +34,11 @@ class FeedbackCollector:
         Args:
             supabase_client: Optional SupabaseStorage instance
         """
-        self.client = supabase_client or get_supabase_storage()
+        self.client = (
+            supabase_client
+            if supabase_client is not None
+            else get_supabase_storage()
+        )
         self.example_store = ExampleStore(self.client)
         self._local_feedback: List[Dict] = []
     
@@ -61,9 +69,10 @@ class FeedbackCollector:
         Returns:
             Result dictionary
         """
-        if feedback_type not in self.FEEDBACK_TYPES:
-            feedback_type = "overall"
+        feedback_type = normalize_feedback_type(feedback_type)
         
+        category = article_data.get("category", "shoppers").lower()
+
         # Store feedback
         feedback_result = self._store_feedback(
             blog_post_id=blog_post_id,
@@ -71,11 +80,11 @@ class FeedbackCollector:
             score=score,
             comments=comments,
             approved=approved,
-            reviewer_notes=reviewer_notes
+            reviewer_notes=reviewer_notes,
+            category=category,
         )
         
         # Store as example for learning
-        category = article_data.get("category", "shoppers").lower()
         is_good = score >= 4 and approved
         
         example_result = self.example_store.store_example(
@@ -88,13 +97,23 @@ class FeedbackCollector:
             is_good_example=is_good
         )
         
-        return {
-            "success": True,
-            "feedback_stored": feedback_result.get("success", False),
-            "example_stored": example_result.get("success", False),
+        feedback_stored = feedback_result.get("success", False)
+        example_stored = example_result.get("success", False)
+        response = {
+            "success": feedback_stored and example_stored,
+            "feedback_stored": feedback_stored,
+            "example_stored": example_stored,
             "is_good_example": is_good,
             "approved": approved
         }
+        errors = [
+            result.get("error", "Learning data was not stored")
+            for result in (feedback_result, example_result)
+            if not result.get("success", False)
+        ]
+        if errors:
+            response["errors"] = errors
+        return response
     
     def _store_feedback(
         self,
@@ -103,7 +122,8 @@ class FeedbackCollector:
         score: int,
         comments: str,
         approved: bool,
-        reviewer_notes: str
+        reviewer_notes: str,
+        category: str,
     ) -> Dict[str, Any]:
         """Store feedback in database or local cache."""
         if self.client:
@@ -113,7 +133,8 @@ class FeedbackCollector:
                 score=score,
                 comments=comments,
                 approved=approved,
-                reviewer_notes=reviewer_notes
+                reviewer_notes=reviewer_notes,
+                category=category,
             )
         else:
             feedback = {
@@ -123,6 +144,7 @@ class FeedbackCollector:
                 "comments": comments,
                 "approved": approved,
                 "reviewer_notes": reviewer_notes,
+                "category": category,
                 "created_at": datetime.now().isoformat()
             }
             self._local_feedback.append(feedback)

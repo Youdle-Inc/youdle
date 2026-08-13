@@ -87,7 +87,7 @@ OPENAI_API_KEY=your_openai_api_key
 # Optional (for full functionality)
 GEMINI_API_KEY=your_gemini_api_key
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_supabase_key
+SUPABASE_SERVICE_ROLE_KEY=your_server_only_service_role_key
 MAILCHIMP_API_KEY=your_mailchimp_api_key
 MAILCHIMP_LIST_ID=your_list_id
 MAILCHIMP_SERVER_PREFIX=us1
@@ -198,6 +198,11 @@ Run the SQL schema in your Supabase SQL Editor:
 # Copy the contents of api/schema.sql and run in Supabase
 ```
 
+> **Existing databases:** `api/schema.sql` drops tables. Do not run it against
+> production. Apply every numbered additive file in `api/migrations/` in
+> order. Migrations `003`-`005` align database indexes/runtime columns, learning
+> tables, and the atomic review operation with the current application code.
+
 #### 2. Start FastAPI Backend
 
 ```bash
@@ -230,9 +235,28 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 **Backend** (`.env` in root):
 ```env
 SUPABASE_URL=your-supabase-url
-SUPABASE_KEY=your-supabase-key
+SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
+# SUPABASE_KEY remains a temporary compatibility fallback.
+# Must stay above Vercel's 800-second function limit plus a safety buffer.
+GENERATION_STALE_AFTER_SECONDS=900
 # ... other keys
 ```
+
+### Vercel generation stabilization
+
+The API runtime is pinned to Python 3.12 in `.python-version`, which is supported
+by Vercel's current Python runtime.
+
+The API deployment uses an 800-second function limit and therefore requires a
+Vercel Pro or Enterprise project with Fluid Compute. Dashboard generation runs
+are limited to one active job, and normal dashboard polling marks abandoned
+jobs failed after `GENERATION_STALE_AFTER_SECONDS`.
+
+This is a guardrail for the current FastAPI `BackgroundTasks` implementation,
+not durable execution. A later migration should move generation to Vercel
+Workflows or Queues. The Tuesday GitHub workflow still runs independently and
+does not participate in the dashboard job lock, so avoid starting a dashboard
+run while that workflow is active.
 
 ### Dashboard Pages
 
@@ -356,7 +380,7 @@ Add these to your GitHub repository secrets:
 - `OPENAI_API_KEY`
 - `GEMINI_API_KEY`
 - `SUPABASE_URL`
-- `SUPABASE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` (preferred) or legacy `SUPABASE_KEY`
 - `MAILCHIMP_API_KEY`
 - `MAILCHIMP_LIST_ID`
 - `MAILCHIMP_SERVER_PREFIX`

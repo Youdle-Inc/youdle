@@ -1,8 +1,10 @@
 'use client'
 
-import { useState } from 'react'
-import { Settings, Save, RefreshCw, Database, Server, Key } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Settings, Save, RefreshCw, Server, Key } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { API_BASE_URL, api, HealthResponse } from '@/lib/api'
 
 export default function SettingsPage() {
   const [config, setConfig] = useState({
@@ -15,6 +17,42 @@ export default function SettingsPage() {
 
   const [isSaving, setIsSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('youdle_config')
+    if (!savedConfig) return
+
+    try {
+      setConfig((current) => ({ ...current, ...JSON.parse(savedConfig) }))
+    } catch {
+      // Ignore invalid browser preferences and retain safe defaults.
+    }
+  }, [])
+
+  const { data: health, isLoading: healthLoading, isError: healthFailed } = useQuery<HealthResponse>({
+    queryKey: ['health'],
+    queryFn: () => api.healthCheck(),
+    refetchInterval: 30000,
+    retry: 1,
+  })
+
+  const serviceStatus = (key: string) => {
+    if (healthLoading) return { status: 'checking', label: 'Checking…' }
+    if (healthFailed) return { status: 'unavailable', label: 'Health check unavailable' }
+    const check = health?.checks?.[key]
+    return {
+      status: check?.status || 'unknown',
+      label: check?.message || 'Not checked',
+    }
+  }
+
+  const services = [
+    { name: 'FastAPI Backend', endpoint: API_BASE_URL, ...serviceStatus('api') },
+    { name: 'Supabase', endpoint: serviceStatus('supabase').label, ...serviceStatus('supabase') },
+    { name: 'OpenAI API', endpoint: serviceStatus('openai').label, ...serviceStatus('openai') },
+    { name: 'Exa Search API', endpoint: serviceStatus('exa').label, ...serviceStatus('exa') },
+    { name: 'Google Gemini', endpoint: serviceStatus('gemini').label, ...serviceStatus('gemini') },
+  ]
 
   const handleSave = async () => {
     setIsSaving(true)
@@ -49,7 +87,7 @@ export default function SettingsPage() {
               Generation Settings
             </h2>
             <p className="text-sm text-stone-500">
-              Default parameters for blog post generation
+              Browser preferences used by the dashboard generation button
             </p>
           </div>
         </div>
@@ -62,7 +100,7 @@ export default function SettingsPage() {
             <input
               type="number"
               min={1}
-              max={50}
+              max={10}
               value={config.batchSize}
               onChange={(e) => setConfig({ ...config, batchSize: parseInt(e.target.value) || 10 })}
               className="w-full px-3 py-2 rounded-lg border border-midnight-300 bg-white text-stone-900 focus:ring-2 focus:ring-youdle-500 focus:border-transparent"
@@ -153,13 +191,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { name: 'FastAPI Backend', endpoint: 'http://localhost:8000', status: 'connected' },
-            { name: 'Supabase', endpoint: 'Connected', status: 'connected' },
-            { name: 'OpenAI API', endpoint: 'Configured', status: 'configured' },
-            { name: 'Exa Search API', endpoint: 'Configured', status: 'configured' },
-            { name: 'Google Gemini', endpoint: 'Configured', status: 'configured' },
-          ].map((service) => (
+          {services.map((service) => (
             <div
               key={service.name}
               className="flex items-center justify-between p-3 rounded-xl bg-midnight-50"
@@ -167,7 +199,11 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3">
                 <div className={cn(
                   'w-2 h-2 rounded-full',
-                  service.status === 'connected' ? 'bg-green-500' : 'bg-yellow-500'
+                  service.status === 'available' || service.status === 'configured'
+                    ? 'bg-green-500'
+                    : service.status === 'checking'
+                      ? 'bg-yellow-500'
+                      : 'bg-red-500'
                 )} />
                 <div>
                   <p className="text-sm font-medium text-stone-900">
@@ -202,14 +238,14 @@ export default function SettingsPage() {
         <div className="bg-midnight-50 rounded-lg p-4 font-mono text-sm">
           <pre className="text-midnight-600 whitespace-pre-wrap">
 {`# Frontend (.env.local)
-NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=https://youdle.vercel.app
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-key
 
 # Backend (.env)
 OPENAI_API_KEY=your-openai-key
 EXA_API_KEY=your-exa-key
-GOOGLE_API_KEY=your-gemini-key
+GEMINI_API_KEY=your-gemini-key
 SUPABASE_URL=your-supabase-url
 SUPABASE_KEY=your-supabase-key`}
           </pre>

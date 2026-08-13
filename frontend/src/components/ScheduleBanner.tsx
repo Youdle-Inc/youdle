@@ -6,14 +6,14 @@ interface ScheduleBannerProps {
   lastCompletedAt?: string | null
 }
 
-function getNextTuesday9amCST(): { date: Date; formatted: string; relative: string } {
+function getNextTuesdayAt15Utc(): { formatted: string; relative: string } {
   const now = new Date()
   const dayOfWeek = now.getUTCDay() // 0 = Sunday, 2 = Tuesday
 
   // Calculate days until next Tuesday
   let daysUntilTuesday = (2 - dayOfWeek + 7) % 7
 
-  // If it's Tuesday, check if we've passed 15:00 UTC (9 AM CST)
+  // The repository cron is fixed at 15:00 UTC: 9 AM CST or 10 AM CDT.
   if (daysUntilTuesday === 0) {
     const currentHourUTC = now.getUTCHours()
     if (currentHourUTC >= 15) {
@@ -21,14 +21,9 @@ function getNextTuesday9amCST(): { date: Date; formatted: string; relative: stri
     }
   }
 
-  // If today is after Tuesday, go to next week
-  if (daysUntilTuesday === 0 && dayOfWeek > 2) {
-    daysUntilTuesday = 7
-  }
-
   const nextTuesday = new Date(now)
   nextTuesday.setUTCDate(now.getUTCDate() + daysUntilTuesday)
-  nextTuesday.setUTCHours(15, 0, 0, 0) // 15:00 UTC = 9:00 AM CST
+  nextTuesday.setUTCHours(15, 0, 0, 0)
 
   // Format the date
   const formatted = nextTuesday.toLocaleDateString('en-US', {
@@ -54,7 +49,7 @@ function getNextTuesday9amCST(): { date: Date; formatted: string; relative: stri
     relative = `in ${diffDays} days`
   }
 
-  return { date: nextTuesday, formatted, relative }
+  return { formatted, relative }
 }
 
 function formatLastGenerated(dateString: string | null | undefined): string {
@@ -72,7 +67,7 @@ function formatLastGenerated(dateString: string | null | undefined): string {
 }
 
 export function ScheduleBanner({ lastCompletedAt }: ScheduleBannerProps) {
-  const nextRun = getNextTuesday9amCST()
+  const nextRun = getNextTuesdayAt15Utc()
   const lastGenerated = formatLastGenerated(lastCompletedAt)
 
   return (
@@ -84,9 +79,9 @@ export function ScheduleBanner({ lastCompletedAt }: ScheduleBannerProps) {
             <Calendar className="w-6 h-6 text-youdle-600" />
           </div>
           <div>
-            <p className="text-sm font-medium text-stone-500">Next Generation</p>
+            <p className="text-sm font-medium text-stone-500">Configured GitHub Schedule</p>
             <p className="text-lg font-semibold text-black">{nextRun.formatted}</p>
-            <p className="text-sm text-stone-400">{nextRun.relative}</p>
+            <p className="text-sm text-stone-400">15:00 UTC · {nextRun.relative}</p>
           </div>
         </div>
 
@@ -96,7 +91,7 @@ export function ScheduleBanner({ lastCompletedAt }: ScheduleBannerProps) {
             <Clock className="w-6 h-6 text-purple-600" />
           </div>
           <div>
-            <p className="text-sm font-medium text-stone-500">Last Generated</p>
+            <p className="text-sm font-medium text-stone-500">Last Dashboard Job</p>
             <p className="text-lg font-semibold text-black">{lastGenerated}</p>
           </div>
         </div>

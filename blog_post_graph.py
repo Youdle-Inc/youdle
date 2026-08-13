@@ -24,7 +24,7 @@ from langgraph.graph import StateGraph, START, END
 from zap_exa_ranker import main as search_articles_exa
 from langchain_blog_agent import BlogPostGenerator
 from image_generator import get_image_generator
-from supabase_storage import get_supabase_client
+from supabase_storage import get_supabase_client, get_supabase_storage
 from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
@@ -47,6 +47,7 @@ class BlogPostState(TypedDict):
     search_days_back: int
     model: str
     use_placeholder_images: bool
+    job_id: Optional[str]
     
     # Search results
     search_results: Dict[str, Any]
@@ -84,6 +85,9 @@ class BlogPostState(TypedDict):
     
     # Saved file paths
     saved_files: List[str]
+    saved_post_ids: List[Optional[str]]
+    db_inserted: int
+    persistence_errors: List[str]
     
     # Processing cache (for deduplication)
     processed_urls: Dict[str, str]
@@ -101,7 +105,10 @@ class BlogPostState(TypedDict):
 # CONFIGURATION
 # ============================================================================
 
-BLOG_POSTS_DIR = "blog_posts"
+BLOG_POSTS_DIR = os.getenv(
+    "BLOG_POSTS_DIR",
+    "/tmp/blog_posts" if os.getenv("VERCEL") else "blog_posts",
+)
 MAX_REGENERATIONS = 2
 MAX_WORKERS = 4
 
@@ -119,7 +126,8 @@ def create_initial_state(
     batch_size: int = 30,
     search_days_back: int = 30,
     model: str = "gpt-4",
-    use_placeholder_images: bool = False
+    use_placeholder_images: bool = False,
+    job_id: Optional[str] = None,
 ) -> BlogPostState:
     """Create the initial state for the workflow."""
     return BlogPostState(
@@ -127,6 +135,7 @@ def create_initial_state(
         search_days_back=search_days_back,
         model=model,
         use_placeholder_images=use_placeholder_images,
+        job_id=job_id,
         search_results={},
         articles=[],
         shoppers_articles=[],
@@ -143,6 +152,9 @@ def create_initial_state(
         uploaded_urls=[],
         final_posts=[],
         saved_files=[],
+        saved_post_ids=[],
+        db_inserted=0,
+        persistence_errors=[],
         processed_urls={},
         errors=[],
         logs=[],
@@ -221,10 +233,14 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
         supabase = get_supabase_client()
         from datetime import timedelta
         cutoff = (datetime.now() - timedelta(days=60)).isoformat()
-        recent_posts = supabase.table("blog_posts").select("source_url").gte("created_at", cutoff).execute()
+        if supabase is None:
+            raise RuntimeError("Supabase is not configured")
+        recent_posts = supabase.table("blog_posts").select("article_url").neq(
+            "article_url", ""
+        ).gte("created_at", cutoff).execute()
         for row in (recent_posts.data or []):
-            if row.get("source_url"):
-                recently_used_urls.add(row["source_url"])
+            if row.get("article_url"):
+                recently_used_urls.add(row["article_url"])
         logs.append(f"Cross-run dedup: {len(recently_used_urls)} URLs from last 60 days")
     except Exception as e:
         logs.append(f"Cross-run dedup check failed (continuing): {str(e)}")
@@ -273,10 +289,10 @@ def load_learning_context_node(state: BlogPostState) -> Dict[str, Any]:
     logs = [f"[{datetime.now().isoformat()}] Loading learning context..."]
     
     try:
-        supabase = get_supabase_client()
-        example_store = ExampleStore(supabase)
-        prompt_refiner = PromptRefiner(supabase)
-        learning_memory = LearningMemory(supabase)
+        storage = get_supabase_storage()
+        example_store = ExampleStore(storage)
+        prompt_refiner = PromptRefiner(storage)
+        learning_memory = LearningMemory(storage)
         
         def load_context_for_category(category: str) -> Dict[str, Any]:
             memory = learning_memory.load_session_memory(category)
@@ -846,7 +862,11 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
     final_posts = state.get("final_posts", [])
 
     if not final_posts:
-        return {"saved_files": [], "logs": logs + ["No posts to save"]}
+        return {
+            "saved_files": [],
+            "saved_post_ids": [],
+            "logs": logs + ["No posts to save"],
+        }
 
     # Ensure output directory exists
     os.makedirs(BLOG_POSTS_DIR, exist_ok=True)
@@ -859,10 +879,18 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
         logs.append(f"  ⚠ Could not connect to Supabase: {str(e)}")
 
     saved_files = []
+    saved_post_ids = []
     db_inserted = 0
+    persistence_errors = []
     processed_urls = state.get("processed_urls", {}).copy()
+    job_id = state.get("job_id")
+    if supabase is None and job_id:
+        persistence_errors.append("Supabase was unavailable while saving generated posts")
 
     for post in final_posts:
+        # Keep this list aligned with final_posts so the Blogger step can update
+        # the exact row created here, even when titles are duplicated.
+        saved_post_ids.append(None)
         try:
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -908,18 +936,22 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
             if supabase:
                 try:
                     from uuid import uuid4
+                    database_post_id = str(uuid4())
                     supabase.table("blog_posts").insert({
-                        "id": str(uuid4()),
+                        "id": database_post_id,
                         "title": post.get("title", ""),
                         "html_content": post.get("html", ""),
                         "image_url": post.get("image_url", ""),
                         "category": post.get("category", "SHOPPERS").upper(),
                         "status": "draft",
                         "article_url": post.get("original_link", ""),
+                        "job_id": job_id,
                         "created_at": datetime.now().isoformat()
                     }).execute()
+                    saved_post_ids[-1] = database_post_id
                     db_inserted += 1
                 except Exception as db_err:
+                    persistence_errors.append(str(db_err))
                     logs.append(f"  ⚠ DB insert failed for {post.get('title', 'unknown')[:30]}: {str(db_err)}")
 
             logs.append(f"  ✓ Saved {filename}.html")
@@ -927,12 +959,18 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
         except Exception as e:
             logs.append(f"  ✗ Error saving post: {str(e)}")
     
+    if job_id and db_inserted < len(final_posts) and not persistence_errors:
+        persistence_errors.append("One or more generated posts were not persisted")
+
     logs.append(f"Saved {len(saved_files)} blog posts to {BLOG_POSTS_DIR}/")
     if supabase:
         logs.append(f"Inserted {db_inserted} posts into Supabase database")
     
     return {
         "saved_files": saved_files,
+        "saved_post_ids": saved_post_ids,
+        "db_inserted": db_inserted,
+        "persistence_errors": persistence_errors,
         "processed_urls": processed_urls,
         "end_time": datetime.now().isoformat(),
         "logs": logs
@@ -964,9 +1002,15 @@ def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
         return {"logs": logs}
 
     final_posts = state.get("final_posts", [])
-    pushed = 0
+    if state.get("job_id") and state.get("db_inserted", 0) < len(final_posts):
+        logs.append("  Skipping Blogger draft push because not all posts were persisted")
+        return {"logs": logs}
 
-    for post in final_posts:
+    pushed = 0
+    saved_post_ids = state.get("saved_post_ids", [])
+    job_id = state.get("job_id")
+
+    for post_index, post in enumerate(final_posts):
         title = post.get("title", "Untitled")
         html = post.get("html", "")
         category = post.get("category", "SHOPPERS")
@@ -981,19 +1025,29 @@ def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
             blogger_post_id = result.get("blogger_post_id")
 
             if blogger_post_id:
-                # Find the DB row by title (just inserted by save_posts_node)
-                db_result = supabase.table("blog_posts") \
-                    .select("id") \
-                    .eq("title", title) \
-                    .order("created_at", desc=True) \
-                    .limit(1) \
-                    .execute()
+                database_post_id = (
+                    saved_post_ids[post_index]
+                    if post_index < len(saved_post_ids)
+                    else None
+                )
 
-                if db_result.data:
+                # Legacy callers may not provide saved_post_ids. Limit that
+                # fallback to this generation job before matching by title.
+                if not database_post_id:
+                    query = supabase.table("blog_posts").select("id")
+                    if job_id:
+                        query = query.eq("job_id", job_id)
+                    db_result = query.eq("title", title).order(
+                        "created_at", desc=True
+                    ).limit(1).execute()
+                    if db_result.data:
+                        database_post_id = db_result.data[0]["id"]
+
+                if database_post_id:
                     supabase.table("blog_posts").update({
                         "blogger_post_id": blogger_post_id,
                         "last_synced_at": datetime.now().isoformat()
-                    }).eq("id", db_result.data[0]["id"]).execute()
+                    }).eq("id", database_post_id).execute()
 
             pushed += 1
             logs.append(f"  Created Blogger draft for: {title[:40]}")
@@ -1073,7 +1127,8 @@ def run_blog_post_workflow(
     batch_size: int = 30,
     search_days_back: int = 30,
     model: str = "gpt-4",
-    use_placeholder_images: bool = False
+    use_placeholder_images: bool = False,
+    job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run the complete blog post generation workflow using LangGraph.
@@ -1099,7 +1154,8 @@ def run_blog_post_workflow(
         batch_size=batch_size,
         search_days_back=search_days_back,
         model=model,
-        use_placeholder_images=use_placeholder_images
+        use_placeholder_images=use_placeholder_images,
+        job_id=job_id,
     )
     
     # Run the workflow
