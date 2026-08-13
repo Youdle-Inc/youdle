@@ -33,6 +33,12 @@ cors_origins = [
     "https://www.youdle.io",
 ]
 
+# Match the dashboard's stable Vercel domain and every generated preview
+# deployment for that project, without allowing unrelated *.vercel.app sites.
+VERCEL_DASHBOARD_ORIGIN_REGEX = (
+    r"^https://youdle-agent-dashboard(?:-[a-z0-9-]+)?\.vercel\.app$"
+)
+
 # Add additional origins from environment variable if set
 extra_origins = os.getenv("CORS_ORIGINS", "")
 if extra_origins:
@@ -41,6 +47,7 @@ if extra_origins:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    allow_origin_regex=VERCEL_DASHBOARD_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
