@@ -22,6 +22,46 @@ except ImportError:
 STORAGE_BUCKET = "blog-images"
 DEFAULT_FOLDER = "newsletter"
 
+BLOG_FEEDBACK_TYPES = frozenset({
+    "structure",
+    "content",
+    "tone",
+    "completeness",
+    "general",
+})
+FEEDBACK_PATTERN_TYPES = BLOG_FEEDBACK_TYPES | frozenset({"formatting", "accuracy"})
+LEARNING_INSIGHT_TYPES = frozenset({
+    "common_mistake",
+    "improvement_pattern",
+    "best_practice",
+    "user_preference",
+    "general",
+})
+
+
+def normalize_feedback_type(feedback_type: str) -> str:
+    """Return a feedback type accepted by the ``blog_feedback`` schema."""
+    normalized = str(feedback_type or "").strip().lower()
+    if normalized == "overall":
+        normalized = "general"
+    return normalized if normalized in BLOG_FEEDBACK_TYPES else "general"
+
+
+def normalize_feedback_pattern_type(feedback_type: str) -> str:
+    """Normalize feedback read from either supported feedback table."""
+    normalized = str(feedback_type or "").strip().lower()
+    if normalized == "overall":
+        normalized = "general"
+    return normalized if normalized in FEEDBACK_PATTERN_TYPES else "general"
+
+
+def normalize_insight_type(insight_type: str) -> str:
+    """Return an insight type accepted by the ``learning_insights`` schema."""
+    normalized = str(insight_type or "").strip().lower()
+    if normalized == "problem":
+        normalized = "common_mistake"
+    return normalized if normalized in LEARNING_INSIGHT_TYPES else "general"
+
 
 class SupabaseStorage:
     """Supabase client for image storage and database operations."""
@@ -36,19 +76,31 @@ class SupabaseStorage:
         
         Args:
             url: Supabase project URL (defaults to SUPABASE_URL env var)
-            key: Supabase anon key (defaults to SUPABASE_KEY env var)
+            key: Server-side Supabase key (defaults to
+                SUPABASE_SERVICE_ROLE_KEY, then legacy SUPABASE_KEY)
         """
         self.url = url or os.getenv("SUPABASE_URL")
-        self.key = key or os.getenv("SUPABASE_KEY")
+        # Prefer a server-only service-role credential. SUPABASE_KEY remains a
+        # compatibility fallback for existing deployments.
+        self.key = (
+            key
+            or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            or os.getenv("SUPABASE_KEY")
+        )
         
         if not self.url or not self.key:
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+            raise ValueError(
+                "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_KEY) must be set"
+            )
         
         self.client: Client = create_client(self.url, self.key)
         self.bucket = STORAGE_BUCKET
+        self._bucket_ready = False
     
     def _ensure_bucket_exists(self) -> bool:
         """Ensure the storage bucket exists."""
+        if self._bucket_ready:
+            return True
         try:
             # List buckets to check if ours exists
             buckets = self.client.storage.list_buckets()
@@ -60,6 +112,7 @@ class SupabaseStorage:
                     self.bucket,
                     options={"public": True}
                 )
+            self._bucket_ready = True
             return True
         except Exception as e:
             print(f"Error ensuring bucket exists: {e}")
@@ -86,7 +139,8 @@ class SupabaseStorage:
         """
         try:
             # Ensure bucket exists
-            self._ensure_bucket_exists()
+            if not self._ensure_bucket_exists():
+                raise RuntimeError(f"Storage bucket '{self.bucket}' is unavailable")
             
             # Decode base64 data
             image_bytes = base64.b64decode(image_data)
@@ -210,6 +264,12 @@ class SupabaseStorage:
             }
             
             result = self.client.table("blog_examples").insert(data).execute()
+
+            if not result.data:
+                return {
+                    "success": False,
+                    "error": "Supabase did not return the saved blog example row",
+                }
             
             return {
                 "success": True,
@@ -265,7 +325,8 @@ class SupabaseStorage:
         score: int,
         comments: str = "",
         approved: bool = False,
-        reviewer_notes: str = ""
+        reviewer_notes: str = "",
+        category: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Save feedback for a blog post.
@@ -277,22 +338,32 @@ class SupabaseStorage:
             comments: Feedback comments
             approved: Whether the post was approved
             reviewer_notes: Additional reviewer notes
+            category: Optional shoppers/recall category for scoped learning
             
         Returns:
             Result dictionary
         """
         try:
+            normalized_feedback_type = normalize_feedback_type(feedback_type)
             data = {
                 "blog_post_id": blog_post_id,
-                "feedback_type": feedback_type,
+                "feedback_type": normalized_feedback_type,
                 "score": score,
                 "comments": comments,
                 "approved": approved,
                 "reviewer_notes": reviewer_notes,
                 "created_at": datetime.now().isoformat()
             }
+            if category:
+                data["category"] = category.lower()
             
-            result = self.client.table("feedback").insert(data).execute()
+            result = self.client.table("blog_feedback").insert(data).execute()
+
+            if not result.data:
+                return {
+                    "success": False,
+                    "error": "Supabase did not return the saved blog feedback row",
+                }
             
             return {
                 "success": True,
@@ -322,17 +393,31 @@ class SupabaseStorage:
             List of feedback patterns
         """
         try:
-            # This would ideally be a more complex query
-            # For now, get recent feedback and analyze
-            query = self.client.table("feedback").select("*")
-            
-            result = query.order("created_at", desc=True).limit(100).execute()
-            
-            # Group by feedback_type and count
-            # Note: frontend stores "rating"/"comment", backend historically used "score"/"comments"/"feedback_type"
+            # Detailed CLI feedback lives in blog_feedback, while dashboard
+            # reviews live in feedback. Read both so the learning workflow sees
+            # every human review instead of silently ignoring dashboard input.
+            feedback_rows = []
+            query_errors = []
+            for table_name in ("blog_feedback", "feedback"):
+                try:
+                    query = self.client.table(table_name).select("*")
+                    if category:
+                        query = query.eq("category", category.lower())
+                    result = query.order(
+                        "created_at", desc=True
+                    ).limit(100).execute()
+                    feedback_rows.extend(result.data or [])
+                except Exception as query_error:
+                    query_errors.append(f"{table_name}: {query_error}")
+
+            if not feedback_rows and len(query_errors) == 2:
+                raise RuntimeError("; ".join(query_errors))
+
             patterns = {}
-            for feedback in result.data or []:
-                ftype = feedback.get("feedback_type", feedback.get("type", "general"))
+            for feedback in feedback_rows:
+                ftype = normalize_feedback_pattern_type(
+                    feedback.get("feedback_type", "general")
+                )
                 if ftype not in patterns:
                     patterns[ftype] = {
                         "type": ftype,
@@ -341,7 +426,9 @@ class SupabaseStorage:
                         "comments": []
                     }
                 patterns[ftype]["count"] += 1
-                patterns[ftype]["avg_score"] += feedback.get("score", feedback.get("rating", 0))
+                patterns[ftype]["avg_score"] += feedback.get(
+                    "score", feedback.get("rating", 0)
+                )
                 comment_text = feedback.get("comments", feedback.get("comment", ""))
                 if comment_text:
                     patterns[ftype]["comments"].append(comment_text)
@@ -357,7 +444,7 @@ class SupabaseStorage:
             
         except Exception as e:
             print(f"Error fetching feedback patterns: {e}")
-            return []
+            raise RuntimeError("Could not load feedback patterns") from e
     
     def save_learning_insight(
         self,
@@ -379,15 +466,22 @@ class SupabaseStorage:
             Result dictionary
         """
         try:
+            normalized_insight_type = normalize_insight_type(insight_type)
             data = {
-                "insight_type": insight_type,
+                "insight_type": normalized_insight_type,
                 "description": description,
                 "category": category,
-                "frequency": frequency,
+                "frequency": max(1, int(frequency)),
                 "created_at": datetime.now().isoformat()
             }
             
             result = self.client.table("learning_insights").insert(data).execute()
+
+            if not result.data:
+                return {
+                    "success": False,
+                    "error": "Supabase did not return the saved learning insight row",
+                }
             
             return {
                 "success": True,

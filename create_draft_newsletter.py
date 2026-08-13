@@ -18,7 +18,7 @@ import sys
 import json
 import argparse
 from uuid import uuid4
-from datetime import datetime, timedelta
+from datetime import datetime
 
 try:
     from dotenv import load_dotenv
@@ -28,6 +28,7 @@ except ImportError:
 
 from supabase_storage import get_supabase_client
 from mailchimp_campaign import MailchimpCampaign
+from check_blog_status import get_week_start_date
 
 # Import subject line generator from the API routes
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api', 'routes'))
@@ -36,7 +37,8 @@ from newsletters import generate_content_driven_subject, generate_newsletter_htm
 
 def create_draft_newsletter(custom_subject: str = None) -> dict:
     """
-    Create a draft newsletter from all published posts not yet in a newsletter.
+    Create a draft newsletter from this week's published posts that have not
+    already been used in a newsletter.
     
     Returns a dict with newsletter info or error details.
     """
@@ -44,20 +46,26 @@ def create_draft_newsletter(custom_subject: str = None) -> dict:
     if supabase is None:
         return {"success": False, "error": "Database not configured"}
 
-    # Get all published posts with blogger_url
+    # Match the workflow's publish gate: use actual Blogger publication time
+    # since the most recent Tuesday, not the database row creation time.
+    week_start = get_week_start_date().isoformat()
     all_posts = supabase.table("blog_posts").select(
         "id, title, category, blogger_url"
-    ).eq("status", "published").not_.is_("blogger_url", "null").order(
-        "created_at", desc=True
+    ).eq("status", "published").not_.is_("blogger_url", "null").gte(
+        "blogger_published_at", week_start
+    ).order(
+        "blogger_published_at", desc=True
     ).limit(50).execute()
 
     if not all_posts.data:
-        return {"success": False, "error": "No published posts available"}
+        return {"success": False, "error": "No posts were published this week"}
 
     all_post_ids = [p["id"] for p in all_posts.data]
 
     # Exclude posts already in newsletters
-    used_posts = supabase.table("newsletter_posts").select("blog_post_id").execute()
+    used_posts = supabase.table("newsletter_posts").select("blog_post_id").in_(
+        "blog_post_id", all_post_ids
+    ).execute()
     used_post_ids = set(p["blog_post_id"] for p in (used_posts.data or []))
     available_posts = [p for p in all_posts.data if p["id"] not in used_post_ids]
 

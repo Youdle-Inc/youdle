@@ -35,7 +35,7 @@ except ImportError as e:
 from zap_exa_ranker import main as search_articles
 from langchain_blog_agent import BlogPostGenerator
 from image_generator import get_image_generator
-from supabase_storage import get_supabase_client
+from supabase_storage import get_supabase_storage
 from example_store import ExampleStore, retrieve_similar_examples
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
@@ -77,7 +77,7 @@ class BlogPostOrchestrator:
         """
         self.generator = BlogPostGenerator(model=model)
         self.image_generator = get_image_generator(use_placeholder=use_placeholder_images)
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_storage()
         self.example_store = ExampleStore(self.supabase)
         self.reflection_agent = ReflectionAgent()
         self.prompt_refiner = PromptRefiner(self.supabase)
@@ -529,7 +529,7 @@ class BlogPostOrchestrator:
         session_data = {
             "posts_generated": len(successful),
             "posts_failed": len(failed),
-            "approval_rate": 0,  # Will be set after human review
+            "approval_rate": None,  # Unknown until human review
             "avg_attempts": avg_attempts,
             "new_insights": []
         }
@@ -544,7 +544,13 @@ class BlogPostOrchestrator:
                         "description": mistake
                     })
 
-        self.learning_memory.save_session_memory("shoppers", session_data)
+        memory_result = self.learning_memory.save_session_memory("shoppers", session_data)
+        if not memory_result.get("success", False):
+            print(
+                "Warning: Learning memory was not fully saved: "
+                + "; ".join(memory_result.get("errors", ["unknown error"])),
+                file=sys.stderr,
+            )
 
         # Step 6: Summary
         print("[6/6] Generating summary...")
@@ -558,6 +564,7 @@ class BlogPostOrchestrator:
             "posts_failed": len(failed),
             "duration_seconds": round(duration, 2),
             "results": results,
+            "learning_memory": memory_result,
             "output_directory": BLOG_POSTS_DIR,
             "generated_at": start_time.isoformat()
         }

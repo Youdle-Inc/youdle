@@ -8,8 +8,8 @@ import re
 import logging
 from html import unescape
 from difflib import SequenceMatcher
-from uuid import uuid4
-from typing import Optional, List
+from uuid import UUID, uuid4
+from typing import Optional, List, Literal
 from datetime import datetime
 from dateutil.parser import isoparse
 
@@ -64,6 +64,18 @@ class BlogPost(BaseModel):
     blogger_url: Optional[str] = None
     blogger_published_at: Optional[str] = None
     last_synced_at: Optional[str] = None
+
+
+class ReviewSubmission(BaseModel):
+    """Validated human feedback and optional review-state transition."""
+
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = None
+    feedback_type: Literal[
+        "general", "content", "formatting", "accuracy", "tone"
+    ] = "general"
+    mark_reviewed: bool = False
+    submission_id: UUID
 
 
 def run_generation_task(job_id: str, config: dict):
@@ -314,10 +326,13 @@ async def get_blog_post(post_id: str):
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
         
-        result = supabase.table("blog_posts").select("*").eq("id", post_id).single().execute()
+        result = supabase.table("blog_posts").select("*").eq("id", post_id).maybe_single().execute()
         
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Post not found")
         
         return result.data
@@ -348,7 +363,7 @@ async def update_post_status(
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", post_id).execute()
         
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Post not found")
         
         return {"message": f"Post status updated to {status}", "post": result.data[0]}
@@ -357,6 +372,76 @@ async def update_post_status(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to update post: {str(e)}")
+
+
+@router.post("/posts/{post_id}/review")
+async def submit_post_review(post_id: UUID, review: ReviewSubmission):
+    """
+    Atomically save feedback and optionally move a draft to reviewed.
+
+    The database function locks the post, writes both changes in one
+    transaction, and uses ``submission_id`` to make browser retries idempotent.
+    """
+    try:
+        from supabase_storage import get_supabase_client
+
+        supabase = get_supabase_client()
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
+        rpc_result = supabase.rpc("submit_post_review", {
+            "p_post_id": str(post_id),
+            "p_rating": review.rating,
+            "p_comment": review.comment or None,
+            "p_feedback_type": review.feedback_type,
+            "p_mark_reviewed": review.mark_reviewed,
+            "p_submission_id": str(review.submission_id),
+        }).execute()
+
+        if rpc_result is None or not rpc_result.data:
+            raise RuntimeError("Database did not return the saved review")
+
+        operation = rpc_result.data
+        if isinstance(operation, list):
+            operation = operation[0] if operation else None
+        if not isinstance(operation, dict):
+            raise RuntimeError("Database returned an invalid review response")
+
+        if operation.get("error") == "not_found":
+            raise HTTPException(status_code=404, detail="Post not found")
+        if operation.get("error") == "status_conflict":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Only draft posts can be marked reviewed "
+                    f"(current status: {operation.get('current_status', 'unknown')})"
+                ),
+            )
+        if operation.get("error") == "idempotency_conflict":
+            raise HTTPException(
+                status_code=409,
+                detail="This review submission ID was already used with different feedback",
+            )
+        if operation.get("error"):
+            raise RuntimeError(str(operation["error"]))
+
+        return {
+            "message": "Feedback saved" + (
+                " and post marked reviewed" if review.mark_reviewed else ""
+            ),
+            "post": operation.get("post"),
+            "feedback": operation.get("feedback"),
+            "replayed": bool(operation.get("replayed")),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Failed to submit review for post %s", post_id)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to save the review",
+        ) from error
 
 
 @router.delete("/posts/{post_id}")
@@ -397,9 +482,12 @@ async def update_blog_post(post_id: str, updates: BlogPostUpdate):
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
 
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
         # First, get the current post to check if it has blogger_post_id
-        current_post = supabase.table("blog_posts").select("*").eq("id", post_id).single().execute()
-        if not current_post.data:
+        current_post = supabase.table("blog_posts").select("*").eq("id", post_id).maybe_single().execute()
+        if current_post is None or not current_post.data:
             raise HTTPException(status_code=404, detail="Post not found")
 
         post_data = current_post.data
@@ -425,7 +513,7 @@ async def update_blog_post(post_id: str, updates: BlogPostUpdate):
         # Update local database
         result = supabase.table("blog_posts").update(update_data).eq("id", post_id).execute()
 
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Post not found")
 
         updated_post = result.data[0]
@@ -514,6 +602,9 @@ async def publish_post_to_blogger(post_id: str):
         supabase = get_supabase_client()
         blogger = get_blogger_client()
 
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
         # Check if Blogger is configured
         if not blogger.is_configured():
             raise HTTPException(
@@ -522,9 +613,9 @@ async def publish_post_to_blogger(post_id: str):
             )
 
         # Get the post from database
-        result = supabase.table("blog_posts").select("*").eq("id", post_id).single().execute()
+        result = supabase.table("blog_posts").select("*").eq("id", post_id).maybe_single().execute()
 
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Post not found")
 
         post = result.data
@@ -615,10 +706,13 @@ async def unpublish_post_from_blogger(post_id: str):
         supabase = get_supabase_client()
         blogger = get_blogger_client()
 
-        # Get the post from database
-        result = supabase.table("blog_posts").select("*").eq("id", post_id).single().execute()
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
 
-        if not result.data:
+        # Get the post from database
+        result = supabase.table("blog_posts").select("*").eq("id", post_id).maybe_single().execute()
+
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Post not found")
 
         post = result.data

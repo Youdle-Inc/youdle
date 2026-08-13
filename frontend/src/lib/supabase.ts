@@ -34,14 +34,6 @@ export interface BlogPost {
   updated_at?: string
 }
 
-export interface Feedback {
-  id: string
-  post_id: string
-  rating: number
-  comment: string | null
-  created_at: string
-}
-
 // Singleton Supabase client
 let supabaseClient: SupabaseClient | null = null
 
@@ -133,43 +125,4 @@ export async function getRecentPosts(limit = 20): Promise<BlogPost[]> {
   if (error) throw error
   return data as BlogPost[]
 }
-
-export async function updatePostStatus(
-  postId: string, 
-  status: 'draft' | 'reviewed' | 'published'
-): Promise<BlogPost> {
-  const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from('blog_posts')
-    .update({ status, updated_at: new Date().toISOString() })
-    .eq('id', postId)
-    .select()
-    .single()
-
-  if (error) throw error
-  return data as BlogPost
-}
-
-export async function addFeedback(
-  postId: string,
-  rating: number,
-  comment?: string
-): Promise<Feedback> {
-  const supabase = getSupabase()
-  const { data, error } = await supabase
-    .from('feedback')
-    .insert({
-      post_id: postId,
-      rating,
-      comment: comment || null,
-      created_at: new Date().toISOString()
-    })
-    .select()
-    .single()
-
-  if (error) throw error
-  return data as Feedback
-}
-
-
 

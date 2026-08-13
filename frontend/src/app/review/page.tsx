@@ -1,10 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { CheckSquare, RefreshCw, ChevronLeft, ChevronRight, Check, X } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { CheckSquare, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { api } from '@/lib/api'
-import { addFeedback } from '@/lib/supabase'
 import { BlogPostPreview } from '@/components/BlogPostPreview'
 import { ReviewForm } from '@/components/ReviewForm'
 import { cn } from '@/lib/utils'
@@ -12,6 +11,7 @@ import { cn } from '@/lib/utils'
 export default function ReviewPage() {
   const queryClient = useQueryClient()
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // Fetch draft posts for review
   const { data: posts, isLoading, error } = useQuery({
@@ -19,66 +19,75 @@ export default function ReviewPage() {
     queryFn: () => api.getPosts({ status: 'draft', limit: 50 }),
   })
 
-  const updateStatusMutation = useMutation({
-    mutationFn: ({ postId, status }: { postId: string; status: string }) =>
-      api.updatePostStatus(postId, status),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['reviewPosts'] })
-      queryClient.invalidateQueries({ queryKey: ['posts'] })
-    },
-  })
-
   const currentPost = posts?.[currentIndex]
 
-  const handleSubmitReview = async (rating: number, comment: string, feedbackType: string) => {
-    if (currentPost) {
-      try {
-        await addFeedback(currentPost.id, rating, comment)
-        goToNext()
-      } catch (error) {
-        console.error('Failed to submit feedback:', error)
-      }
+  const saveReview = async (
+    rating: number,
+    comment: string,
+    feedbackType: string,
+    markReviewed: boolean,
+    submissionId: string
+  ) => {
+    if (!currentPost) return
+
+    await api.submitPostReview(currentPost.id, {
+      rating,
+      comment,
+      feedback_type: feedbackType as 'general' | 'content' | 'formatting' | 'accuracy' | 'tone',
+      mark_reviewed: markReviewed,
+      submission_id: submissionId,
+    })
+    await queryClient.invalidateQueries({ queryKey: ['reviewPosts'] })
+    await queryClient.invalidateQueries({ queryKey: ['posts'] })
+  }
+
+  const handleSubmitReview = async (rating: number, comment: string, feedbackType: string, submissionId: string) => {
+    if (!currentPost) return false
+    try {
+      setActionError(null)
+      await saveReview(rating, comment, feedbackType, false, submissionId)
+      goToNext()
+      return true
+    } catch (error) {
+      console.error('Failed to submit feedback:', error)
+      setActionError(error instanceof Error ? error.message : 'Failed to submit feedback')
+      return false
     }
   }
 
-  const handleApprove = async (rating: number, comment: string, feedbackType: string) => {
-    if (currentPost) {
-      try {
-        // Submit feedback AND approve (Issue #858 fix)
-        await addFeedback(currentPost.id, rating, comment)
-        await updateStatusMutation.mutateAsync({ postId: currentPost.id, status: 'approved' })
-        goToNext()
-      } catch (error) {
-        console.error('Failed to approve post:', error)
+  const handleApprove = async (rating: number, comment: string, feedbackType: string, submissionId: string) => {
+    if (!currentPost) return false
+    try {
+      setActionError(null)
+      await saveReview(rating, comment, feedbackType, true, submissionId)
+      // The reviewed post disappears from this queue. Keep the same index so
+      // the next post shifts into view; move back only when removing the last.
+      if (posts && currentIndex === posts.length - 1) {
+        setCurrentIndex(Math.max(0, currentIndex - 1))
       }
-    }
-  }
-
-  const handleReject = async (rating: number, comment: string, feedbackType: string) => {
-    if (currentPost) {
-      try {
-        // Submit feedback AND reject (Issue #858 fix)
-        await addFeedback(currentPost.id, rating, comment)
-        await updateStatusMutation.mutateAsync({ postId: currentPost.id, status: 'rejected' })
-        goToNext()
-      } catch (error) {
-        console.error('Failed to reject post:', error)
-      }
+      return true
+    } catch (error) {
+      console.error('Failed to approve post:', error)
+      setActionError(error instanceof Error ? error.message : 'Failed to approve post')
+      return false
     }
   }
 
   const handleSkip = () => {
+    setActionError(null)
     goToNext()
   }
 
   const goToNext = () => {
     if (posts && currentIndex < posts.length - 1) {
+      setActionError(null)
       setCurrentIndex(currentIndex + 1)
     }
   }
 
   const goToPrevious = () => {
     if (currentIndex > 0) {
+      setActionError(null)
       setCurrentIndex(currentIndex - 1)
     }
   }
@@ -127,6 +136,12 @@ export default function ReviewPage() {
         </div>
       )}
 
+      {actionError && (
+        <div className="p-4 rounded-xl bg-red-50 border border-red-200">
+          <p className="text-red-800">{actionError}</p>
+        </div>
+      )}
+
       {/* Empty State */}
       {!isLoading && (!posts || posts.length === 0) && (
         <div className="text-center py-16 rounded-2xl bg-white border border-stone-200">
@@ -151,11 +166,11 @@ export default function ReviewPage() {
           {/* Review Form */}
           <div className="space-y-4">
             <ReviewForm
+              key={currentPost.id}
               postId={currentPost.id}
               postTitle={currentPost.title}
               onSubmit={handleSubmitReview}
               onApprove={handleApprove}
-              onReject={handleReject}
               onSkip={handleSkip}
             />
           </div>
@@ -184,7 +199,10 @@ export default function ReviewPage() {
             {posts.slice(0, 10).map((_, index) => (
               <button
                 key={index}
-                onClick={() => setCurrentIndex(index)}
+                onClick={() => {
+                  setActionError(null)
+                  setCurrentIndex(index)
+                }}
                 className={cn(
                   'w-2 h-2 rounded-full transition-all',
                   index === currentIndex

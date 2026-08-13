@@ -11,7 +11,11 @@ try:
 except ImportError:
     pass
 
-from supabase_storage import get_supabase_client, SupabaseStorage
+from supabase_storage import (
+    SupabaseStorage,
+    get_supabase_storage,
+    normalize_insight_type,
+)
 
 
 class LearningMemory:
@@ -27,7 +31,11 @@ class LearningMemory:
         Args:
             supabase_client: Optional Supabase client
         """
-        self.client = supabase_client or get_supabase_client()
+        self.client = (
+            supabase_client
+            if supabase_client is not None
+            else get_supabase_storage()
+        )
         self._local_memory: Dict[str, Any] = {
             "insights": [],
             "metrics": [],
@@ -53,8 +61,9 @@ class LearningMemory:
         Returns:
             Result dictionary
         """
+        normalized_insight_type = normalize_insight_type(insight_type)
         insight = {
-            "insight_type": insight_type,
+            "insight_type": normalized_insight_type,
             "description": description,
             "category": category,
             "frequency": frequency,
@@ -63,7 +72,7 @@ class LearningMemory:
         
         if self.client:
             return self.client.save_learning_insight(
-                insight_type=insight_type,
+                insight_type=normalized_insight_type,
                 description=description,
                 category=category,
                 frequency=frequency
@@ -127,20 +136,34 @@ class LearningMemory:
         self._local_memory["metrics"].append(metric_record)
         
         # Store key metrics as insights if notable
-        if metrics.get("approval_rate", 0) >= 90:
-            self.store_insight(
+        insight_result = None
+        approval_rate = metrics.get("approval_rate")
+        if approval_rate is not None and approval_rate >= 90:
+            insight_result = self.store_insight(
                 insight_type="improvement_pattern",
-                description=f"High approval rate ({metrics.get('approval_rate')}%) achieved",
+                description=f"High approval rate ({approval_rate}%) achieved",
                 category=category
             )
-        elif metrics.get("approval_rate", 100) < 50:
-            self.store_insight(
-                insight_type="problem",
-                description=f"Low approval rate ({metrics.get('approval_rate')}%) - needs attention",
+        elif approval_rate is not None and approval_rate < 50:
+            insight_result = self.store_insight(
+                insight_type="common_mistake",
+                description=f"Low approval rate ({approval_rate}%) - needs attention",
                 category=category
             )
         
-        return {"success": True}
+        if insight_result is not None and not insight_result.get("success", False):
+            return {
+                "success": False,
+                "metric_stored": True,
+                "insight_stored": False,
+                "error": insight_result.get("error", "Failed to store session insight"),
+            }
+
+        return {
+            "success": True,
+            "metric_stored": True,
+            "insight_stored": insight_result is not None,
+        }
     
     def get_performance_summary(
         self,
@@ -160,7 +183,13 @@ class LearningMemory:
         if category:
             metrics = [m for m in metrics if m.get("category") == category]
         
-        if not metrics:
+        reviewed_metrics = [
+            metric
+            for metric in metrics
+            if metric.get("metrics", {}).get("approval_rate") is not None
+        ]
+
+        if not reviewed_metrics:
             return {
                 "sessions": 0,
                 "avg_approval_rate": 0,
@@ -168,10 +197,10 @@ class LearningMemory:
             }
         
         # Calculate averages
-        total_sessions = len(metrics)
+        total_sessions = len(reviewed_metrics)
         approval_rates = [
-            m.get("metrics", {}).get("approval_rate", 0) 
-            for m in metrics
+            m.get("metrics", {}).get("approval_rate")
+            for m in reviewed_metrics
         ]
         
         avg_approval = sum(approval_rates) / len(approval_rates) if approval_rates else 0
@@ -196,7 +225,7 @@ class LearningMemory:
             "sessions": total_sessions,
             "avg_approval_rate": round(avg_approval, 2),
             "trend": trend,
-            "recent_metrics": metrics[-5:] if metrics else []
+            "recent_metrics": reviewed_metrics[-5:]
         }
     
     def get_common_mistakes(
@@ -284,21 +313,37 @@ class LearningMemory:
         metrics = {
             "posts_generated": session_data.get("posts_generated", 0),
             "posts_approved": session_data.get("posts_approved", 0),
-            "approval_rate": session_data.get("approval_rate", 0),
+            "approval_rate": session_data.get("approval_rate"),
             "avg_reflection_attempts": session_data.get("avg_attempts", 0)
         }
         
-        self.store_session_metrics(category, metrics)
+        metrics_result = self.store_session_metrics(category, metrics)
         
         # Store any new insights
+        insight_results = []
         for insight in session_data.get("new_insights", []):
-            self.store_insight(
+            insight_results.append(self.store_insight(
                 insight_type=insight.get("type", "general"),
                 description=insight.get("description", ""),
                 category=category
-            )
-        
-        return {"success": True}
+            ))
+
+        failed_results = [
+            result
+            for result in [metrics_result, *insight_results]
+            if not result.get("success", False)
+        ]
+        response = {
+            "success": not failed_results,
+            "metrics": metrics_result,
+            "insights": insight_results,
+        }
+        if failed_results:
+            response["errors"] = [
+                result.get("error", "Learning data was not stored")
+                for result in failed_results
+            ]
+        return response
 
 
 # Convenience function for loading memory

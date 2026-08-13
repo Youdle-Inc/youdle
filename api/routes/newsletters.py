@@ -6,7 +6,7 @@ import sys
 import os
 from uuid import uuid4
 from typing import Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -78,6 +78,130 @@ class NewsletterListResponse(BaseModel):
 # Helper Functions
 # ============================================================================
 
+POSTGREST_PAGE_SIZE = 1000
+POSTGREST_IN_CHUNK_SIZE = 50
+
+
+def _chunks(values: List[str], size: int = POSTGREST_IN_CHUNK_SIZE):
+    """Yield bounded lists so PostgREST URLs and result caps stay predictable."""
+    for start in range(0, len(values), size):
+        yield values[start:start + size]
+
+
+def _ordered_rows_by_id(rows: List[dict], ordered_ids: List[str]) -> List[dict]:
+    """Restore an explicit caller-provided order after a PostgREST ``in`` query."""
+    rows_by_id = {str(row["id"]): row for row in rows if row.get("id") is not None}
+    return [rows_by_id[str(row_id)] for row_id in ordered_ids if str(row_id) in rows_by_id]
+
+
+def _get_ordered_post_titles(supabase, post_ids: List[str]) -> List[str]:
+    """Fetch post titles while preserving the order in ``post_ids``."""
+    if not post_ids:
+        return []
+
+    result = supabase.table("blog_posts").select("id, title").in_("id", post_ids).execute()
+    ordered_posts = _ordered_rows_by_id(result.data or [], post_ids)
+    return [post["title"] for post in ordered_posts]
+
+
+def _get_used_post_ids(supabase, candidate_ids: List[str]) -> set[str]:
+    """Return used IDs among the supplied candidates without scanning the junction table."""
+    unique_candidate_ids = list(dict.fromkeys(candidate_ids))
+    if not unique_candidate_ids:
+        return set()
+
+    used_ids = set()
+    for candidate_chunk in _chunks(unique_candidate_ids):
+        offset = 0
+        while True:
+            result = (
+                supabase.table("newsletter_posts")
+                .select("blog_post_id")
+                .in_("blog_post_id", candidate_chunk)
+                .order("blog_post_id")
+                .range(offset, offset + POSTGREST_PAGE_SIZE - 1)
+                .execute()
+            )
+            rows = result.data or []
+            used_ids.update(str(row["blog_post_id"]) for row in rows)
+            if len(rows) < POSTGREST_PAGE_SIZE:
+                break
+            offset += POSTGREST_PAGE_SIZE
+    return used_ids
+
+
+def _attach_posts_to_newsletters(supabase, newsletters: List[dict]) -> List[dict]:
+    """Attach ordered post summaries to a page of newsletters in two batch queries."""
+    if not newsletters:
+        return newsletters
+
+    newsletter_ids = [str(newsletter["id"]) for newsletter in newsletters]
+    links = []
+    for newsletter_chunk in _chunks(newsletter_ids):
+        offset = 0
+        while True:
+            links_result = (
+                supabase.table("newsletter_posts")
+                .select("newsletter_id, blog_post_id, position")
+                .in_("newsletter_id", newsletter_chunk)
+                .order("newsletter_id")
+                .order("position")
+                .order("blog_post_id")
+                .range(offset, offset + POSTGREST_PAGE_SIZE - 1)
+                .execute()
+            )
+            page = links_result.data or []
+            links.extend(page)
+            if len(page) < POSTGREST_PAGE_SIZE:
+                break
+            offset += POSTGREST_PAGE_SIZE
+
+    links_by_newsletter: dict[str, List[dict]] = {newsletter_id: [] for newsletter_id in newsletter_ids}
+    for link in links:
+        newsletter_id = str(link.get("newsletter_id", ""))
+        if newsletter_id in links_by_newsletter:
+            links_by_newsletter[newsletter_id].append(link)
+
+    for newsletter_links in links_by_newsletter.values():
+        newsletter_links.sort(key=lambda link: (link.get("position") or 0, str(link.get("blog_post_id", ""))))
+
+    post_ids = list(dict.fromkeys(
+        str(link["blog_post_id"])
+        for link in links
+        if link.get("blog_post_id") is not None
+    ))
+    posts_by_id = {}
+    for post_chunk in _chunks(post_ids):
+        posts_result = (
+            supabase.table("blog_posts")
+            .select("id, title, category, blogger_url")
+            .in_("id", post_chunk)
+            .execute()
+        )
+        posts_by_id.update({
+            str(post["id"]): post
+            for post in (posts_result.data or [])
+            if post.get("id") is not None
+        })
+
+    for newsletter in newsletters:
+        newsletter_links = links_by_newsletter.get(str(newsletter["id"]), [])
+        newsletter["posts"] = [
+            posts_by_id[str(link["blog_post_id"])]
+            for link in newsletter_links
+            if str(link.get("blog_post_id")) in posts_by_id
+        ]
+
+    return newsletters
+
+
+def _parse_utc_datetime(value: str) -> datetime:
+    """Parse a database timestamp into an aware UTC datetime."""
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
 def get_next_thursday_9am_cst() -> datetime:
     """
     Calculate the next Thursday at 9 AM CST (Central Time), returned as UTC for Mailchimp.
@@ -119,8 +243,8 @@ def get_newsletter_with_posts(supabase, newsletter_id: str) -> Optional[dict]:
     Get a newsletter with its associated posts.
     """
     # Get newsletter
-    result = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-    if not result.data:
+    result = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+    if result is None or not result.data:
         return None
 
     newsletter = result.data
@@ -407,7 +531,7 @@ def generate_newsletter_html(supabase, post_ids: List[str], subject: str = None)
         "id, title, category, blogger_url"
     ).in_("id", post_ids).execute()
 
-    posts = posts_result.data if posts_result.data else []
+    posts = _ordered_rows_by_id(posts_result.data or [], post_ids)
 
     # Separate by category
     shoppers = []
@@ -452,7 +576,9 @@ async def list_newsletters(
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get count
-        count_query = supabase.table("newsletters").select("id", count="exact")
+        count_query = supabase.table("newsletters").select(
+            "id", count="exact", head=True
+        )
         if status:
             count_query = count_query.eq("status", status)
         count_result = count_query.execute()
@@ -465,24 +591,7 @@ async def list_newsletters(
         query = query.range(offset, offset + limit - 1)
         result = query.execute()
 
-        newsletters = []
-        for nl in (result.data or []):
-            # Get posts for each newsletter
-            posts_result = supabase.table("newsletter_posts").select(
-                "blog_post_id"
-            ).eq("newsletter_id", nl["id"]).execute()
-
-            posts = []
-            if posts_result.data:
-                post_ids = [p["blog_post_id"] for p in posts_result.data]
-                if post_ids:
-                    blog_posts_result = supabase.table("blog_posts").select(
-                        "id, title, category, blogger_url"
-                    ).in_("id", post_ids).execute()
-                    posts = blog_posts_result.data or []
-
-            nl["posts"] = posts
-            newsletters.append(nl)
+        newsletters = _attach_posts_to_newsletters(supabase, result.data or [])
 
         return NewsletterListResponse(newsletters=newsletters, total=total)
 
@@ -506,23 +615,22 @@ async def get_published_posts_for_newsletter():
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Calculate 3-day cutoff
-        cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
         # Get published posts with blogger_url from last 3 days
         result = supabase.table("blog_posts").select(
             "id, title, category, blogger_url"
         ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-            "created_at", cutoff
+            "blogger_published_at", cutoff
         ).order(
-            "created_at", desc=True
+            "blogger_published_at", desc=True
         ).limit(50).execute()
 
         all_posts = result.data if result.data else []
 
         # Filter out posts already in a newsletter (Bug #861 - prevent duplicates)
         if all_posts:
-            used_posts_result = supabase.table("newsletter_posts").select("blog_post_id").execute()
-            used_post_ids = set(p["blog_post_id"] for p in (used_posts_result.data or []))
+            used_post_ids = _get_used_post_ids(supabase, [post["id"] for post in all_posts])
             all_posts = [p for p in all_posts if p["id"] not in used_post_ids]
 
         return all_posts
@@ -580,8 +688,8 @@ async def get_mailchimp_audiences():
         supabase = get_supabase_client()
         if supabase:
             try:
-                setting = supabase.table("settings").select("value").eq("key", "mailchimp_audience_id").single().execute()
-                if setting.data:
+                setting = supabase.table("settings").select("value").eq("key", "mailchimp_audience_id").maybe_single().execute()
+                if setting is not None and setting.data:
                     current_audience_id = setting.data["value"]
             except:
                 pass  # Use default from env
@@ -666,8 +774,7 @@ async def create_newsletter(data: NewsletterCreate):
 
         # Filter out posts already used in other newsletters (Bug #861 - prevent duplicates)
         # Use a fresh query each time to avoid race conditions
-        used_posts_result = supabase.table("newsletter_posts").select("blog_post_id").execute()
-        used_post_ids = set(p["blog_post_id"] for p in (used_posts_result.data or []))
+        used_post_ids = _get_used_post_ids(supabase, data.post_ids)
         filtered_post_ids = [pid for pid in data.post_ids if pid not in used_post_ids]
 
         if not filtered_post_ids:
@@ -684,8 +791,7 @@ async def create_newsletter(data: NewsletterCreate):
         if data.subject:
             subject = data.subject
         else:
-            post_titles_result = supabase.table("blog_posts").select("title").in_("id", data.post_ids).execute()
-            post_titles = [p["title"] for p in (post_titles_result.data or [])]
+            post_titles = _get_ordered_post_titles(supabase, data.post_ids)
             subject = generate_content_driven_subject(post_titles)
 
         # Generate HTML content with subject as headline (Issue #857 fix)
@@ -748,8 +854,8 @@ async def update_newsletter(newsletter_id: str, data: NewsletterUpdate):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get existing newsletter
-        existing = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-        if not existing.data:
+        existing = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+        if existing is None or not existing.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         if existing.data["status"] != "draft":
@@ -805,8 +911,8 @@ async def delete_newsletter(newsletter_id: str):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get existing newsletter
-        existing = supabase.table("newsletters").select("status").eq("id", newsletter_id).single().execute()
-        if not existing.data:
+        existing = supabase.table("newsletters").select("status").eq("id", newsletter_id).maybe_single().execute()
+        if existing is None or not existing.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         if existing.data["status"] not in ["draft", "failed"]:
@@ -835,9 +941,9 @@ async def preview_newsletter(newsletter_id: str):
         if supabase is None:
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        result = supabase.table("newsletters").select("html_content").eq("id", newsletter_id).single().execute()
+        result = supabase.table("newsletters").select("html_content").eq("id", newsletter_id).maybe_single().execute()
 
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         return {"html": result.data["html_content"]}
@@ -864,8 +970,8 @@ async def schedule_newsletter(newsletter_id: str):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get newsletter
-        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-        if not newsletter.data:
+        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+        if newsletter is None or not newsletter.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         nl = newsletter.data
@@ -939,8 +1045,8 @@ async def send_newsletter(newsletter_id: str):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get newsletter
-        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-        if not newsletter.data:
+        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+        if newsletter is None or not newsletter.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         nl = newsletter.data
@@ -1015,8 +1121,8 @@ async def unschedule_newsletter(newsletter_id: str):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get newsletter
-        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-        if not newsletter.data:
+        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+        if newsletter is None or not newsletter.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         nl = newsletter.data
@@ -1065,8 +1171,8 @@ async def retry_newsletter(newsletter_id: str):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get newsletter
-        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-        if not newsletter.data:
+        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+        if newsletter is None or not newsletter.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         nl = newsletter.data
@@ -1118,9 +1224,9 @@ async def queue_articles():
         if existing_newsletters.data:
             # Check if any were created in the last 5 minutes (prevent rapid duplicate creation)
             recent_newsletters = []
-            cutoff_time = datetime.utcnow() - timedelta(minutes=5)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=5)
             for newsletter in existing_newsletters.data:
-                created_time = datetime.fromisoformat(newsletter["created_at"].replace('Z', '+00:00'))
+                created_time = _parse_utc_datetime(newsletter["created_at"])
                 if created_time > cutoff_time:
                     recent_newsletters.append(newsletter)
             
@@ -1140,8 +1246,7 @@ async def queue_articles():
         all_post_ids = [p["id"] for p in all_posts.data]
 
         # Get posts already in newsletters - use a more precise query to avoid race conditions
-        used_posts = supabase.table("newsletter_posts").select("blog_post_id").execute()
-        used_post_ids = set(p["blog_post_id"] for p in (used_posts.data or []))
+        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
 
         # Filter to unused posts
         available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
@@ -1152,8 +1257,7 @@ async def queue_articles():
         # Create newsletter with available posts
         date_str = datetime.now().strftime("%B %d, %Y")
         title = f"Weekly Newsletter - {date_str}"
-        post_titles_result = supabase.table("blog_posts").select("title").in_("id", available_post_ids).execute()
-        post_titles = [p["title"] for p in (post_titles_result.data or [])]
+        post_titles = _get_ordered_post_titles(supabase, available_post_ids)
         subject = generate_content_driven_subject(post_titles)
 
         html_content = generate_newsletter_html(supabase, available_post_ids)
@@ -1271,8 +1375,7 @@ async def publish_now_auto():
         all_post_ids = [p["id"] for p in all_posts.data]
 
         # Get posts already in newsletters
-        used_posts = supabase.table("newsletter_posts").select("blog_post_id").execute()
-        used_post_ids = set(p["blog_post_id"] for p in (used_posts.data or []))
+        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
 
         # Filter to unused posts
         available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
@@ -1283,8 +1386,7 @@ async def publish_now_auto():
         # Create newsletter with available posts
         date_str = datetime.now().strftime("%B %d, %Y")
         title = f"Weekly Newsletter - {date_str}"
-        post_titles_result = supabase.table("blog_posts").select("title").in_("id", available_post_ids).execute()
-        post_titles = [p["title"] for p in (post_titles_result.data or [])]
+        post_titles = _get_ordered_post_titles(supabase, available_post_ids)
         subject = generate_content_driven_subject(post_titles)
 
         html_content = generate_newsletter_html(supabase, available_post_ids)
@@ -1372,15 +1474,15 @@ async def auto_create_newsletter():
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Calculate 3-day cutoff
-        cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
         # Get published posts with blogger_url from last 3 days
         all_posts = supabase.table("blog_posts").select(
             "id"
         ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-            "created_at", cutoff
+            "blogger_published_at", cutoff
         ).order(
-            "created_at", desc=True
+            "blogger_published_at", desc=True
         ).limit(20).execute()
 
         if not all_posts.data:
@@ -1389,8 +1491,7 @@ async def auto_create_newsletter():
         all_post_ids = [p["id"] for p in all_posts.data]
 
         # Get posts already in newsletters
-        used_posts = supabase.table("newsletter_posts").select("blog_post_id").execute()
-        used_post_ids = set(p["blog_post_id"] for p in (used_posts.data or []))
+        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
 
         # Filter to unused posts
         available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
@@ -1401,8 +1502,7 @@ async def auto_create_newsletter():
         # Create newsletter with available posts
         date_str = datetime.now().strftime("%B %d, %Y")
         title = f"Weekly Newsletter - {date_str}"
-        post_titles_result = supabase.table("blog_posts").select("title").in_("id", available_post_ids).execute()
-        post_titles = [p["title"] for p in (post_titles_result.data or [])]
+        post_titles = _get_ordered_post_titles(supabase, available_post_ids)
         subject = generate_content_driven_subject(post_titles)
 
         html_content = generate_newsletter_html(supabase, available_post_ids)
@@ -1452,8 +1552,8 @@ async def sync_newsletter_stats(newsletter_id: str):
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get newsletter
-        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).single().execute()
-        if not newsletter.data:
+        newsletter = supabase.table("newsletters").select("*").eq("id", newsletter_id).maybe_single().execute()
+        if newsletter is None or not newsletter.data:
             raise HTTPException(status_code=404, detail="Newsletter not found")
 
         nl = newsletter.data
@@ -1511,14 +1611,14 @@ async def check_auto_create_newsletter():
             return
 
         # Calculate 3-day cutoff
-        cutoff = (datetime.utcnow() - timedelta(days=3)).isoformat()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
 
         # Get published posts with blogger_url from last 3 days
         all_posts = supabase.table("blog_posts").select(
             "id"
         ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-            "created_at", cutoff
-        ).execute()
+            "blogger_published_at", cutoff
+        ).order("blogger_published_at", desc=True).execute()
 
         if not all_posts.data:
             return
@@ -1526,8 +1626,7 @@ async def check_auto_create_newsletter():
         all_post_ids = [p["id"] for p in all_posts.data]
 
         # Get posts already in newsletters
-        used_posts = supabase.table("newsletter_posts").select("blog_post_id").execute()
-        used_post_ids = set(p["blog_post_id"] for p in (used_posts.data or []))
+        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
 
         # Filter to unused posts
         available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]

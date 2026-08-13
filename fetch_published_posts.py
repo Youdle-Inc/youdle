@@ -38,10 +38,10 @@ def get_supabase_client() -> Optional[Client]:
         Supabase Client instance or None if credentials not set
     """
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
     if not url or not key:
-        print("Error: SUPABASE_URL and SUPABASE_KEY must be set")
+        print("Error: SUPABASE_URL and a server-side Supabase key must be set")
         return None
 
     return create_client(url, key)
@@ -70,22 +70,20 @@ def fetch_published_posts(supabase: Client, week_start: datetime) -> List[Dict[s
     """
     week_start_iso = week_start.isoformat()
 
-    try:
-        result = supabase.table("blog_posts").select(
-            "id, title, category, status, blogger_url, blogger_post_id, "
-            "article_url, image_url, blogger_published_at, created_at, updated_at"
-        ).gte(
-            "blogger_published_at", week_start_iso
-        ).eq(
-            "status", "published"
-        ).not_.is_(
-            "blogger_url", "null"
-        ).execute()
+    # Query errors intentionally propagate so callers can distinguish an
+    # outage from a legitimate week with no published posts.
+    result = supabase.table("blog_posts").select(
+        "id, title, category, status, blogger_url, blogger_post_id, "
+        "article_url, image_url, blogger_published_at, created_at, updated_at"
+    ).gte(
+        "blogger_published_at", week_start_iso
+    ).eq(
+        "status", "published"
+    ).not_.is_(
+        "blogger_url", "null"
+    ).execute()
 
-        return result.data or []
-    except Exception as e:
-        print(f"Error querying blog posts: {e}")
-        return []
+    return result.data or []
 
 
 def write_post_json(post: Dict[str, Any], output_dir: str) -> str:
@@ -149,9 +147,16 @@ def fetch_and_write_posts(output_dir: str = "blog_posts") -> Dict[str, Any]:
         }
 
     week_start = get_week_start_date()
-    print(f"Fetching posts created since: {week_start.isoformat()}")
+    print(f"Fetching posts published since: {week_start.isoformat()}")
 
-    posts = fetch_published_posts(supabase, week_start)
+    try:
+        posts = fetch_published_posts(supabase, week_start)
+    except Exception as error:
+        return {
+            "success": False,
+            "error": f"Could not query published posts: {error}",
+            "week_start": week_start.isoformat(),
+        }
 
     if not posts:
         return {

@@ -48,7 +48,14 @@ class MockSupabaseQuery:
         self._single = True
         return self
 
+    def maybe_single(self):
+        self._single = True
+        return self
+
     def execute(self):
+        if getattr(self, '_single', False) and not self._data:
+            # postgrest-py 2.x returns None for a missing maybe_single row.
+            return None
         result = MagicMock()
         if getattr(self, '_single', False) and self._data:
             result.data = self._data[0] if isinstance(self._data, list) else self._data

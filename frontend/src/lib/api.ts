@@ -137,6 +137,14 @@ export interface BlogPostUpdate {
   category?: 'SHOPPERS' | 'RECALL'
 }
 
+export interface ReviewSubmission {
+  rating: number
+  comment?: string
+  feedback_type: 'general' | 'content' | 'formatting' | 'accuracy' | 'tone'
+  mark_reviewed: boolean
+  submission_id: string
+}
+
 export interface BloggerStatus {
   configured: boolean
   blog_id: string | null
@@ -387,6 +395,13 @@ class ApiClient {
   async updatePostStatus(postId: string, status: string): Promise<any> {
     return this.request(`/api/generate/posts/${postId}/status?status=${status}`, {
       method: 'PATCH',
+    })
+  }
+
+  async submitPostReview(postId: string, review: ReviewSubmission): Promise<any> {
+    return this.request(`/api/generate/posts/${postId}/review`, {
+      method: 'POST',
+      body: JSON.stringify(review),
     })
   }
 

@@ -51,22 +51,28 @@ async def list_jobs(
     """
     List all jobs with optional filtering.
     """
+    allowed_statuses = {"pending", "running", "completed", "failed", "cancelled"}
+    if status and status not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Invalid job status filter")
+
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
 
         # Check if supabase is None
         if supabase is None:
-            return JobListResponse(jobs=[], total=0)
+            raise HTTPException(status_code=503, detail="Database not configured")
 
         reconcile_stale_jobs(supabase)
 
         # Get total count
-        count_query = supabase.table("job_queue").select("id", count="exact")
+        count_query = supabase.table("job_queue").select(
+            "id", count="exact", head=True
+        )
         if status:
             count_query = count_query.eq("status", status)
         count_result = count_query.execute()
-        total = count_result.count if count_result.count else 0
+        total = count_result.count if count_result.count is not None else 0
 
         # Get jobs
         query = supabase.table("job_queue").select("*").order("created_at", desc=True)
@@ -83,6 +89,8 @@ async def list_jobs(
             total=total
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to list jobs: {str(e)}")
 
@@ -96,11 +104,14 @@ async def get_job(job_id: str):
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
 
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
+
         reconcile_stale_jobs(supabase)
         
-        result = supabase.table("job_queue").select("*").eq("id", job_id).single().execute()
+        result = supabase.table("job_queue").select("*").eq("id", job_id).maybe_single().execute()
         
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Job not found")
         
         return result.data
@@ -143,11 +154,14 @@ async def cancel_job(job_id: str):
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
         
         # Check current status
-        job = supabase.table("job_queue").select("status").eq("id", job_id).single().execute()
+        job = supabase.table("job_queue").select("status").eq("id", job_id).maybe_single().execute()
         
-        if not job.data:
+        if job is None or not job.data:
             raise HTTPException(status_code=404, detail="Job not found")
         
         current_status = job.data["status"]
@@ -194,11 +208,14 @@ async def get_job_logs(job_id: str):
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
         
         # Get job to check logs in result
-        result = supabase.table("job_queue").select("*").eq("id", job_id).single().execute()
+        result = supabase.table("job_queue").select("*").eq("id", job_id).maybe_single().execute()
         
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Job not found")
         
         job = result.data

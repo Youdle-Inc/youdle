@@ -24,7 +24,7 @@ from langgraph.graph import StateGraph, START, END
 from zap_exa_ranker import main as search_articles_exa
 from langchain_blog_agent import BlogPostGenerator
 from image_generator import get_image_generator
-from supabase_storage import get_supabase_client
+from supabase_storage import get_supabase_client, get_supabase_storage
 from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
@@ -85,6 +85,7 @@ class BlogPostState(TypedDict):
     
     # Saved file paths
     saved_files: List[str]
+    saved_post_ids: List[Optional[str]]
     db_inserted: int
     persistence_errors: List[str]
     
@@ -151,6 +152,7 @@ def create_initial_state(
         uploaded_urls=[],
         final_posts=[],
         saved_files=[],
+        saved_post_ids=[],
         db_inserted=0,
         persistence_errors=[],
         processed_urls={},
@@ -231,10 +233,14 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
         supabase = get_supabase_client()
         from datetime import timedelta
         cutoff = (datetime.now() - timedelta(days=60)).isoformat()
-        recent_posts = supabase.table("blog_posts").select("source_url").gte("created_at", cutoff).execute()
+        if supabase is None:
+            raise RuntimeError("Supabase is not configured")
+        recent_posts = supabase.table("blog_posts").select("article_url").neq(
+            "article_url", ""
+        ).gte("created_at", cutoff).execute()
         for row in (recent_posts.data or []):
-            if row.get("source_url"):
-                recently_used_urls.add(row["source_url"])
+            if row.get("article_url"):
+                recently_used_urls.add(row["article_url"])
         logs.append(f"Cross-run dedup: {len(recently_used_urls)} URLs from last 60 days")
     except Exception as e:
         logs.append(f"Cross-run dedup check failed (continuing): {str(e)}")
@@ -283,10 +289,10 @@ def load_learning_context_node(state: BlogPostState) -> Dict[str, Any]:
     logs = [f"[{datetime.now().isoformat()}] Loading learning context..."]
     
     try:
-        supabase = get_supabase_client()
-        example_store = ExampleStore(supabase)
-        prompt_refiner = PromptRefiner(supabase)
-        learning_memory = LearningMemory(supabase)
+        storage = get_supabase_storage()
+        example_store = ExampleStore(storage)
+        prompt_refiner = PromptRefiner(storage)
+        learning_memory = LearningMemory(storage)
         
         def load_context_for_category(category: str) -> Dict[str, Any]:
             memory = learning_memory.load_session_memory(category)
@@ -856,7 +862,11 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
     final_posts = state.get("final_posts", [])
 
     if not final_posts:
-        return {"saved_files": [], "logs": logs + ["No posts to save"]}
+        return {
+            "saved_files": [],
+            "saved_post_ids": [],
+            "logs": logs + ["No posts to save"],
+        }
 
     # Ensure output directory exists
     os.makedirs(BLOG_POSTS_DIR, exist_ok=True)
@@ -869,6 +879,7 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
         logs.append(f"  ⚠ Could not connect to Supabase: {str(e)}")
 
     saved_files = []
+    saved_post_ids = []
     db_inserted = 0
     persistence_errors = []
     processed_urls = state.get("processed_urls", {}).copy()
@@ -877,6 +888,9 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
         persistence_errors.append("Supabase was unavailable while saving generated posts")
 
     for post in final_posts:
+        # Keep this list aligned with final_posts so the Blogger step can update
+        # the exact row created here, even when titles are duplicated.
+        saved_post_ids.append(None)
         try:
             # Generate filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -922,8 +936,9 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
             if supabase:
                 try:
                     from uuid import uuid4
+                    database_post_id = str(uuid4())
                     supabase.table("blog_posts").insert({
-                        "id": str(uuid4()),
+                        "id": database_post_id,
                         "title": post.get("title", ""),
                         "html_content": post.get("html", ""),
                         "image_url": post.get("image_url", ""),
@@ -933,6 +948,7 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
                         "job_id": job_id,
                         "created_at": datetime.now().isoformat()
                     }).execute()
+                    saved_post_ids[-1] = database_post_id
                     db_inserted += 1
                 except Exception as db_err:
                     persistence_errors.append(str(db_err))
@@ -952,6 +968,7 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
     
     return {
         "saved_files": saved_files,
+        "saved_post_ids": saved_post_ids,
         "db_inserted": db_inserted,
         "persistence_errors": persistence_errors,
         "processed_urls": processed_urls,
@@ -990,8 +1007,10 @@ def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
         return {"logs": logs}
 
     pushed = 0
+    saved_post_ids = state.get("saved_post_ids", [])
+    job_id = state.get("job_id")
 
-    for post in final_posts:
+    for post_index, post in enumerate(final_posts):
         title = post.get("title", "Untitled")
         html = post.get("html", "")
         category = post.get("category", "SHOPPERS")
@@ -1006,19 +1025,29 @@ def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
             blogger_post_id = result.get("blogger_post_id")
 
             if blogger_post_id:
-                # Find the DB row by title (just inserted by save_posts_node)
-                db_result = supabase.table("blog_posts") \
-                    .select("id") \
-                    .eq("title", title) \
-                    .order("created_at", desc=True) \
-                    .limit(1) \
-                    .execute()
+                database_post_id = (
+                    saved_post_ids[post_index]
+                    if post_index < len(saved_post_ids)
+                    else None
+                )
 
-                if db_result.data:
+                # Legacy callers may not provide saved_post_ids. Limit that
+                # fallback to this generation job before matching by title.
+                if not database_post_id:
+                    query = supabase.table("blog_posts").select("id")
+                    if job_id:
+                        query = query.eq("job_id", job_id)
+                    db_result = query.eq("title", title).order(
+                        "created_at", desc=True
+                    ).limit(1).execute()
+                    if db_result.data:
+                        database_post_id = db_result.data[0]["id"]
+
+                if database_post_id:
                     supabase.table("blog_posts").update({
                         "blogger_post_id": blogger_post_id,
                         "last_synced_at": datetime.now().isoformat()
-                    }).eq("id", db_result.data[0]["id"]).execute()
+                    }).eq("id", database_post_id).execute()
 
             pushed += 1
             logs.append(f"  Created Blogger draft for: {title[:40]}")

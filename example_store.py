@@ -11,7 +11,7 @@ try:
 except ImportError:
     pass
 
-from supabase_storage import get_supabase_client, SupabaseStorage
+from supabase_storage import get_supabase_storage, SupabaseStorage
 
 
 class ExampleStore:
@@ -27,7 +27,11 @@ class ExampleStore:
         Args:
             supabase_client: Optional Supabase client (creates one if not provided)
         """
-        self.client = supabase_client or get_supabase_client()
+        self.client = (
+            supabase_client
+            if supabase_client is not None
+            else get_supabase_storage()
+        )
         self._local_cache: Dict[str, List[Dict]] = {
             "shoppers_good": [],
             "shoppers_bad": [],

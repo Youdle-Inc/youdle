@@ -1,5 +1,7 @@
--- MINIMAL Schema - Run this in Supabase SQL Editor
--- This is the bare minimum needed for the dashboard to work
+-- DEPRECATED MINIMAL SCHEMA
+-- Kept only for historical reference. It omits production constraints,
+-- integrations, and migrations. For a new database use api/schema.sql; for an
+-- existing database apply the numbered files in api/migrations in order.
 
 -- Step 1: Create job_queue table
 CREATE TABLE IF NOT EXISTS job_queue (

@@ -5,7 +5,7 @@ import os
 import sys
 import json
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 
 try:
@@ -31,6 +31,19 @@ from supabase import create_client, Client
 REQUIRED_SHOPPERS = 6
 REQUIRED_RECALL = 1
 REQUIRED_TOTAL = REQUIRED_SHOPPERS + REQUIRED_RECALL  # 7
+
+
+def _parse_database_timestamp(value: str) -> Optional[datetime]:
+    """Parse a Supabase timestamp into an aware UTC datetime."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 # ============================================================================
@@ -61,7 +74,7 @@ def get_week_start_date() -> datetime:
         now = datetime.now(tz)
     else:
         # Fallback: assume UTC and subtract 6 hours for CST approximation
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
 
     # Find the most recent Tuesday
     # weekday(): Monday=0, Tuesday=1, Wednesday=2, Thursday=3, etc.
@@ -97,10 +110,10 @@ def get_supabase_client() -> Optional[Client]:
         Supabase Client instance or None if credentials not set
     """
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
     if not url or not key:
-        print("Error: SUPABASE_URL and SUPABASE_KEY must be set")
+        print("Error: SUPABASE_URL and a server-side Supabase key must be set")
         return None
 
     return create_client(url, key)
@@ -123,19 +136,16 @@ def get_this_weeks_posts(supabase: Client, week_start: datetime) -> List[Dict[st
     """
     week_start_iso = week_start.isoformat()
 
-    try:
-        # Include posts created this week OR published to Blogger this week
-        # This catches older drafts that were published after the week started
-        result = supabase.table("blog_posts").select(
-            "id, title, category, status, blogger_url, blogger_post_id, blogger_published_at, created_at"
-        ).or_(
-            f"created_at.gte.{week_start_iso},blogger_published_at.gte.{week_start_iso}"
-        ).execute()
+    # Include posts created this week OR published to Blogger this week. Query
+    # errors intentionally propagate so an outage cannot masquerade as zero
+    # posts and cancel a valid newsletter run.
+    result = supabase.table("blog_posts").select(
+        "id, title, category, status, blogger_url, blogger_post_id, blogger_published_at, created_at"
+    ).or_(
+        f"created_at.gte.{week_start_iso},blogger_published_at.gte.{week_start_iso}"
+    ).execute()
 
-        return result.data or []
-    except Exception as e:
-        print(f"Error querying blog posts: {e}")
-        return []
+    return result.data or []
 
 
 def check_publish_status(supabase: Optional[Client] = None) -> Dict[str, Any]:
@@ -166,8 +176,13 @@ def check_publish_status(supabase: Optional[Client] = None) -> Dict[str, Any]:
             }
 
     week_start = get_week_start_date()
-    week_start_iso = week_start.isoformat()
-    posts = get_this_weeks_posts(supabase, week_start)
+    try:
+        posts = get_this_weeks_posts(supabase, week_start)
+    except Exception as error:
+        return {
+            "success": False,
+            "error": f"Could not query this week's blog posts: {error}",
+        }
 
     # Count totals
     total_posts = len(posts)
@@ -180,8 +195,12 @@ def check_publish_status(supabase: Optional[Client] = None) -> Dict[str, Any]:
         p for p in posts
         if p.get('status') == 'published'
         and p.get('blogger_url')
-        and p.get('blogger_published_at')
-        and p['blogger_published_at'] >= week_start_iso
+        and (
+            published_at := _parse_database_timestamp(
+                p.get('blogger_published_at')
+            )
+        ) is not None
+        and published_at >= week_start
     ]
 
     # Count by category
@@ -285,6 +304,8 @@ def main():
         print_status_report(status)
 
     # Exit with error code if requirements not met and --exit-code flag is set
+    if not status.get('success', False):
+        sys.exit(1)
     if args.exit_code and not status.get('meets_requirement', False):
         sys.exit(1)
 

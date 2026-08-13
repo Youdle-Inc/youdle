@@ -6,6 +6,12 @@
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
+-- Learning tables do not depend on job_queue, so drop them explicitly when
+-- this new-database-only bootstrap is re-run.
+DROP TABLE IF EXISTS learning_insights CASCADE;
+DROP TABLE IF EXISTS blog_feedback CASCADE;
+DROP TABLE IF EXISTS blog_examples CASCADE;
+
 -- ============================================================================
 -- Job Queue Table (REQUIRED for dashboard)
 -- Tracks generation jobs and their status
@@ -25,6 +31,7 @@ CREATE TABLE job_queue (
 -- Index for faster status queries
 CREATE INDEX idx_job_queue_status ON job_queue(status);
 CREATE INDEX idx_job_queue_started_at ON job_queue(started_at DESC);
+CREATE INDEX idx_job_queue_status_created_at ON job_queue(status, created_at DESC);
 CREATE UNIQUE INDEX job_queue_one_active ON job_queue ((1))
     WHERE status IN ('pending', 'running');
 
@@ -46,6 +53,7 @@ CREATE TABLE blog_posts (
     blogger_post_id TEXT,
     blogger_url TEXT,
     blogger_published_at TIMESTAMPTZ,
+    last_synced_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -55,6 +63,13 @@ CREATE INDEX idx_blog_posts_status ON blog_posts(status);
 CREATE INDEX idx_blog_posts_category ON blog_posts(category);
 CREATE INDEX idx_blog_posts_job_id ON blog_posts(job_id);
 CREATE INDEX idx_blog_posts_created_at ON blog_posts(created_at DESC);
+CREATE INDEX idx_blog_posts_last_synced_at ON blog_posts(last_synced_at DESC);
+CREATE INDEX idx_blog_posts_recent_article_urls
+    ON blog_posts(created_at DESC) INCLUDE (article_url)
+    WHERE article_url <> '';
+CREATE INDEX idx_blog_posts_recent_published
+    ON blog_posts(blogger_published_at DESC)
+    WHERE status = 'published' AND blogger_url IS NOT NULL;
 
 -- ============================================================================
 -- Feedback Table (REQUIRED for review workflow)
@@ -67,12 +82,77 @@ CREATE TABLE feedback (
     rating INT NOT NULL CHECK (rating >= 1 AND rating <= 5),
     comment TEXT,
     feedback_type TEXT DEFAULT 'general' CHECK (feedback_type IN ('general', 'content', 'formatting', 'accuracy', 'tone')),
+    submission_id UUID NOT NULL DEFAULT gen_random_uuid(),
+    marked_reviewed BOOLEAN NOT NULL DEFAULT false,
+    category TEXT CONSTRAINT feedback_category_valid
+        CHECK (category IS NULL OR category IN ('shoppers', 'recall')),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Index for post feedback queries
 CREATE INDEX idx_feedback_post_id ON feedback(post_id);
 CREATE INDEX idx_feedback_rating ON feedback(rating);
+CREATE UNIQUE INDEX idx_feedback_submission_id ON feedback(submission_id);
+CREATE INDEX idx_feedback_category_created_at ON feedback(category, created_at DESC);
+
+-- ============================================================================
+-- Learning Tables
+-- Stores curated examples, detailed review feedback, and learned guidance
+-- ============================================================================
+CREATE TABLE blog_examples (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    original_article_url TEXT NOT NULL,
+    original_article_title TEXT NOT NULL,
+    generated_html TEXT NOT NULL,
+    category TEXT NOT NULL CHECK (category IN ('shoppers', 'recall')),
+    feedback_score INT DEFAULT 0 CHECK (feedback_score BETWEEN 0 AND 5),
+    feedback_comments TEXT DEFAULT '',
+    is_good_example BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_blog_examples_category ON blog_examples(category);
+CREATE INDEX idx_blog_examples_quality
+    ON blog_examples(category, is_good_example, feedback_score DESC);
+
+CREATE TABLE blog_feedback (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    blog_post_id TEXT NOT NULL,
+    feedback_type TEXT NOT NULL CHECK (
+        feedback_type IN ('structure', 'content', 'tone', 'completeness', 'general')
+    ),
+    score INT NOT NULL CHECK (score BETWEEN 1 AND 5),
+    comments TEXT DEFAULT '',
+    approved BOOLEAN DEFAULT false,
+    reviewer_notes TEXT DEFAULT '',
+    category TEXT CONSTRAINT blog_feedback_category_valid
+        CHECK (category IS NULL OR category IN ('shoppers', 'recall')),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_blog_feedback_post_id ON blog_feedback(blog_post_id);
+CREATE INDEX idx_blog_feedback_type_created_at
+    ON blog_feedback(feedback_type, created_at DESC);
+CREATE INDEX idx_blog_feedback_category_created_at
+    ON blog_feedback(category, created_at DESC);
+
+CREATE TABLE learning_insights (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    insight_type TEXT NOT NULL CHECK (
+        insight_type IN (
+            'common_mistake', 'improvement_pattern', 'best_practice',
+            'user_preference', 'general'
+        )
+    ),
+    description TEXT NOT NULL,
+    category TEXT DEFAULT '',
+    frequency INT NOT NULL DEFAULT 1
+        CONSTRAINT learning_insights_frequency_positive CHECK (frequency >= 1),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_learning_insights_lookup
+    ON learning_insights(category, insight_type, frequency DESC);
 
 -- ============================================================================
 -- Newsletters Table (for email campaigns)
@@ -101,6 +181,7 @@ CREATE TABLE newsletters (
 -- Index for faster status queries
 CREATE INDEX idx_newsletters_status ON newsletters(status);
 CREATE INDEX idx_newsletters_created_at ON newsletters(created_at DESC);
+CREATE INDEX idx_newsletters_status_created_at ON newsletters(status, created_at DESC);
 
 -- ============================================================================
 -- Newsletter Posts Junction Table
@@ -110,7 +191,7 @@ CREATE TABLE newsletter_posts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     newsletter_id UUID NOT NULL REFERENCES newsletters(id) ON DELETE CASCADE,
     blog_post_id UUID NOT NULL REFERENCES blog_posts(id) ON DELETE CASCADE,
-    position INTEGER DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0 CHECK (position >= 0),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE(newsletter_id, blog_post_id)
 );
@@ -118,6 +199,8 @@ CREATE TABLE newsletter_posts (
 -- Indexes for junction table
 CREATE INDEX idx_newsletter_posts_newsletter ON newsletter_posts(newsletter_id);
 CREATE INDEX idx_newsletter_posts_blog_post ON newsletter_posts(blog_post_id);
+CREATE UNIQUE INDEX idx_newsletter_posts_position
+    ON newsletter_posts(newsletter_id, position);
 
 -- ============================================================================
 -- Row Level Security (RLS)
@@ -128,6 +211,9 @@ ALTER TABLE blog_posts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 ALTER TABLE newsletters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE newsletter_posts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE blog_examples ENABLE ROW LEVEL SECURITY;
+ALTER TABLE blog_feedback ENABLE ROW LEVEL SECURITY;
+ALTER TABLE learning_insights ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations (adjust for production with proper auth)
 DROP POLICY IF EXISTS "Allow all for job_queue" ON job_queue;
@@ -135,12 +221,18 @@ DROP POLICY IF EXISTS "Allow all for blog_posts" ON blog_posts;
 DROP POLICY IF EXISTS "Allow all for feedback" ON feedback;
 DROP POLICY IF EXISTS "Allow all for newsletters" ON newsletters;
 DROP POLICY IF EXISTS "Allow all for newsletter_posts" ON newsletter_posts;
+DROP POLICY IF EXISTS "Allow all for blog_examples" ON blog_examples;
+DROP POLICY IF EXISTS "Allow all for blog_feedback" ON blog_feedback;
+DROP POLICY IF EXISTS "Allow all for learning_insights" ON learning_insights;
 
 CREATE POLICY "Allow all for job_queue" ON job_queue FOR ALL USING (true);
 CREATE POLICY "Allow all for blog_posts" ON blog_posts FOR ALL USING (true);
 CREATE POLICY "Allow all for feedback" ON feedback FOR ALL USING (true);
 CREATE POLICY "Allow all for newsletters" ON newsletters FOR ALL USING (true);
 CREATE POLICY "Allow all for newsletter_posts" ON newsletter_posts FOR ALL USING (true);
+CREATE POLICY "Allow all for blog_examples" ON blog_examples FOR ALL USING (true);
+CREATE POLICY "Allow all for blog_feedback" ON blog_feedback FOR ALL USING (true);
+CREATE POLICY "Allow all for learning_insights" ON learning_insights FOR ALL USING (true);
 
 -- ============================================================================
 -- Functions and Triggers
@@ -154,6 +246,93 @@ BEGIN
     RETURN NEW;
 END;
 $$ language 'plpgsql';
+
+-- Atomically save dashboard feedback and the optional draft -> reviewed change.
+CREATE OR REPLACE FUNCTION submit_post_review(
+    p_post_id UUID,
+    p_rating INTEGER,
+    p_comment TEXT,
+    p_feedback_type TEXT,
+    p_mark_reviewed BOOLEAN,
+    p_submission_id UUID
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
+DECLARE
+    post_row blog_posts%ROWTYPE;
+    feedback_row feedback%ROWTYPE;
+BEGIN
+    IF p_rating < 1 OR p_rating > 5 THEN
+        RAISE EXCEPTION 'rating must be between 1 and 5' USING ERRCODE = '22023';
+    END IF;
+    IF p_feedback_type NOT IN ('general', 'content', 'formatting', 'accuracy', 'tone') THEN
+        RAISE EXCEPTION 'invalid feedback type' USING ERRCODE = '22023';
+    END IF;
+    IF p_submission_id IS NULL THEN
+        RAISE EXCEPTION 'submission_id is required' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT * INTO post_row
+    FROM blog_posts
+    WHERE id = p_post_id
+    FOR UPDATE;
+
+    IF NOT FOUND THEN
+        RETURN jsonb_build_object('error', 'not_found');
+    END IF;
+
+    SELECT * INTO feedback_row
+    FROM feedback
+    WHERE submission_id = p_submission_id;
+
+    IF FOUND THEN
+        IF feedback_row.post_id <> p_post_id
+           OR feedback_row.rating <> p_rating
+           OR COALESCE(feedback_row.comment, '') <> COALESCE(p_comment, '')
+           OR feedback_row.feedback_type <> p_feedback_type
+           OR feedback_row.marked_reviewed <> p_mark_reviewed THEN
+            RETURN jsonb_build_object('error', 'idempotency_conflict');
+        END IF;
+
+        RETURN jsonb_build_object(
+            'post', to_jsonb(post_row),
+            'feedback', to_jsonb(feedback_row),
+            'replayed', true
+        );
+    END IF;
+
+    IF p_mark_reviewed AND post_row.status <> 'draft' THEN
+        RETURN jsonb_build_object(
+            'error', 'status_conflict',
+            'current_status', post_row.status
+        );
+    END IF;
+
+    IF p_mark_reviewed THEN
+        UPDATE blog_posts
+        SET status = 'reviewed', updated_at = NOW()
+        WHERE id = p_post_id
+        RETURNING * INTO post_row;
+    END IF;
+
+    INSERT INTO feedback (
+        post_id, rating, comment, feedback_type, submission_id, marked_reviewed,
+        category
+    ) VALUES (
+        p_post_id, p_rating, NULLIF(p_comment, ''), p_feedback_type,
+        p_submission_id, p_mark_reviewed, LOWER(post_row.category)
+    )
+    RETURNING * INTO feedback_row;
+
+    RETURN jsonb_build_object(
+        'post', to_jsonb(post_row),
+        'feedback', to_jsonb(feedback_row),
+        'replayed', false
+    );
+END;
+$$;
 
 -- Trigger for newsletters updated_at
 DROP TRIGGER IF EXISTS update_newsletters_updated_at ON newsletters;
@@ -218,6 +397,13 @@ ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow all for settings" ON settings;
 CREATE POLICY "Allow all for settings" ON settings FOR ALL USING (true);
 
+-- Trigger for settings updated_at
+DROP TRIGGER IF EXISTS update_settings_updated_at ON settings;
+CREATE TRIGGER update_settings_updated_at
+    BEFORE UPDATE ON settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================================================
 -- Media Library Table (for uploaded images)
 -- Stores metadata for user-uploaded media files
@@ -257,5 +443,5 @@ CREATE TRIGGER update_media_updated_at
 -- ============================================================================
 DO $$
 BEGIN
-    RAISE NOTICE 'Schema created successfully! Tables: job_queue, blog_posts, feedback, newsletters, newsletter_posts, settings, media';
+    RAISE NOTICE 'Schema created successfully! Core dashboard and learning tables are ready.';
 END $$;

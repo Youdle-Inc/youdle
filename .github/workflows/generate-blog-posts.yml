@@ -59,6 +59,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
         run: |
@@ -68,7 +69,7 @@ jobs:
           echo "GITHUB_REF: $GITHUB_REF"
           echo ""
           missing=false
-          for s in EXA_API_KEY OPENAI_API_KEY GEMINI_API_KEY SUPABASE_URL SUPABASE_KEY IMGBB_API_KEY; do
+          for s in EXA_API_KEY OPENAI_API_KEY GEMINI_API_KEY SUPABASE_URL IMGBB_API_KEY; do
             if [ -z "${!s}" ]; then
               echo "$s: EMPTY"
               missing=true
@@ -76,6 +77,10 @@ jobs:
               echo "$s: SET"
             fi
           done
+          if [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] && [ -z "$SUPABASE_KEY" ]; then
+            echo "SUPABASE_SERVICE_ROLE_KEY (or legacy SUPABASE_KEY): EMPTY"
+            missing=true
+          fi
           if [ "$missing" = "true" ]; then
             echo "One or more required secrets are missing. Failing the job early."
             exit 1
@@ -87,6 +92,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
         run: |

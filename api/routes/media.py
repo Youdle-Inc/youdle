@@ -19,6 +19,12 @@ router = APIRouter()
 
 # Configuration
 ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+MIME_EXTENSIONS = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/webp": "webp",
+}
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 MEDIA_FOLDER = "media"
 
@@ -55,7 +61,9 @@ async def list_media(
             raise HTTPException(status_code=503, detail="Database not configured")
 
         # Get total count
-        count_result = supabase.table("media").select("id", count="exact").execute()
+        count_result = supabase.table("media").select(
+            "id", count="exact", head=True
+        ).execute()
         total = count_result.count if count_result.count is not None else 0
 
         # Get paginated items
@@ -121,7 +129,7 @@ async def upload_media(
 
         # Generate unique filename
         original_filename = file.filename or "upload"
-        ext = original_filename.rsplit(".", 1)[-1] if "." in original_filename else "png"
+        ext = MIME_EXTENSIONS[file.content_type]
         unique_filename = f"{uuid4().hex[:12]}.{ext}"
 
         # Upload to Supabase Storage
@@ -152,10 +160,23 @@ async def upload_media(
             "updated_at": datetime.utcnow().isoformat()
         }
 
-        result = supabase.table("media").insert(media_data).execute()
-
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to save media metadata")
+        try:
+            result = supabase.table("media").insert(media_data).execute()
+            if not result.data:
+                raise RuntimeError("Supabase did not return the saved media row")
+        except Exception as metadata_error:
+            # Compensate for the already-completed object upload so a database
+            # failure cannot leave an undiscoverable public storage object.
+            try:
+                storage.client.storage.from_(storage.bucket).remove(
+                    [upload_result["path"]]
+                )
+            except Exception:
+                pass
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to save media metadata: {metadata_error}",
+            ) from metadata_error
 
         item = result.data[0]
         return MediaItem(
@@ -190,9 +211,9 @@ async def delete_media(media_id: str):
             raise HTTPException(status_code=503, detail="Storage not configured")
 
         # Get media item to find file path
-        result = supabase.table("media").select("*").eq("id", media_id).single().execute()
+        result = supabase.table("media").select("*").eq("id", media_id).maybe_single().execute()
 
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Media not found")
 
         media_item = result.data
@@ -203,8 +224,12 @@ async def delete_media(media_id: str):
             try:
                 storage.client.storage.from_(storage.bucket).remove([file_path])
             except Exception as e:
-                # Log but don't fail - file might already be deleted
-                print(f"Warning: Could not delete file from storage: {e}")
+                # Keep the metadata row so the orphan remains discoverable and
+                # the deletion can be retried safely.
+                raise HTTPException(
+                    status_code=502,
+                    detail="Could not delete the storage object; metadata was retained",
+                ) from e
 
         # Delete from database
         supabase.table("media").delete().eq("id", media_id).execute()
@@ -227,9 +252,9 @@ async def get_media(media_id: str):
         if not supabase:
             raise HTTPException(status_code=503, detail="Database not configured")
 
-        result = supabase.table("media").select("*").eq("id", media_id).single().execute()
+        result = supabase.table("media").select("*").eq("id", media_id).maybe_single().execute()
 
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Media not found")
 
         item = result.data

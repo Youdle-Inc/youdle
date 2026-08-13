@@ -81,10 +81,13 @@ async def get_article(article_id: str):
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
+
+        if supabase is None:
+            raise HTTPException(status_code=503, detail="Database not configured")
         
-        result = supabase.table("articles").select("*").eq("id", article_id).single().execute()
+        result = supabase.table("articles").select("*").eq("id", article_id).maybe_single().execute()
         
-        if not result.data:
+        if result is None or not result.data:
             raise HTTPException(status_code=404, detail="Article not found")
         
         return result.data

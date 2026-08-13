@@ -25,7 +25,6 @@ def check_environment(quiet=False):
     optional_vars = [
         ("GEMINI_API_KEY", "Gemini image generation"),
         ("SUPABASE_URL", "Supabase storage"),
-        ("SUPABASE_KEY", "Supabase storage")
     ]
 
     missing_required = []
@@ -38,6 +37,13 @@ def check_environment(quiet=False):
     for var, description in optional_vars:
         if not os.getenv(var):
             missing_optional.append(f"  - {var}: {description}")
+
+    if not (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
+    ):
+        missing_optional.append(
+            "  - SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_KEY): Supabase storage"
+        )
 
     if missing_required:
         if not quiet:

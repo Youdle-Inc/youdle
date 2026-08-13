@@ -1,15 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Star, Send, Loader2, CheckCircle, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ReviewFormProps {
   postId: string
   postTitle: string
-  onSubmit: (rating: number, comment: string, feedbackType: string) => Promise<void>
-  onApprove?: (rating: number, comment: string, feedbackType: string) => Promise<void>
-  onReject?: (rating: number, comment: string, feedbackType: string) => Promise<void>
+  onSubmit: (rating: number, comment: string, feedbackType: string, submissionId: string) => Promise<boolean>
+  onApprove?: (rating: number, comment: string, feedbackType: string, submissionId: string) => Promise<boolean>
+  onReject?: (rating: number, comment: string, feedbackType: string, submissionId: string) => Promise<boolean>
   onSkip: () => void
   className?: string
 }
@@ -30,11 +30,20 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
   const [isRejecting, setIsRejecting] = useState(false)
+  const submissionId = useRef<string | null>(null)
+
+  const getSubmissionId = () => {
+    if (!submissionId.current) {
+      submissionId.current = crypto.randomUUID()
+    }
+    return submissionId.current
+  }
 
   const resetForm = () => {
     setRating(0)
     setComment('')
     setFeedbackType('general')
+    submissionId.current = null
   }
 
   const handleSubmit = async () => {
@@ -42,8 +51,9 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
     
     setIsSubmitting(true)
     try {
-      await onSubmit(rating, comment, feedbackType)
-      resetForm()
+      if (await onSubmit(rating, comment, feedbackType, getSubmissionId())) {
+        resetForm()
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -54,8 +64,9 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
     
     setIsApproving(true)
     try {
-      await onApprove(rating, comment, feedbackType)
-      resetForm()
+      if (await onApprove(rating, comment, feedbackType, getSubmissionId())) {
+        resetForm()
+      }
     } finally {
       setIsApproving(false)
     }
@@ -66,8 +77,9 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
     
     setIsRejecting(true)
     try {
-      await onReject(rating, comment, feedbackType)
-      resetForm()
+      if (await onReject(rating, comment, feedbackType, getSubmissionId())) {
+        resetForm()
+      }
     } finally {
       setIsRejecting(false)
     }
@@ -177,7 +189,7 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
                 ) : (
                   <CheckCircle className="w-4 h-4" />
                 )}
-                Approve & Review
+                Mark Reviewed
               </button>
             )}
             

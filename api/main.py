@@ -4,6 +4,7 @@ FastAPI server that wraps the Python blog generation pipeline.
 """
 import sys
 import os
+import logging
 from uuid import uuid4
 from datetime import datetime
 from typing import Optional
@@ -18,6 +19,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from job_lifecycle import reconcile_stale_jobs
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Youdle Blog Agent API",
@@ -207,17 +210,11 @@ async def get_stats():
             "timestamp": datetime.utcnow().isoformat()
         }
     except Exception as e:
-        # Return empty stats if database not configured
-        return {
-            "jobs": {"total": 0, "running": 0, "completed": 0, "failed": 0},
-            "posts": {
-                "total": 0, "draft": 0, "reviewed": 0, "published": 0,
-                "by_category": {"shoppers": 0, "recall": 0}
-            },
-            "newsletters": {"total": 0, "draft": 0, "scheduled": 0, "sent": 0},
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        logger.exception("Could not load dashboard statistics")
+        raise HTTPException(
+            status_code=503,
+            detail="Database statistics are temporarily unavailable",
+        ) from e
 
 
 @app.get("/api/newsletter-readiness")
@@ -242,7 +239,10 @@ async def get_newsletter_readiness():
         status = check_publish_status()
 
         if not status.get("success"):
-            return status
+            raise HTTPException(
+                status_code=503,
+                detail=status.get("error", "Newsletter readiness is unavailable"),
+            )
 
         # Calculate next Thursday 9 AM CST
         tz = pytz.timezone('America/Chicago')
@@ -277,12 +277,14 @@ async def get_newsletter_readiness():
             "next_newsletter": next_thursday.isoformat(),
             "timestamp": datetime.utcnow().isoformat()
         }
+    except HTTPException:
+        raise
     except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
-        }
+        logger.exception("Could not calculate newsletter readiness")
+        raise HTTPException(
+            status_code=503,
+            detail="Newsletter readiness is temporarily unavailable",
+        ) from e
 
 
 if __name__ == "__main__":
