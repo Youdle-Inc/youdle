@@ -5,13 +5,13 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 
 ## Structure Validation
 1. HTML structure: Must start with <div> and end with </div>
-2. Image tag: Must have <img src="{{IMAGE_HERE}}" alt="article image"/> at the start
+2. Image tag: The first element inside the outer <div> must be <img src="{{IMAGE_HERE}}" alt="article image"/>
 3. Headline: Must have exactly one <h2> tag (sentence case, not Title Case)
-4. First paragraph: Must begin with "MEMPHIS, Tenn. (Youdle) -"
+4. First paragraph: Must begin with "MEMPHIS, Tenn. (Youdle)" followed by a dash (â€“ preferred; - accepted)
 5. List: Must have a <ul> with <li> items
 
 ## Word Count Validation
-6. Word count: Must be 400-600 words (NOT 250 - this is the new requirement)
+6. Word count: Must be 400-600 words
 
 ## Four-Part Close Validation (ALL FOUR required)
 7. Youdle Search CTA: Must include link to youdle.io with product/search mention

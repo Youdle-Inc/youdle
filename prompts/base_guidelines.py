@@ -71,7 +71,7 @@ ATTRIBUTION_RULES = """
 Example: "Coffee prices jumped nearly 20% in December compared to a year earlier, according to reporting from ABC News."
 
 **URL embedding:** Never show standalone URLs. Embed into source name:
-- Good: "according to reporting from [Taste of Home](URL)"
+- Good: "according to reporting from <a href=\"URL\">Taste of Home</a>"
 - Bad: "For more info, visit https://..."
 """
 
@@ -116,7 +116,7 @@ Every article MUST end with ALL FOUR elements woven naturally into a closing par
    "Read more on the <a href="https://getyoudle.com/blog">Youdle Blog</a> to stay on top of..."
 
 4. **Original Source** - Link to credible source:
-   "<a href="{{original_link}}">Read the full story</a>"
+   "<a href="{original_link}">Read the full story</a>"
 
 **Example closing paragraph:**
 "Use Youdle to find which nearby stores carry these products and compare prices - they vary 50% between brands. Check the Youdle Community to see what other shoppers think before you commit. Read more on the Youdle Blog to stay on top of emerging trends before they hit mainstream shelves. Read the full story from the original source."
@@ -165,7 +165,7 @@ STRUCTURE_RULES = """
 
 **Sentence length:** Mix of short and medium for natural reading pace
 
-**No section headers in body** - write in prose, readers understand structure without headers spelling it out
+**No section headers in body** - write in prose unless a category-specific prompt explicitly requires headings
 
 **No bullet points in body** - use natural paragraph flow (exception: product lists in ul/li for HTML structure)
 

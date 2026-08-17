@@ -21,7 +21,12 @@ except ImportError:
 from langgraph.graph import StateGraph, START, END
 
 # Import existing components
-from zap_exa_ranker import main as search_articles_exa
+from zap_exa_ranker import (
+    canonicalize_article_url,
+    hydrate_article_contents,
+    main as search_articles_exa,
+    truncate_source_text,
+)
 from langchain_blog_agent import BlogPostGenerator
 from image_generator import get_image_generator
 from supabase_storage import get_supabase_client, get_supabase_storage
@@ -29,12 +34,37 @@ from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
+from html_safety import find_unsafe_html_issues
 from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
 
 
 # ============================================================================
 # STATE DEFINITION
 # ============================================================================
+
+def upsert_generated_posts(
+    existing: List[Dict[str, Any]],
+    incoming: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Merge graph results while replacing retries with the same post ID."""
+    merged = list(existing or [])
+    positions = {
+        post.get("post_id"): index
+        for index, post in enumerate(merged)
+        if post.get("post_id")
+    }
+
+    for post in incoming or []:
+        post_id = post.get("post_id")
+        if post_id and post_id in positions:
+            merged[positions[post_id]] = post
+        else:
+            if post_id:
+                positions[post_id] = len(merged)
+            merged.append(post)
+
+    return merged
+
 
 class BlogPostState(TypedDict):
     """
@@ -62,8 +92,8 @@ class BlogPostState(TypedDict):
     shoppers_context: Dict[str, Any]
     recall_context: Dict[str, Any]
     
-    # Generated blog posts (accumulates across iterations)
-    generated_posts: Annotated[List[Dict[str, Any]], operator.add]
+    # Current generated posts; a retry replaces the prior result by post ID.
+    generated_posts: Annotated[List[Dict[str, Any]], upsert_generated_posts]
     
     # Reflection results
     reflection_results: List[Dict[str, Any]]
@@ -111,6 +141,8 @@ BLOG_POSTS_DIR = os.getenv(
 )
 MAX_REGENERATIONS = 2
 MAX_WORKERS = 4
+MAX_RECALL_ROUNDUP_SOURCES = 5
+RECALL_CONTEXT_MAX_CHARS = 18000
 
 
 # ============================================================================
@@ -119,7 +151,38 @@ MAX_WORKERS = 4
 
 def get_url_hash(url: str) -> str:
     """Generate a hash for a URL."""
-    return hashlib.md5(url.encode()).hexdigest()[:12]
+    stable_url = canonicalize_article_url(url) or str(url).strip()
+    return hashlib.md5(stable_url.encode()).hexdigest()[:12]
+
+
+def build_recall_source_context(
+    articles: List[Dict[str, Any]],
+    max_chars: int = RECALL_CONTEXT_MAX_CHARS,
+) -> str:
+    """Build bounded, balanced context for a multi-source recall roundup."""
+    if not articles or max_chars <= 0:
+        return ""
+
+    separator = "\n\n---\n\n"
+    wrappers = []
+    for index, article in enumerate(articles, 1):
+        wrappers.append((
+            f"RECALL {index}: {article.get('title', 'Unknown')}\n",
+            f"\nSource: {article.get('link', '')}",
+        ))
+
+    wrapper_chars = sum(len(prefix) + len(suffix) for prefix, suffix in wrappers)
+    separator_chars = len(separator) * max(0, len(articles) - 1)
+    available_content_chars = max(0, max_chars - wrapper_chars - separator_chars)
+    per_source_chars = available_content_chars // len(articles)
+
+    parts = []
+    for article, (prefix, suffix) in zip(articles, wrappers):
+        source_text = article.get("content") or article.get("description") or ""
+        bounded_text = truncate_source_text(source_text, per_source_chars)
+        parts.append(f"{prefix}{bounded_text}{suffix}")
+
+    return separator.join(parts)[:max_chars]
 
 
 def create_initial_state(
@@ -219,9 +282,12 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
     processed_urls = state.get("processed_urls", {})
     batch_size = state.get("batch_size", 6)
 
-    # Calculate article allocation: recall articles consolidated into 1 roundup + rest shoppers
-    # Gather ALL available recall articles for a comprehensive weekly roundup
-    max_recall = min(25, len(search_results.get("recall_items", []))) if batch_size > 0 else 0
+    # Recall sources are consolidated into one output post. Keep the source
+    # count bounded so every recall can be covered accurately in 400-600 words.
+    max_recall = (
+        min(MAX_RECALL_ROUNDUP_SOURCES, len(search_results.get("recall_items", [])))
+        if batch_size > 0 else 0
+    )
     max_shoppers = max(0, batch_size - 1) if max_recall > 0 else batch_size  # reserve 1 slot for roundup
 
     items = search_results.get("items", [])
@@ -240,7 +306,10 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
         ).gte("created_at", cutoff).execute()
         for row in (recent_posts.data or []):
             if row.get("article_url"):
-                recently_used_urls.add(row["article_url"])
+                recently_used_urls.add(
+                    canonicalize_article_url(row["article_url"])
+                    or row["article_url"]
+                )
         logs.append(f"Cross-run dedup: {len(recently_used_urls)} URLs from last 60 days")
     except Exception as e:
         logs.append(f"Cross-run dedup check failed (continuing): {str(e)}")
@@ -250,10 +319,16 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
 
     def is_not_cached(item):
         url = item.get("link", "")
-        # Cross-run check: skip if URL was used in last 60 days (shoppers only, not recalls)
-        if item.get("category", "").upper() != "RECALL" and url in recently_used_urls:
+        canonical_url = canonicalize_article_url(url)
+        if not canonical_url:
             return False
-        url_hash = get_url_hash(url)
+        # Cross-run check: skip if URL was used in last 60 days (shoppers only, not recalls)
+        if (
+            item.get("category", "").upper() != "RECALL"
+            and canonical_url in recently_used_urls
+        ):
+            return False
+        url_hash = get_url_hash(canonical_url)
         cached = processed_urls.get(url_hash, {})
         return cached.get("date") != today if isinstance(cached, dict) else True
 
@@ -270,7 +345,9 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
         if is_not_cached(item)
     ][:max_recall]
 
-    all_articles = (shoppers_articles + recall_articles)[:batch_size]
+    # batch_size counts output posts: each shopper article is one output and
+    # all recall sources below become one roundup output.
+    all_articles = shoppers_articles + recall_articles
 
     logs.append(f"Selected {len(shoppers_articles)} shoppers + {len(recall_articles)} recall articles (batch_size={batch_size}, total={len(all_articles)})")
 
@@ -304,7 +381,8 @@ def load_learning_context_node(state: BlogPostState) -> Dict[str, Any]:
                 "good_examples": examples.get("good", []),
                 "bad_examples": examples.get("bad", []),
                 "prompt_additions": prompt_additions,
-                "common_mistakes": memory.get("common_mistakes", [])
+                "common_mistakes": memory.get("common_mistakes", []),
+                "successful_patterns": memory.get("successful_patterns", []),
             }
         
         shoppers_context = load_context_for_category("shoppers")
@@ -330,7 +408,8 @@ def load_learning_context_node(state: BlogPostState) -> Dict[str, Any]:
             "good_examples": [],
             "bad_examples": [],
             "prompt_additions": "",
-            "common_mistakes": []
+            "common_mistakes": [],
+            "successful_patterns": [],
         }
         return {
             "shoppers_context": empty_context,
@@ -385,21 +464,17 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         for article in shoppers_articles_to_process:
             context = shoppers_context
 
-            # Inject prompt_additions from feedback into bad_examples so the LLM sees them
-            effective_bad_examples = list(context.get("bad_examples") or [])
-            if context.get("prompt_additions"):
-                effective_bad_examples.insert(0,
-                    f"<!-- CRITICAL FEEDBACK FROM REVIEWS — follow these rules:\n"
-                    f"{context['prompt_additions']}\n-->"
-                )
-
             result = generator.generate_with_reflection(
                 title=article.get("title", ""),
-                content=article.get("content", article.get("description", "")),
+                content=article.get("content") or article.get("description") or "",
                 original_link=article.get("link", ""),
                 category="shoppers",
                 good_examples=context.get("good_examples"),
-                bad_examples=effective_bad_examples
+                bad_examples=context.get("bad_examples"),
+                prompt_additions=context.get("prompt_additions"),
+                common_mistakes=context.get("common_mistakes"),
+                successful_patterns=context.get("successful_patterns"),
+                regeneration_hints=article.get("regeneration_hints"),
             )
             
             result["article"] = article
@@ -415,39 +490,39 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         if recall_articles_to_process:
             logs.append(f"  🔄 Consolidating {len(recall_articles_to_process)} recall articles into weekly roundup...")
             
-            # Build combined content for the roundup
-            combined_title = f"Weekly recall roundup: {len(recall_articles_to_process)} food safety alerts you need to know"
-            combined_content_parts = []
-            combined_links = []
-            for i, article in enumerate(recall_articles_to_process, 1):
-                combined_content_parts.append(
-                    f"RECALL {i}: {article.get('title', 'Unknown')}\n"
-                    f"{article.get('content', article.get('description', ''))}\n"
-                    f"Source: {article.get('link', '')}"
+            # A graph retry already carries the assembled roundup. Reuse it
+            # directly instead of nesting it as a one-item roundup.
+            existing_roundup = (
+                recall_articles_to_process[0]
+                if len(recall_articles_to_process) == 1
+                and recall_articles_to_process[0].get("is_roundup")
+                else None
+            )
+            if existing_roundup:
+                merged_article = dict(existing_roundup)
+                combined_title = merged_article.get("title", "Weekly recall roundup")
+                combined_content = (
+                    merged_article.get("content")
+                    or merged_article.get("description")
+                    or ""
                 )
-                combined_links.append(article.get("link", ""))
-            
-            combined_content = "\n\n---\n\n".join(combined_content_parts)
-            # Use the first recall link as the primary, but all are embedded in content
-            primary_link = combined_links[0] if combined_links else ""
-            
-            # Create a merged article object for tracking
-            merged_article = {
-                "title": combined_title,
-                "content": combined_content,
-                "link": primary_link,
-                "category": "RECALL",
-                "is_roundup": True,
-                "source_articles": recall_articles_to_process,
-            }
-            
-            # Inject prompt_additions from feedback into bad_examples so the LLM sees them
-            effective_recall_bad = list(recall_context.get("bad_examples") or [])
-            if recall_context.get("prompt_additions"):
-                effective_recall_bad.insert(0,
-                    f"<!-- CRITICAL FEEDBACK FROM REVIEWS — follow these rules:\n"
-                    f"{recall_context['prompt_additions']}\n-->"
+                primary_link = merged_article.get("link", "")
+                source_count = len(merged_article.get("source_articles") or []) or 1
+            else:
+                source_count = len(recall_articles_to_process)
+                combined_title = (
+                    f"Weekly recall roundup: {source_count} food safety alerts you need to know"
                 )
+                combined_content = build_recall_source_context(recall_articles_to_process)
+                primary_link = recall_articles_to_process[0].get("link", "")
+                merged_article = {
+                    "title": combined_title,
+                    "content": combined_content,
+                    "link": primary_link,
+                    "category": "RECALL",
+                    "is_roundup": True,
+                    "source_articles": recall_articles_to_process,
+                }
 
             result = generator.generate_with_reflection(
                 title=combined_title,
@@ -455,7 +530,11 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                 original_link=primary_link,
                 category="recall",
                 good_examples=recall_context.get("good_examples"),
-                bad_examples=effective_recall_bad
+                bad_examples=recall_context.get("bad_examples"),
+                prompt_additions=recall_context.get("prompt_additions"),
+                common_mistakes=recall_context.get("common_mistakes"),
+                successful_patterns=recall_context.get("successful_patterns"),
+                regeneration_hints=merged_article.get("regeneration_hints"),
             )
             
             result["article"] = merged_article
@@ -465,7 +544,7 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
             generated_posts.append(result)
             
             status = "✓" if result.get("success") else "✗"
-            logs.append(f"  {status} Weekly Recall Roundup ({len(recall_articles_to_process)} recalls)")
+            logs.append(f"  {status} Weekly Recall Roundup ({source_count} recalls)")
         
         logs.append(f"Generated {len(generated_posts)} blog posts")
         
@@ -815,12 +894,34 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         logs.append(f"Applying {len(proofread_corrections)} proofread correction(s)")
 
     final_posts = []
+    assembly_errors = []
+    final_validator = ReflectionAgent()
 
     for post_id, post in posts_by_id.items():
         # Use proofread version if available, otherwise original
         blog_post = proofread_corrections.get(post_id, post.get("blog_post", ""))
         article = post.get("article", {})
         original_link = article.get("link", "")
+
+        unsafe_issues = find_unsafe_html_issues(blog_post)
+        if unsafe_issues:
+            title = article.get("title", "Unknown")
+            assembly_errors.append(
+                f"Unsafe generated HTML rejected for '{title}': "
+                + "; ".join(unsafe_issues)
+            )
+            logs.append(f"Rejected unsafe generated HTML for: {title[:50]}")
+            continue
+
+        final_validation = final_validator.reflect(blog_post)
+        if not final_validation.get("is_valid", False):
+            title = article.get("title", "Unknown")
+            summary = final_validation.get("summary", "Validation failed")
+            assembly_errors.append(
+                f"Generated HTML failed final validation for '{title}': {summary}"
+            )
+            logs.append(f"Rejected invalid generated HTML for: {title[:50]}")
+            continue
 
         # Get image URL
         image_url = url_lookup.get(post_id, "{IMAGE_HERE}")
@@ -830,6 +931,16 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         final_html = final_html.replace("{IMAGE_HERE}", image_url)
         final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
         final_html = final_html.replace("{original_link}", original_link)
+
+        final_unsafe_issues = find_unsafe_html_issues(final_html)
+        if final_unsafe_issues:
+            title = article.get("title", "Unknown")
+            assembly_errors.append(
+                f"Unsafe assembled HTML rejected for '{title}': "
+                + "; ".join(final_unsafe_issues)
+            )
+            logs.append(f"Rejected unsafe assembled HTML for: {title[:50]}")
+            continue
 
         final_post = {
             "post_id": post_id,
@@ -849,6 +960,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
 
     return {
         "final_posts": final_posts,
+        "errors": assembly_errors,
         "logs": logs
     }
 
@@ -977,6 +1089,55 @@ def save_posts_node(state: BlogPostState) -> Dict[str, Any]:
     }
 
 
+def hydrate_articles_node(state: BlogPostState) -> Dict[str, Any]:
+    """Fetch fuller text for selected articles while failing open to excerpts."""
+    logs = [f"[{datetime.now().isoformat()}] Hydrating selected article content..."]
+    articles = state.get("articles", [])
+
+    if not articles:
+        return {
+            "articles": [],
+            "shoppers_articles": [],
+            "recall_articles": [],
+            "logs": logs + ["No selected articles to hydrate"],
+        }
+
+    try:
+        hydrated = hydrate_article_contents(articles)
+        hydrated_count = sum(
+            1 for article in hydrated
+            if article.get("content") and article.get("content") != article.get("description")
+        )
+        logs.append(f"Hydrated {hydrated_count}/{len(hydrated)} selected articles")
+        if hydrated_count < len(hydrated):
+            logs.append(
+                f"Using discovery excerpts for {len(hydrated) - hydrated_count} article(s)"
+            )
+    except Exception as exc:
+        # Search excerpts remain usable if the follow-up contents request fails.
+        hydrated = []
+        for article in articles:
+            fallback = dict(article)
+            fallback["content"] = (
+                fallback.get("content") or fallback.get("description") or ""
+            )
+            hydrated.append(fallback)
+        logs.append(f"Content hydration failed; using search excerpts: {exc}")
+
+    return {
+        "articles": hydrated,
+        "shoppers_articles": [
+            article for article in hydrated
+            if article.get("category", "").upper() != "RECALL"
+        ],
+        "recall_articles": [
+            article for article in hydrated
+            if article.get("category", "").upper() == "RECALL"
+        ],
+        "logs": logs,
+    }
+
+
 def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
     """
     Node: Push newly saved posts to Blogger as drafts.
@@ -1075,6 +1236,7 @@ def create_blog_post_graph() -> StateGraph:
     # Add nodes
     workflow.add_node("search_articles", search_articles_node)
     workflow.add_node("select_articles", select_articles_node)
+    workflow.add_node("hydrate_articles", hydrate_articles_node)
     workflow.add_node("load_learning_context", load_learning_context_node)
     workflow.add_node("generate_posts", generate_posts_node)
     workflow.add_node("reflect_posts", reflect_posts_node)
@@ -1089,7 +1251,8 @@ def create_blog_post_graph() -> StateGraph:
     # Add edges
     workflow.add_edge(START, "search_articles")
     workflow.add_edge("search_articles", "select_articles")
-    workflow.add_edge("select_articles", "load_learning_context")
+    workflow.add_edge("select_articles", "hydrate_articles")
+    workflow.add_edge("hydrate_articles", "load_learning_context")
     workflow.add_edge("load_learning_context", "generate_posts")
     workflow.add_edge("generate_posts", "reflect_posts")
     

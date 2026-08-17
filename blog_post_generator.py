@@ -214,7 +214,8 @@ class BlogPostOrchestrator:
             "good_examples": examples.get("good", []),
             "bad_examples": examples.get("bad", []),
             "prompt_additions": prompt_additions,
-            "common_mistakes": memory.get("common_mistakes", [])
+            "common_mistakes": memory.get("common_mistakes", []),
+            "successful_patterns": memory.get("successful_patterns", []),
         }
 
     def generate_blog_post(
@@ -237,11 +238,15 @@ class BlogPostOrchestrator:
         # Generate with reflection
         result = self.generator.generate_with_reflection(
             title=article.get("title", ""),
-            content=article.get("description", ""),
+            content=article.get("content") or article.get("description") or "",
             original_link=article.get("link", ""),
             category=category,
             good_examples=learning_context.get("good_examples"),
-            bad_examples=learning_context.get("bad_examples")
+            bad_examples=learning_context.get("bad_examples"),
+            prompt_additions=learning_context.get("prompt_additions"),
+            common_mistakes=learning_context.get("common_mistakes"),
+            successful_patterns=learning_context.get("successful_patterns"),
+            regeneration_hints=article.get("regeneration_hints"),
         )
 
         # Additional reflection using our agent

@@ -98,12 +98,12 @@ class PromptRefiner:
         
         # Common patterns and their fixes
         patterns = {
-            "missing link": "IMPORTANT: Always include the Youdle link and More information link",
+            "missing link": "Include all four required closing links: Youdle Search, Community, Blog, and the original source",
             "wrong structure": "CRITICAL: Follow the exact HTML structure with <div>, <h2>, <p>, <ul>/<li>",
-            "missing image": "Start with <img src=\"{IMAGE_HERE}\" alt=\"article image\"/>",
-            "word count": "Keep content to approximately 250 words",
+            "missing image": "Place <img src=\"{IMAGE_HERE}\" alt=\"article image\"/> first inside the outer <div>",
+            "word count": "Keep content within the required 400-600 word range",
             "memphis": "Begin first paragraph with: MEMPHIS, Tenn. (Youdle) –",
-            "community": "End with: Share your thoughts in the <a href=\"https://www.youdle.io/community\">Youdle Community!</a>",
+            "community": "Include the Youdle Community link naturally within the required four-part closing paragraph",
             "list": "Include a <ul> list with <li> items for key details",
             "headline": "Use a single <h2> headline that is punchy and shopper-centric"
         }
