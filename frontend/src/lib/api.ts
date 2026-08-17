@@ -54,8 +54,8 @@ export interface ServiceHealthCheck {
 
 export interface HealthResponse {
   status: 'healthy' | 'degraded'
-  service: string
-  checks: Record<string, ServiceHealthCheck>
+  service?: string
+  checks?: Record<string, ServiceHealthCheck>
   timestamp: string
 }
 
@@ -325,7 +325,25 @@ class ApiClient {
 
   // Health check
   async healthCheck(): Promise<HealthResponse> {
-    return this.request('/api/health')
+    const health = await this.request<HealthResponse>('/api/health')
+
+    // Backend and frontend deploy independently. Older backend deployments
+    // returned only { status, timestamp }, so normalize that valid response
+    // instead of showing a working API as unavailable.
+    if (!health.checks) {
+      return {
+        ...health,
+        service: health.service || 'Youdle Blog Agent API',
+        checks: {
+          api: {
+            status: 'available',
+            message: 'FastAPI is responding',
+          },
+        },
+      }
+    }
+
+    return health
   }
 
   // Stats

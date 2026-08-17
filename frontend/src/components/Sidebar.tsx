@@ -15,6 +15,7 @@ import {
   PlayCircle
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -30,6 +31,35 @@ const navigation = [
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { overallStatus } = useSystemHealth()
+
+  const statusPresentation = {
+    available: {
+      dotClass: 'bg-green-500',
+      label: 'System online',
+      detail: 'API and database connected',
+    },
+    degraded: {
+      dotClass: 'bg-amber-500',
+      label: 'System degraded',
+      detail: 'Database check failed',
+    },
+    unavailable: {
+      dotClass: 'bg-red-500',
+      label: 'System unavailable',
+      detail: 'API checks failed',
+    },
+    checking: {
+      dotClass: 'bg-yellow-500 animate-pulse',
+      label: 'Checking system',
+      detail: 'Contacting API and database',
+    },
+    unknown: {
+      dotClass: 'bg-stone-400',
+      label: 'Status unknown',
+      detail: 'Live checks unavailable',
+    },
+  }[overallStatus]
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-stone-200">
@@ -78,10 +108,10 @@ export function Sidebar() {
       {/* Status indicator */}
       <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-stone-200">
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-stone-50">
-          <div className="w-2 h-2 rounded-full bg-stone-400" />
-          <span className="text-xs text-stone-600">System status</span>
+          <div className={cn('w-2 h-2 rounded-full', statusPresentation.dotClass)} />
+          <span className="text-xs text-stone-600">{statusPresentation.label}</span>
         </div>
-        <p className="text-xs text-stone-400 mt-2 px-3">See Dashboard for live checks</p>
+        <p className="text-xs text-stone-400 mt-2 px-3">{statusPresentation.detail}</p>
       </div>
     </aside>
   )
