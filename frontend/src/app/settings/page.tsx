@@ -9,7 +9,7 @@ import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 export default function SettingsPage() {
   const [config, setConfig] = useState({
     batchSize: 10,
-    searchDaysBack: 30,
+    searchDaysBack: 7,
     model: 'gpt-4',
     usePlaceholderImages: false,
     useLegacyOrchestrator: false,
@@ -23,7 +23,12 @@ export default function SettingsPage() {
     if (!savedConfig) return
 
     try {
-      setConfig((current) => ({ ...current, ...JSON.parse(savedConfig) }))
+      const saved = JSON.parse(savedConfig)
+      setConfig((current) => ({
+        ...current,
+        ...saved,
+        searchDaysBack: Math.min(7, Math.max(1, Number(saved.searchDaysBack) || 7)),
+      }))
     } catch {
       // Ignore invalid browser preferences and retain safe defaults.
     }
@@ -133,13 +138,13 @@ export default function SettingsPage() {
             <input
               type="number"
               min={1}
-              max={90}
+              max={7}
               value={config.searchDaysBack}
-              onChange={(e) => setConfig({ ...config, searchDaysBack: parseInt(e.target.value) || 30 })}
+              onChange={(e) => setConfig({ ...config, searchDaysBack: parseInt(e.target.value) || 7 })}
               className="w-full px-3 py-2 rounded-lg border border-midnight-300 bg-white text-stone-900 focus:ring-2 focus:ring-youdle-500 focus:border-transparent"
             />
             <p className="mt-1 text-xs text-stone-500">
-              How far back to search for articles
+              Grocery articles are limited to the last seven days
             </p>
           </div>
 

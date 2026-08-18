@@ -382,7 +382,7 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({
         batch_size: config.batch_size ?? 10,
-        search_days_back: config.search_days_back ?? 30,
+        search_days_back: config.search_days_back ?? 7,
         model: config.model ?? 'gpt-4',
         use_placeholder_images: config.use_placeholder_images ?? false,
         use_legacy_orchestrator: config.use_legacy_orchestrator ?? false,

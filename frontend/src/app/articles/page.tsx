@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 
 export default function ArticlesPage() {
   const [batchSize, setBatchSize] = useState(10)
-  const [daysBack, setDaysBack] = useState(30)
+  const [daysBack, setDaysBack] = useState(7)
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null)
   const [searchTrigger, setSearchTrigger] = useState(0)
 
@@ -68,9 +68,9 @@ export default function ArticlesPage() {
             <input
               type="number"
               min={1}
-              max={90}
+              max={7}
               value={daysBack}
-              onChange={(e) => setDaysBack(parseInt(e.target.value) || 30)}
+              onChange={(e) => setDaysBack(parseInt(e.target.value) || 7)}
               className="w-full px-3 py-2 rounded-lg border border-midnight-300 bg-white text-stone-900 focus:ring-2 focus:ring-youdle-500 focus:border-transparent"
             />
           </div>

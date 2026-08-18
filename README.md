@@ -237,8 +237,8 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_URL=your-supabase-url
 SUPABASE_SERVICE_ROLE_KEY=your-server-only-service-role-key
 # SUPABASE_KEY remains a temporary compatibility fallback.
-# Must stay above Vercel's 800-second function limit plus a safety buffer.
-GENERATION_STALE_AFTER_SECONDS=900
+# Must stay above Vercel's 1,800-second function limit plus a safety buffer.
+GENERATION_STALE_AFTER_SECONDS=2100
 # ... other keys
 ```
 
@@ -247,10 +247,11 @@ GENERATION_STALE_AFTER_SECONDS=900
 The API runtime is pinned to Python 3.12 in `.python-version`, which is supported
 by Vercel's current Python runtime.
 
-The API deployment uses an 800-second function limit and therefore requires a
-Vercel Pro or Enterprise project with Fluid Compute. Dashboard generation runs
-are limited to one active job, and normal dashboard polling marks abandoned
-jobs failed after `GENERATION_STALE_AFTER_SECONDS`.
+The API deployment uses a 1,800-second function limit and therefore requires a
+Vercel Pro or Enterprise project with Fluid Compute and support for Vercel's
+extended function duration. Dashboard generation runs are limited to one active
+job, and normal dashboard polling marks abandoned jobs failed after
+`GENERATION_STALE_AFTER_SECONDS` (35 minutes by default).
 
 This is a guardrail for the current FastAPI `BackgroundTasks` implementation,
 not durable execution. A later migration should move generation to Vercel
