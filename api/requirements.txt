@@ -1,6 +1,55 @@
-# Keep a single runtime dependency list at the repository root. This file is
-# retained for existing `cd api && pip install -r requirements.txt` workflows.
--r ../requirements.txt
+# Vercel parses this file directly and does not support `-r ../requirements.txt`.
+# Keep this runtime list synchronized with the repository-root requirements.txt.
 
+# FastAPI server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+pydantic>=2.0.0
+aiofiles>=23.0.0
 
+# Google APIs (Blogger, Gemini)
+google-api-python-client>=2.100.0
+google-auth>=2.23.0
+google-auth-oauthlib>=1.1.0
+# google-genai is the new SDK for Gemini image generation
+google-genai>=1.0.0
 
+# Supabase for storage and database
+supabase>=2.0.0
+
+# LangChain core
+langchain>=0.1.0
+langchain-openai>=0.0.5
+langchain-core>=0.1.0
+langchain-community>=0.0.20
+
+# LangGraph for stateful workflow orchestration
+langgraph>=0.2.0
+
+# OpenAI
+openai>=1.0.0
+
+# Exa AI for article search
+exa_py>=1.0.0
+
+# Mailchimp API
+mailchimp3>=3.0.0
+
+# SendGrid for transactional notification emails
+sendgrid>=6.9.0
+
+# Async HTTP for concurrent operations
+aiohttp>=3.9.0
+
+# Utilities
+python-dotenv>=1.0.0
+httpx>=0.25.0
+requests>=2.31.0
+tenacity>=8.2.0
+pytz>=2024.1
+python-dateutil>=2.8.0
+
+# Spell checking for newsletter subjects
+pyspellchecker>=0.7.0
+pyyaml>=6.0.0
