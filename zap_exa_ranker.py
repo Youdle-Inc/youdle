@@ -7,6 +7,7 @@ import re
 import time
 from datetime import datetime, timezone, timedelta
 from html import unescape
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 try:
     from dotenv import load_dotenv
@@ -34,9 +35,33 @@ RECENT_WINDOW_DAYS = 10
 PROCESSING_SOFT_LIMIT_SEC = 22
 
 # Exa-specific configuration
+def _positive_int_setting(name, default):
+    """Read an optional positive integer setting without breaking startup."""
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+    return value if value > 0 else default
+
+
 EXA_MAX_RESULTS_PER_QUERY = 15
-EXA_CONTENT_MAX_CHARS = 2000
+EXA_CONTENT_MAX_CHARS = _positive_int_setting(
+    "EXA_DISCOVERY_CONTENT_MAX_CHARS",
+    2000,
+)
+EXA_GENERATION_CONTENT_MAX_CHARS = _positive_int_setting(
+    "EXA_GENERATION_CONTENT_MAX_CHARS",
+    6000,
+)
 EXA_SEARCH_DAYS_BACK = 30
+
+SOURCE_OMISSION_MARKER = "\n\n[... source text omitted ...]\n\n"
+TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+}
 
 # Domains for filtering
 RECALL_DOMAINS = ["fda.gov", "fsis.usda.gov"]
@@ -315,6 +340,124 @@ def init_exa_client():
     if not api_key:
         raise ValueError("EXA_API_KEY environment variable is not set")
     return Exa(api_key=api_key)
+
+
+def canonicalize_article_url(url):
+    """Return a stable HTTP(S) URL for content-response matching."""
+    if not isinstance(url, str):
+        return ""
+
+    candidate = url.strip()
+    try:
+        parsed = urlsplit(candidate)
+    except ValueError:
+        return ""
+
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+        return ""
+
+    filtered_query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if not key.lower().startswith("utm_")
+        and key.lower() not in TRACKING_QUERY_KEYS
+    ]
+    return urlunsplit((
+        parsed.scheme.lower(),
+        parsed.netloc.lower(),
+        parsed.path or "/",
+        urlencode(filtered_query),
+        "",
+    ))
+
+
+def truncate_source_text(text, max_chars=EXA_GENERATION_CONTENT_MAX_CHARS):
+    """Clean and bound source text while preserving its beginning and ending."""
+    if not text or max_chars <= 0:
+        return ""
+
+    cleaned = str(text).replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+    if len(cleaned) <= max_chars:
+        return cleaned
+
+    if max_chars <= len(SOURCE_OMISSION_MARKER):
+        return cleaned[:max_chars]
+
+    remaining = max_chars - len(SOURCE_OMISSION_MARKER)
+    head_chars = int(remaining * 0.8)
+    tail_chars = remaining - head_chars
+    return (
+        cleaned[:head_chars].rstrip()
+        + SOURCE_OMISSION_MARKER
+        + cleaned[-tail_chars:].lstrip()
+    )
+
+
+def hydrate_article_contents(
+    articles,
+    exa=None,
+    max_chars=EXA_GENERATION_CONTENT_MAX_CHARS,
+):
+    """Hydrate selected articles with fuller Exa text.
+
+    Discovery excerpts remain untouched in ``description``. Missing or blank
+    content falls back to that excerpt so generation can continue.
+    """
+    hydrated = [dict(article) for article in articles]
+    url_by_key = {}
+    for article in hydrated:
+        original_url = article.get("link", "")
+        canonical_url = canonicalize_article_url(original_url)
+        if not canonical_url:
+            # An invalid source URL must never be interpolated into generated
+            # HTML, even though its discovery excerpt can remain available.
+            article["link"] = ""
+        elif canonical_url not in url_by_key:
+            url_by_key[canonical_url] = original_url.strip()
+
+    if not url_by_key:
+        for article in hydrated:
+            article["content"] = (
+                article.get("content") or article.get("description") or ""
+            )
+        return hydrated
+
+    client = exa or init_exa_client()
+    try:
+        response = client.get_contents(
+            list(url_by_key.values()),
+            text={"max_characters": max_chars},
+        )
+    except Exception:
+        for article in hydrated:
+            article["content"] = truncate_source_text(
+                article.get("content") or article.get("description") or "",
+                max_chars,
+            )
+        return hydrated
+
+    fetched_by_key = {}
+    for result in getattr(response, "results", []) or []:
+        canonical_url = canonicalize_article_url(getattr(result, "url", ""))
+        if canonical_url:
+            fetched_by_key[canonical_url] = result
+
+    for article in hydrated:
+        canonical_url = canonicalize_article_url(article.get("link", ""))
+        fetched = fetched_by_key.get(canonical_url)
+        fetched_text = getattr(fetched, "text", "") if fetched else ""
+        bounded_fetched_text = truncate_source_text(fetched_text, max_chars)
+        article["content"] = bounded_fetched_text or truncate_source_text(
+            article.get("content") or article.get("description") or "",
+            max_chars,
+        )
+        if not article.get("title") and fetched:
+            article["title"] = html_to_text(getattr(fetched, "title", "") or "")
+
+    return hydrated
 
 
 def execute_search(exa, query_config, start_date, end_date):

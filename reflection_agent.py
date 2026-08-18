@@ -5,6 +5,8 @@ import os
 import re
 from typing import Dict, Any, List, Optional
 
+from html_safety import find_unsafe_html_issues
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -28,6 +30,11 @@ class ReflectionAgent:
         "image_tag": {
             "pattern": r'<img[^>]+src=["\'][^"\']*IMAGE_HERE[^"\']*["\'][^>]*>',
             "description": "Must have image tag with {IMAGE_HERE} placeholder"
+        },
+        "news_blog_link": {
+            "pattern": r'<a[^>]+href=["\']https://news\.youdle\.io/?["\'][^>]*>[^<]*Back\s+to\s+News\s+Blog[^<]*</a>',
+            "description": "Must include a Back to News Blog link to news.youdle.io",
+            "flags": re.IGNORECASE
         },
         "h2_headline": {
             "pattern": r"<h2[^>]*>.+</h2>",
@@ -217,6 +224,14 @@ class ReflectionAgent:
             if 'alt=' not in img_tag:
                 issues.append("Image tag missing alt attribute")
 
+        news_blog_link = re.search(
+            r'<a[^>]+href=["\']https://news\.youdle\.io/?["\'][^>]*>[^<]*Back\s+to\s+News\s+Blog[^<]*</a>',
+            html_content,
+            re.IGNORECASE,
+        )
+        if img_match and news_blog_link and news_blog_link.start() > img_match.start():
+            issues.append("Back to News Blog link must appear above the article image")
+
         # Check for duplicate headline text in body (Issue: headline appearing twice)
         h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', html_content, re.DOTALL)
         if h2_match:
@@ -231,6 +246,8 @@ class ReflectionAgent:
         # Check for forbidden "subscribe" / "subscription" language
         if re.search(r'\bsubscri(be|ption|bing)\b', html_content, re.IGNORECASE):
             issues.append("Contains 'subscribe/subscription' — Youdle Blog is a landing page, not a subscription")
+
+        issues.extend(find_unsafe_html_issues(html_content))
 
         return issues
     
@@ -350,23 +367,10 @@ class ReflectionAgent:
         Returns:
             True if regeneration is recommended
         """
-        # Regenerate if structure is invalid
-        if not reflection_result["structure"]["is_valid"]:
-            return True
-        
-        # Regenerate if there are serious common mistakes
-        serious_mistakes = [
-            m for m in reflection_result["common_mistakes"]
-            if "placeholder" in m.lower() or "empty" in m.lower()
-        ]
-        if serious_mistakes:
-            return True
-
-        # Regenerate if there are spelling errors
-        if reflection_result.get("spelling_issues"):
-            return True
-
-        return False
+        # The reflection result already combines structure, the canonical
+        # 400-600 word range, deterministic mistakes, and spelling. Keep the
+        # retry decision aligned with that single validity contract.
+        return not reflection_result.get("is_valid", False)
     
     def get_regeneration_hints(
         self,

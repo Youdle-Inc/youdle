@@ -200,7 +200,9 @@ class ImageGenerator:
         Issue #859: This replaces generic category themes with content-specific themes.
         """
         title = article.get("title", "").lower()
-        content = article.get("content", article.get("description", "")).lower()
+        content = (
+            article.get("content") or article.get("description") or ""
+        ).lower()
         category = article.get("category", "").upper()
         
         # Food/product-specific keywords to look for

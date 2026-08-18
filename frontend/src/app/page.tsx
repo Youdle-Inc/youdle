@@ -9,7 +9,8 @@ import {
   ShoppingCart,
   AlertOctagon
 } from 'lucide-react'
-import { API_BASE_URL, api, HealthResponse, SystemStats } from '@/lib/api'
+import { API_BASE_URL, api } from '@/lib/api'
+import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 import { StatsCard } from '@/components/StatsCard'
 import { RunStatus } from '@/components/RunStatus'
 import { QuickActions } from '@/components/QuickActions'
@@ -20,6 +21,17 @@ import { formatNumber } from '@/lib/utils'
 export default function DashboardPage() {
   const queryClient = useQueryClient()
 
+  const {
+    stats,
+    statsLoading,
+    statsUnavailable,
+    refetchStats,
+    healthLoading,
+    healthRequestFailed,
+    apiCheck,
+    supabaseCheck,
+  } = useSystemHealth({ includeStats: true })
+
   // Cancel job mutation
   const cancelMutation = useMutation({
     mutationFn: (jobId: string) => api.cancelJob(jobId),
@@ -27,18 +39,6 @@ export default function DashboardPage() {
       queryClient.invalidateQueries({ queryKey: ['recentJobs'] })
       queryClient.invalidateQueries({ queryKey: ['stats'] })
     },
-  })
-
-  // Fetch system stats
-  const {
-    data: stats,
-    isLoading: statsLoading,
-    isError: statsRequestFailed,
-    refetch: refetchStats,
-  } = useQuery<SystemStats>({
-    queryKey: ['stats'],
-    queryFn: () => api.getStats(),
-    refetchInterval: 30000, // Refresh every 30 seconds
   })
 
   // Fetch recent jobs
@@ -61,23 +61,13 @@ export default function DashboardPage() {
     refetchInterval: 10000, // Refresh every 10 seconds
   })
 
-  const {
-    data: health,
-    isLoading: healthLoading,
-    isError: healthRequestFailed,
-  } = useQuery<HealthResponse>({
-    queryKey: ['health'],
-    queryFn: () => api.healthCheck(),
-    refetchInterval: 30000,
-    retry: 1,
-  })
-
-  const statsUnavailable = statsRequestFailed || Boolean(stats?.error)
   const activeJob = jobsData?.jobs?.find(
     (job) => job.status === 'pending' || job.status === 'running'
   )
-  const apiAvailable = health?.checks?.api?.status === 'available'
-  const supabaseAvailable = health?.checks?.supabase?.status === 'available'
+  const apiAvailable = apiCheck?.status === 'available'
+  const supabaseAvailable = supabaseCheck?.status === 'available'
+  const apiChecking = !apiCheck && healthLoading
+  const supabaseChecking = !supabaseCheck && (healthLoading || statsLoading)
 
   const handleSearchPreview = () => {
     window.location.href = '/articles'
@@ -203,27 +193,41 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="flex items-center gap-3 p-3 rounded-xl bg-midnight-50">
             <div className={`w-3 h-3 rounded-full ${
-              healthLoading ? 'bg-yellow-500' : apiAvailable ? 'bg-green-500' : 'bg-red-500'
+              apiChecking
+                ? 'bg-yellow-500'
+                : apiAvailable
+                  ? 'bg-green-500'
+                  : apiCheck?.status === 'unavailable'
+                    ? 'bg-red-500'
+                    : 'bg-stone-400'
             }`} />
             <div>
               <p className="text-sm font-medium text-stone-900">FastAPI Backend</p>
               <p className="text-xs text-stone-500">
-                {healthRequestFailed ? 'Unavailable' : healthLoading ? 'Checking…' : API_BASE_URL}
+                {apiChecking
+                  ? 'Checking…'
+                  : apiAvailable
+                    ? API_BASE_URL
+                    : apiCheck?.message || (healthRequestFailed ? 'Unavailable' : 'Status not reported')}
               </p>
             </div>
           </div>
           <div className="flex items-center gap-3 p-3 rounded-xl bg-midnight-50">
             <div className={`w-3 h-3 rounded-full ${
-              healthLoading ? 'bg-yellow-500' : supabaseAvailable ? 'bg-green-500' : 'bg-red-500'
+              supabaseChecking
+                ? 'bg-yellow-500'
+                : supabaseAvailable
+                  ? 'bg-green-500'
+                  : supabaseCheck?.status === 'unavailable'
+                    ? 'bg-red-500'
+                    : 'bg-stone-400'
             }`} />
             <div>
               <p className="text-sm font-medium text-stone-900">Supabase</p>
               <p className="text-xs text-stone-500">
-                {healthRequestFailed
-                  ? 'Not checked'
-                  : healthLoading
-                    ? 'Checking…'
-                    : health?.checks?.supabase?.message || 'Not checked'}
+                {supabaseChecking
+                  ? 'Checking…'
+                  : supabaseCheck?.message || 'Status not reported'}
               </p>
             </div>
           </div>

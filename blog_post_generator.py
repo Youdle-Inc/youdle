@@ -40,6 +40,7 @@ from example_store import ExampleStore, retrieve_similar_examples
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory, load_learning_memory
+from blog_post_html import ensure_news_blog_back_link, ensure_newsletter_signup_block
 
 # ============================================================================
 # CONFIGURATION
@@ -214,7 +215,8 @@ class BlogPostOrchestrator:
             "good_examples": examples.get("good", []),
             "bad_examples": examples.get("bad", []),
             "prompt_additions": prompt_additions,
-            "common_mistakes": memory.get("common_mistakes", [])
+            "common_mistakes": memory.get("common_mistakes", []),
+            "successful_patterns": memory.get("successful_patterns", []),
         }
 
     def generate_blog_post(
@@ -237,11 +239,15 @@ class BlogPostOrchestrator:
         # Generate with reflection
         result = self.generator.generate_with_reflection(
             title=article.get("title", ""),
-            content=article.get("description", ""),
+            content=article.get("content") or article.get("description") or "",
             original_link=article.get("link", ""),
             category=category,
             good_examples=learning_context.get("good_examples"),
-            bad_examples=learning_context.get("bad_examples")
+            bad_examples=learning_context.get("bad_examples"),
+            prompt_additions=learning_context.get("prompt_additions"),
+            common_mistakes=learning_context.get("common_mistakes"),
+            successful_patterns=learning_context.get("successful_patterns"),
+            regeneration_hints=article.get("regeneration_hints"),
         )
 
         # Additional reflection using our agent
@@ -319,12 +325,18 @@ class BlogPostOrchestrator:
         """
         html = blog_post
 
+        # Keep the navigation block consistent in the legacy generation path.
+        html = ensure_news_blog_back_link(html)
+
         # Replace image placeholder
         html = html.replace("{IMAGE_HERE}", image_url)
         html = html.replace("{{IMAGE_HERE}}", image_url)
 
         # Replace link placeholder
         html = html.replace("{original_link}", original_link)
+
+        # The signup form is a deterministic app-owned block, not LLM output.
+        html = ensure_newsletter_signup_block(html)
 
         return html
 

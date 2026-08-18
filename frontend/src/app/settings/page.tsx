@@ -1,10 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
 import { Settings, Save, RefreshCw, Server, Key } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { API_BASE_URL, api, HealthResponse } from '@/lib/api'
+import { API_BASE_URL } from '@/lib/api'
+import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 
 export default function SettingsPage() {
   const [config, setConfig] = useState({
@@ -29,20 +29,36 @@ export default function SettingsPage() {
     }
   }, [])
 
-  const { data: health, isLoading: healthLoading, isError: healthFailed } = useQuery<HealthResponse>({
-    queryKey: ['health'],
-    queryFn: () => api.healthCheck(),
-    refetchInterval: 30000,
-    retry: 1,
-  })
+  const {
+    health,
+    healthLoading,
+    healthRequestFailed,
+    statsLoading,
+    apiCheck,
+    supabaseCheck,
+  } = useSystemHealth()
 
   const serviceStatus = (key: string) => {
-    if (healthLoading) return { status: 'checking', label: 'Checking…' }
-    if (healthFailed) return { status: 'unavailable', label: 'Health check unavailable' }
-    const check = health?.checks?.[key]
+    const check = key === 'api'
+      ? apiCheck
+      : key === 'supabase'
+        ? supabaseCheck
+        : health?.checks?.[key]
+
+    if (check) {
+      return { status: check.status, label: check.message }
+    }
+
+    const fallbackIsLoading = (key === 'api' || key === 'supabase') && statsLoading
+    if (healthLoading || fallbackIsLoading) {
+      return { status: 'checking', label: 'Checking…' }
+    }
+
     return {
-      status: check?.status || 'unknown',
-      label: check?.message || 'Not checked',
+      status: 'unknown',
+      label: healthRequestFailed
+        ? 'Health details unavailable'
+        : 'Not reported by this backend version',
     }
   }
 
@@ -203,7 +219,9 @@ export default function SettingsPage() {
                     ? 'bg-green-500'
                     : service.status === 'checking'
                       ? 'bg-yellow-500'
-                      : 'bg-red-500'
+                      : service.status === 'unavailable' || service.status === 'not_configured'
+                        ? 'bg-red-500'
+                        : 'bg-stone-400'
                 )} />
                 <div>
                   <p className="text-sm font-medium text-stone-900">
