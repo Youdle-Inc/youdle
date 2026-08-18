@@ -40,6 +40,7 @@ from example_store import ExampleStore, retrieve_similar_examples
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory, load_learning_memory
+from blog_post_html import ensure_news_blog_back_link, ensure_newsletter_signup_block
 
 # ============================================================================
 # CONFIGURATION
@@ -324,12 +325,18 @@ class BlogPostOrchestrator:
         """
         html = blog_post
 
+        # Keep the navigation block consistent in the legacy generation path.
+        html = ensure_news_blog_back_link(html)
+
         # Replace image placeholder
         html = html.replace("{IMAGE_HERE}", image_url)
         html = html.replace("{{IMAGE_HERE}}", image_url)
 
         # Replace link placeholder
         html = html.replace("{original_link}", original_link)
+
+        # The signup form is a deterministic app-owned block, not LLM output.
+        html = ensure_newsletter_signup_block(html)
 
         return html
 

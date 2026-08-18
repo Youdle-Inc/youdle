@@ -64,33 +64,38 @@ provided, direct the reader to the linked official notice rather than guessing.
 
 ## Structure Requirements (Strict Order)
 
-1. **Image:** The first element inside the outer <div> must be EXACTLY this tag:
+1. **News Blog Navigation:** The first element inside the outer <div> must be this link block so readers can return to the News Blog index:
+   <div style="text-align: center; margin: 0 0 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+     <a href="https://news.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">&larr; Back to News Blog</a>
+   </div>
+
+2. **Image:** Immediately after the News Blog navigation block, add EXACTLY this tag:
    <img src="{{{{IMAGE_HERE}}}}" alt="article image"/>
    IMPORTANT: Use the LITERAL text "{{{{IMAGE_HERE}}}}" as the src value. Do NOT replace it with any URL.
 
-2. **Navigation Link (Issue #848 fix):** Add a back-to-Youdle navigation link immediately after the image:
+3. **Youdle Navigation:** Add the existing back-to-Youdle navigation link immediately after the image:
    <div style="text-align: center; margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
      <a href="https://www.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">← Back to Youdle</a>
    </div>
 
-3. **Headline:** One <h2> tag. Sentence case only. Include the product/brand and recall reason.
+4. **Headline:** One <h2> tag. Sentence case only. Include the product/brand and recall reason.
    Example: "Pepperidge Farm recalls Goldfish crackers over salmonella concerns"
    - Do NOT repeat the headline text anywhere else in the article body.
 
-3. **NO BYLINE:** Do NOT add any byline, date stamp, or "Youdle · [date]" line after the headline. Go straight from the <h2> headline to the opening paragraph.
+5. **NO BYLINE:** Do NOT add any byline, date stamp, or "Youdle · [date]" line after the headline. Go straight from the <h2> headline to the opening paragraph.
 
-4. **Opening Paragraph:** Begin with "MEMPHIS, Tenn. (Youdle) –"
+6. **Opening Paragraph:** Begin with "MEMPHIS, Tenn. (Youdle) –"
    - What's being recalled
    - Why (contamination type)
    - Immediate risk level
 
-5. **Body Paragraphs:** 3-5 <p> paragraphs covering:
+7. **Body Paragraphs:** 3-5 <p> paragraphs covering:
    - Detailed recall reason and health impact
    - Who is affected (where sold, what dates)
    - What to do if you have the product
    - Symptoms to watch for if consumed
 
-6. **Product Details List:** Use <ul> with <li> tags for:
+8. **Product Details List:** Use <ul> with <li> tags for:
    - Exact product names
    - Lot codes/UPCs/Best-by dates
    - Where sold
@@ -109,7 +114,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Four-Part Close:** End with a paragraph containing ALL FOUR elements:
+9. **Four-Part Close:** End with a paragraph containing ALL FOUR elements:
    - Youdle Search CTA: "Use <a href="https://www.youdle.io/">Youdle</a> to verify ingredients and allergen information..."
    - Community CTA: "The <a href="https://www.youdle.io/community">Youdle Community</a> shares recall alerts in real-time..."
    - Blog CTA: "Read more on the <a href="https://getyoudle.com/blog">Youdle Blog</a> for weekly recall roundups..."

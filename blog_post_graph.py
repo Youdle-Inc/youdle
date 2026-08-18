@@ -35,6 +35,7 @@ from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues
+from blog_post_html import ensure_news_blog_back_link, ensure_newsletter_signup_block
 from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
 
 
@@ -900,6 +901,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     for post_id, post in posts_by_id.items():
         # Use proofread version if available, otherwise original
         blog_post = proofread_corrections.get(post_id, post.get("blog_post", ""))
+        blog_post = ensure_news_blog_back_link(blog_post)
         article = post.get("article", {})
         original_link = article.get("link", "")
 
@@ -927,7 +929,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         image_url = url_lookup.get(post_id, "{IMAGE_HERE}")
 
         # Replace placeholders
-        final_html = blog_post
+        final_html = ensure_newsletter_signup_block(blog_post)
         final_html = final_html.replace("{IMAGE_HERE}", image_url)
         final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
         final_html = final_html.replace("{original_link}", original_link)

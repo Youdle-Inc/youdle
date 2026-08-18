@@ -9,6 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.caches import InMemoryCache
 from langchain_core.globals import set_llm_cache
+from blog_post_html import ensure_news_blog_back_link
 
 try:
     from dotenv import load_dotenv
@@ -319,6 +320,7 @@ class BlogPostGenerator:
                 successful_patterns=successful_patterns,
                 regeneration_hints=retry_hints,
             )
+            blog_post = ensure_news_blog_back_link(blog_post)
             
             # Reflect on the generated post
             reflection = self.reflect_on_post(blog_post)

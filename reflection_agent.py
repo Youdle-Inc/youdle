@@ -31,6 +31,11 @@ class ReflectionAgent:
             "pattern": r'<img[^>]+src=["\'][^"\']*IMAGE_HERE[^"\']*["\'][^>]*>',
             "description": "Must have image tag with {IMAGE_HERE} placeholder"
         },
+        "news_blog_link": {
+            "pattern": r'<a[^>]+href=["\']https://news\.youdle\.io/?["\'][^>]*>[^<]*Back\s+to\s+News\s+Blog[^<]*</a>',
+            "description": "Must include a Back to News Blog link to news.youdle.io",
+            "flags": re.IGNORECASE
+        },
         "h2_headline": {
             "pattern": r"<h2[^>]*>.+</h2>",
             "description": "Must have exactly one <h2> headline"
@@ -218,6 +223,14 @@ class ReflectionAgent:
             img_tag = img_match.group()
             if 'alt=' not in img_tag:
                 issues.append("Image tag missing alt attribute")
+
+        news_blog_link = re.search(
+            r'<a[^>]+href=["\']https://news\.youdle\.io/?["\'][^>]*>[^<]*Back\s+to\s+News\s+Blog[^<]*</a>',
+            html_content,
+            re.IGNORECASE,
+        )
+        if img_match and news_blog_link and news_blog_link.start() > img_match.start():
+            issues.append("Back to News Blog link must appear above the article image")
 
         # Check for duplicate headline text in body (Issue: headline appearing twice)
         h2_match = re.search(r'<h2[^>]*>(.*?)</h2>', html_content, re.DOTALL)

@@ -20,6 +20,27 @@ UNSAFE_TAGS = {
 }
 URL_ATTRIBUTES = {"href", "src", "action", "formaction", "xlink:href"}
 UNSAFE_URL_SCHEMES = ("javascript:", "data:", "vbscript:", "file:")
+NEWSLETTER_EMBED_URL = "https://www.youdle.io/newsletter-embed"
+NEWSLETTER_IFRAME_SANDBOX = {"allow-forms", "allow-scripts", "allow-same-origin"}
+
+
+def _is_allowed_newsletter_iframe(
+    attrs: List[Tuple[str, Optional[str]]],
+) -> bool:
+    """Allow only the app-owned newsletter form inserted by our post-processor."""
+    normalized_attrs = {
+        name.casefold(): unescape(value or "").strip()
+        for name, value in attrs
+    }
+    if set(normalized_attrs) != {"src", "title", "loading", "sandbox", "style"}:
+        return False
+    if normalized_attrs["src"] != NEWSLETTER_EMBED_URL:
+        return False
+    if normalized_attrs["title"] != "Subscribe to the Youdle Newsletter":
+        return False
+    if normalized_attrs["loading"].casefold() != "lazy":
+        return False
+    return set(normalized_attrs["sandbox"].casefold().split()) == NEWSLETTER_IFRAME_SANDBOX
 
 
 class _GeneratedHTMLSafetyParser(HTMLParser):
@@ -47,7 +68,10 @@ class _GeneratedHTMLSafetyParser(HTMLParser):
         attrs: List[Tuple[str, Optional[str]]],
     ) -> None:
         normalized_tag = tag.casefold()
-        if normalized_tag in UNSAFE_TAGS:
+        if normalized_tag == "iframe":
+            if not _is_allowed_newsletter_iframe(attrs):
+                self.issues.append(f"Unsafe HTML tag: <{tag}>")
+        elif normalized_tag in UNSAFE_TAGS:
             self.issues.append(f"Unsafe HTML tag: <{tag}>")
 
         for name, value in attrs:

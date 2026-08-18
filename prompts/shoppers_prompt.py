@@ -41,37 +41,42 @@ Youdle has four core features you should naturally reference:
 
 ## Structure Requirements (Strict Order)
 
-1. **Image:** The first element inside the outer <div> must be EXACTLY this tag:
+1. **News Blog Navigation:** The first element inside the outer <div> must be this link block so readers can return to the News Blog index:
+   <div style="text-align: center; margin: 0 0 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+     <a href="https://news.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">&larr; Back to News Blog</a>
+   </div>
+
+2. **Image:** Immediately after the News Blog navigation block, add EXACTLY this tag:
    <img src="{{{{IMAGE_HERE}}}}" alt="article image"/>
    IMPORTANT: Use the LITERAL text "{{{{IMAGE_HERE}}}}" as the src value. Do NOT replace it with any URL.
 
-2. **Navigation Link (Issue #848 fix):** Add a back-to-Youdle navigation link immediately after the image:
+3. **Youdle Navigation:** Add the existing back-to-Youdle navigation link immediately after the image:
    <div style="text-align: center; margin: 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
      <a href="https://www.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">← Back to Youdle</a>
    </div>
 
-3. **Headline:** One <h2> tag using Zeigarnik gap formula. Sentence case only.
+4. **Headline:** One <h2> tag using Zeigarnik gap formula. Sentence case only.
    - IMPORTANT: The headline must be UNIQUE to this specific article's topic. Never reuse generic headlines like "This week in grocery news" or "Youdle Weekly."
    - The headline should reference the specific subject matter (e.g. "Ground beef prices skyrocketing — here's what smart shoppers are doing").
    - NEVER repeat the headline text anywhere else in the article body. The <h2> appears exactly once.
 
-3. **NO BYLINE:** Do NOT add any byline, date stamp, or "Youdle · [date]" line after the headline. Go straight from the <h2> headline to the opening paragraph.
+5. **NO BYLINE:** Do NOT add any byline, date stamp, or "Youdle · [date]" line after the headline. Go straight from the <h2> headline to the opening paragraph.
 
-4. **Opening Paragraph:** Begin with "MEMPHIS, Tenn. (Youdle) –"
+6. **Opening Paragraph:** Begin with "MEMPHIS, Tenn. (Youdle) –"
    - Start with "you" (speak TO reader)
    - Establish the trend/reality
    - Credit the source
    - Create immediate relevance
 
-5. **Body Paragraphs:** 3-5 <p> paragraphs
+7. **Body Paragraphs:** 3-5 <p> paragraphs
    - Each paragraph has a PURPOSE (not filler)
    - Use second-person "you" language
    - Include specific numbers when possible
    - Embed source URLs naturally into text
 
-6. **Product List:** Use <ul> with <li> tags for key details, product names, or tips
+8. **Product List:** Use <ul> with <li> tags for key details, product names, or tips
 
-7. **Four-Part Close:** End with a paragraph containing ALL FOUR elements:
+9. **Four-Part Close:** End with a paragraph containing ALL FOUR elements:
    - Youdle Search CTA: "Use <a href="https://www.youdle.io/">Youdle</a> to find/compare..."
    - Community CTA: "Check the <a href="https://www.youdle.io/community">Youdle Community</a>..."
    - Blog CTA: "Read more on the <a href="https://getyoudle.com/blog">Youdle Blog</a>..."
@@ -94,6 +99,7 @@ Youdle has four core features you should naturally reference:
 
 **Quality Check Before Output:**
 - Does the headline create a Zeigarnik gap?
+- Is the Back to News Blog link immediately above the image?
 - Is every factual claim attributed to a credible source?
 - Are URLs embedded into words, not standalone?
 - Does the closing include ALL FOUR required elements?

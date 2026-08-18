@@ -8,6 +8,13 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableLambda
 
 from html_safety import find_unsafe_html_issues
+from blog_post_html import (
+    NEWS_BLOG_BACK_LINK_HTML,
+    NEWSLETTER_EMBED_URL,
+    NEWSLETTER_SIGNUP_BLOCK_HTML,
+    ensure_news_blog_back_link,
+    ensure_newsletter_signup_block,
+)
 from langchain_blog_agent import BlogPostGenerator, EDITORIAL_SYSTEM_PROMPT
 from prompt_refiner import PromptRefiner
 from prompts import RECALL_BLOG_PROMPT, SHOPPERS_BLOG_PROMPT
@@ -131,6 +138,61 @@ def test_rendered_prompt_substitutes_source_url_and_preserves_image_placeholder(
     assert f"<source_url>{source_url}</source_url>" in rendered
     assert "{original_link}" not in rendered
     assert '{IMAGE_HERE}' in rendered
+    assert 'href="https://news.youdle.io/"' in rendered
+    assert "Back to News Blog" in rendered
+    assert rendered.index("Back to News Blog") < rendered.index('{IMAGE_HERE}')
+
+
+def test_news_blog_back_link_is_canonical_above_image_and_idempotent():
+    html = """<div>
+<img src="{IMAGE_HERE}" alt="article image"/>
+<h2>Headline</h2>
+<div><a href="https://news.youdle.io/">Back to News Blog</a></div>
+</div>"""
+
+    updated = ensure_news_blog_back_link(html)
+
+    assert updated.count("https://news.youdle.io/") == 1
+    assert updated.count("Back to News Blog") == 1
+    assert NEWS_BLOG_BACK_LINK_HTML in updated
+    assert updated.index("Back to News Blog") < updated.index("<img")
+    assert ensure_news_blog_back_link(updated) == updated
+
+
+def test_newsletter_signup_block_is_canonical_at_article_bottom_and_idempotent():
+    html = """<div>
+<img src="{IMAGE_HERE}" alt="article image"/>
+<h2>Headline</h2>
+<p>Closing article copy.</p>
+</div>"""
+
+    updated = ensure_newsletter_signup_block(html)
+
+    assert updated.count(NEWSLETTER_EMBED_URL) == 1
+    assert NEWSLETTER_SIGNUP_BLOCK_HTML in updated
+    assert updated.index("Closing article copy") < updated.index(NEWSLETTER_EMBED_URL)
+    assert updated.index(NEWSLETTER_EMBED_URL) < updated.rindex("</div>")
+    assert ensure_newsletter_signup_block(updated) == updated
+
+
+def test_generation_adds_news_blog_link_before_reflection():
+    generator = object.__new__(BlogPostGenerator)
+    generator.generate_shoppers_post = MagicMock(
+        return_value='<div><img src="{IMAGE_HERE}" alt="article image"/></div>'
+    )
+    generator.generate_recall_post = MagicMock()
+    generator.reflect_on_post = MagicMock(return_value={"is_valid": True})
+
+    result = generator.generate_with_reflection(
+        title="Title",
+        content="Source content",
+        original_link="https://example.com/source",
+    )
+
+    reflected_html = generator.reflect_on_post.call_args.args[0]
+    assert "Back to News Blog" in reflected_html
+    assert reflected_html.index("Back to News Blog") < reflected_html.index("<img")
+    assert result["blog_post"] == reflected_html
 
 
 @pytest.mark.parametrize("prompt_template", [SHOPPERS_BLOG_PROMPT, RECALL_BLOG_PROMPT])
@@ -392,6 +454,9 @@ def test_generated_html_safety_detects_executable_markup(
 
 def test_generated_html_safety_allows_normal_youdle_markup():
     normal_html = """<div>
+<div style="text-align: center; margin: 0 0 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+  <a href="https://news.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">&larr; Back to News Blog</a>
+</div>
 <img src="{IMAGE_HERE}" alt="article image"/>
 <div style="text-align: center; margin: 10px 0; padding: 8px; background: #f8f9fa;">
   <a href="https://www.youdle.io/" style="color: #007c89; text-decoration: none;">Back to Youdle</a>
@@ -405,6 +470,22 @@ read the <a href="https://getyoudle.com/blog">Youdle Blog</a>, and
 </div>"""
 
     assert find_unsafe_html_issues(normal_html) == []
+
+
+def test_generated_html_safety_allows_only_the_owned_newsletter_iframe():
+    assert find_unsafe_html_issues(NEWSLETTER_SIGNUP_BLOCK_HTML) == []
+
+    untrusted_iframe = NEWSLETTER_SIGNUP_BLOCK_HTML.replace(
+        NEWSLETTER_EMBED_URL,
+        "https://example.com/newsletter-embed",
+    )
+    assert "Unsafe HTML tag: <iframe>" in find_unsafe_html_issues(untrusted_iframe)
+
+    loosened_sandbox = NEWSLETTER_SIGNUP_BLOCK_HTML.replace(
+        'sandbox="allow-forms allow-scripts allow-same-origin"',
+        'sandbox="allow-forms allow-scripts allow-same-origin allow-popups"',
+    )
+    assert "Unsafe HTML tag: <iframe>" in find_unsafe_html_issues(loosened_sandbox)
 
 
 def test_final_assembly_rejects_unsafe_generated_html():
@@ -439,8 +520,47 @@ def test_final_assembly_rejects_unsafe_generated_html():
     assert "<script>" in result["errors"][0]
 
 
+def test_final_assembly_appends_the_newsletter_signup_block():
+    from blog_post_graph import assemble_html_node
+
+    state = {
+        "generated_posts": [
+            {
+                "post_id": "safe-post",
+                "blog_post": (
+                    '<div><img src="{IMAGE_HERE}" alt="article image"/>'
+                    "<h2>Headline</h2><p>Article closing.</p></div>"
+                ),
+                "article": {
+                    "title": "Safe generated post",
+                    "link": "https://example.com/source",
+                },
+                "category": "shoppers",
+            }
+        ],
+        "uploaded_urls": [
+            {"post_id": "safe-post", "url": "https://images.example.com/a.jpg"}
+        ],
+        "proofread_corrections": {},
+    }
+
+    with patch("blog_post_graph.ReflectionAgent") as validator_class:
+        validator_class.return_value.reflect.return_value = {"is_valid": True}
+        result = assemble_html_node(state)
+
+    assert result.get("errors", []) == []
+    assert len(result["final_posts"]) == 1
+    final_html = result["final_posts"][0]["html"]
+    assert final_html.count(NEWSLETTER_EMBED_URL) == 1
+    assert "https://images.example.com/a.jpg" in final_html
+    assert find_unsafe_html_issues(final_html) == []
+
+
 def test_word_count_only_invalid_reflection_requests_regeneration():
     short_but_structurally_valid = """<div>
+<div style="text-align: center; margin: 0 0 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
+  <a href="https://news.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">&larr; Back to News Blog</a>
+</div>
 <img src="{IMAGE_HERE}" alt="article image"/>
 <h2>A grocery update worth checking</h2>
 <p>MEMPHIS, Tenn. (Youdle) - You can use these facts before shopping.</p>
