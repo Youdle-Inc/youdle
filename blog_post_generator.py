@@ -49,7 +49,7 @@ BLOG_POSTS_DIR = os.getenv(
     "BLOG_POSTS_DIR",
     "/tmp/blog_posts" if os.getenv("VERCEL") else "blog_posts",
 )
-MAX_SHOPPERS_ARTICLES = 5
+MAX_RECALL_ROUNDUP_SOURCES = 5
 MAX_WORKERS = 4
 CACHE_FILE = os.getenv(
     "BLOG_CACHE_FILE",
@@ -135,7 +135,7 @@ class BlogPostOrchestrator:
     def search_and_rank_articles(
         self,
         batch_size: int = 30,
-        search_days_back: int = 30
+        search_days_back: int = 7
     ) -> Dict[str, Any]:
         """
         Search for articles using Exa.
@@ -157,7 +157,8 @@ class BlogPostOrchestrator:
 
     def select_articles(
         self,
-        search_results: Dict[str, Any]
+        search_results: Dict[str, Any],
+        batch_size: int = 6,
     ) -> Dict[str, List[Dict]]:
         """
         Select top articles for blog post generation.
@@ -168,20 +169,21 @@ class BlogPostOrchestrator:
         Returns:
             Dictionary with 'shoppers' and 'recall' article lists
         """
-        items = search_results.get("items", [])
+        items = search_results.get("shoppers_items") or search_results.get("items", [])
         recall_items = search_results.get("recall_items", [])
 
         # Filter out already cached articles
+        recall_articles = [
+            item for item in recall_items
+            if not self._is_cached(item.get("link", ""))
+        ][:MAX_RECALL_ROUNDUP_SOURCES if batch_size > 0 else 0]
+
+        max_shopper_posts = max(0, batch_size - 1) if recall_articles else batch_size
         shoppers_articles = [
             item for item in items
             if item.get("category", "").upper() != "RECALL"
             and not self._is_cached(item.get("link", ""))
-        ][:MAX_SHOPPERS_ARTICLES]
-
-        recall_articles = [
-            item for item in recall_items
-            if not self._is_cached(item.get("link", ""))
-        ][:1]  # Just one recall post
+        ][:max_shopper_posts]
 
         return {
             "shoppers": shoppers_articles,
@@ -464,7 +466,7 @@ class BlogPostOrchestrator:
     async def run(
         self,
         batch_size: int = 30,
-        search_days_back: int = 30
+        search_days_back: int = 7
     ) -> Dict[str, Any]:
         """
         Run the full blog post generation workflow.
@@ -494,9 +496,26 @@ class BlogPostOrchestrator:
 
         # Step 2: Select articles
         print("[2/6] Selecting top articles...")
-        selected = self.select_articles(search_results)
+        selected = self.select_articles(search_results, batch_size=batch_size)
 
-        all_articles = selected["shoppers"] + selected["recall"]
+        recall_sources = selected["recall"]
+        recall_roundup = []
+        if recall_sources:
+            from blog_post_graph import build_recall_source_context
+
+            recall_roundup = [{
+                "title": (
+                    "Weekly recall roundup: "
+                    f"{len(recall_sources)} food safety alerts you need to know"
+                ),
+                "description": build_recall_source_context(recall_sources),
+                "link": recall_sources[0].get("link", ""),
+                "category": "RECALL",
+                "is_roundup": True,
+                "source_articles": recall_sources,
+            }]
+
+        all_articles = selected["shoppers"] + recall_roundup
         print(f" - Shoppers articles: {len(selected['shoppers'])}")
         print(f" - Recall articles: {len(selected['recall'])}")
 
@@ -596,7 +615,7 @@ def run_generation(
     model: str = "gpt-4",
     use_placeholder_images: bool = False,
     batch_size: int = 30,
-    search_days_back: int = 30,
+    search_days_back: int = 7,
     use_langgraph: bool = True,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -629,7 +648,7 @@ def run_generation_legacy(
     model: str = "gpt-4",
     use_placeholder_images: bool = False,
     batch_size: int = 30,
-    search_days_back: int = 30
+    search_days_back: int = 7
 ) -> Dict[str, Any]:
     """
     Run the blog post generation workflow using legacy async orchestration.
@@ -654,7 +673,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
     parser.add_argument("--placeholder-images", action="store_true", help="Use placeholder images")
     parser.add_argument("--batch-size", type=int, default=30, help="Number of articles to search")
-    parser.add_argument("--days-back", type=int, default=30, help="Search window in days")
+    parser.add_argument("--days-back", type=int, default=7, help="Search window in days")
     parser.add_argument("--legacy", action="store_true", help="Use legacy orchestration (skip LangGraph)")
     parser.add_argument("--json", action="store_true", help="Output only clean JSON summary (for GitHub Actions)")
 

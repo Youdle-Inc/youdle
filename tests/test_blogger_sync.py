@@ -643,7 +643,7 @@ class TestPushDraftsToBloggerNode:
             "logs": [],
         }
 
-        with patch("supabase_storage.get_supabase_client", return_value=mock_sb), \
+        with patch("blog_post_graph.get_supabase_client", return_value=mock_sb), \
              patch("blogger_client.get_blogger_client", return_value=mock_bl):
             from blog_post_graph import push_drafts_to_blogger_node
             result = push_drafts_to_blogger_node(state)
@@ -694,7 +694,7 @@ class TestPushDraftsToBloggerNode:
             "logs": [],
         }
 
-        with patch("supabase_storage.get_supabase_client", return_value=mock_sb), \
+        with patch("blog_post_graph.get_supabase_client", return_value=mock_sb), \
              patch("blogger_client.get_blogger_client", return_value=mock_bl):
             from blog_post_graph import push_drafts_to_blogger_node
             result = push_drafts_to_blogger_node(state)
@@ -709,7 +709,7 @@ class TestPushDraftsToBloggerNode:
 
         state = {"final_posts": [], "logs": []}
 
-        with patch("supabase_storage.get_supabase_client", return_value=mock_sb), \
+        with patch("blog_post_graph.get_supabase_client", return_value=mock_sb), \
              patch("blogger_client.get_blogger_client", return_value=mock_bl):
             from blog_post_graph import push_drafts_to_blogger_node
             result = push_drafts_to_blogger_node(state)
@@ -749,7 +749,7 @@ class TestPushDraftsToBloggerNode:
             "logs": [],
         }
 
-        with patch("supabase_storage.get_supabase_client", return_value=mock_sb), \
+        with patch("blog_post_graph.get_supabase_client", return_value=mock_sb), \
              patch("blogger_client.get_blogger_client", return_value=mock_bl):
             from blog_post_graph import push_drafts_to_blogger_node
             result = push_drafts_to_blogger_node(state)

@@ -188,7 +188,7 @@ def build_recall_source_context(
 
 def create_initial_state(
     batch_size: int = 30,
-    search_days_back: int = 30,
+    search_days_back: int = 7,
     model: str = "gpt-4",
     use_placeholder_images: bool = False,
     job_id: Optional[str] = None,
@@ -283,15 +283,10 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
     processed_urls = state.get("processed_urls", {})
     batch_size = state.get("batch_size", 6)
 
-    # Recall sources are consolidated into one output post. Keep the source
-    # count bounded so every recall can be covered accurately in 400-600 words.
-    max_recall = (
-        min(MAX_RECALL_ROUNDUP_SOURCES, len(search_results.get("recall_items", [])))
-        if batch_size > 0 else 0
-    )
-    max_shoppers = max(0, batch_size - 1) if max_recall > 0 else batch_size  # reserve 1 slot for roundup
-
-    items = search_results.get("items", [])
+    # Use the full grocery candidate pool when available. ``items`` is the
+    # paginated preview, while shoppers_items lets cross-run dedup skip used
+    # URLs without reducing the requested number of regular posts.
+    items = search_results.get("shoppers_items") or search_results.get("items", [])
     recall_items = search_results.get("recall_items", [])
 
     # Cross-run dedup: check Supabase blog_posts for URLs used in the last 60 days
@@ -333,18 +328,19 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
         cached = processed_urls.get(url_hash, {})
         return cached.get("date") != today if isinstance(cached, dict) else True
 
-    # Select shoppers articles
+    # Recall sources are consolidated into one output post. Filter them first
+    # so a slot is reserved only when a usable roundup source actually exists.
+    recall_articles = [
+        item for item in recall_items
+        if is_not_cached(item)
+    ][:MAX_RECALL_ROUNDUP_SOURCES if batch_size > 0 else 0]
+
+    max_shoppers = max(0, batch_size - 1) if recall_articles else batch_size
     shoppers_articles = [
         item for item in items
         if item.get("category", "").upper() != "RECALL"
         and is_not_cached(item)
     ][:max_shoppers]
-
-    # Select recall articles
-    recall_articles = [
-        item for item in recall_items
-        if is_not_cached(item)
-    ][:max_recall]
 
     # batch_size counts output posts: each shopper article is one output and
     # all recall sources below become one roundup output.
@@ -1290,7 +1286,7 @@ def create_blog_post_graph() -> StateGraph:
 
 def run_blog_post_workflow(
     batch_size: int = 30,
-    search_days_back: int = 30,
+    search_days_back: int = 7,
     model: str = "gpt-4",
     use_placeholder_images: bool = False,
     job_id: Optional[str] = None,
@@ -1381,7 +1377,7 @@ if __name__ == "__main__":
     parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
     parser.add_argument("--placeholder-images", action="store_true", help="Use placeholder images")
     parser.add_argument("--batch-size", type=int, default=30, help="Number of articles to search")
-    parser.add_argument("--days-back", type=int, default=30, help="Search window in days")
+    parser.add_argument("--days-back", type=int, default=7, help="Search window in days")
     
     args = parser.parse_args()
     

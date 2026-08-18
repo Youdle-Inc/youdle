@@ -140,7 +140,7 @@ def test_endpoint_rejects_an_existing_active_job():
 
 
 def test_endpoint_expires_stale_job_then_accepts_a_new_one():
-    old_timestamp = (datetime.now(timezone.utc) - timedelta(minutes=20)).isoformat()
+    old_timestamp = (datetime.now(timezone.utc) - timedelta(minutes=40)).isoformat()
     jobs = [{
         "id": "stale-job",
         "status": "running",

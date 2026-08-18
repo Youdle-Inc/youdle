@@ -31,7 +31,7 @@ AGE_SCORE_WEIGHT = 1.0
 # Limits
 MAX_TOTAL_ITEMS = 300
 MAX_RECALL_ITEMS = 50
-RECENT_WINDOW_DAYS = 10
+RECENT_WINDOW_DAYS = 7
 PROCESSING_SOFT_LIMIT_SEC = 22
 
 # Exa-specific configuration
@@ -53,7 +53,8 @@ EXA_GENERATION_CONTENT_MAX_CHARS = _positive_int_setting(
     "EXA_GENERATION_CONTENT_MAX_CHARS",
     6000,
 )
-EXA_SEARCH_DAYS_BACK = 30
+EXA_SEARCH_DAYS_BACK = 7
+MAX_SEARCH_DAYS_BACK = 7
 
 SOURCE_OMISSION_MARKER = "\n\n[... source text omitted ...]\n\n"
 TRACKING_QUERY_KEYS = {
@@ -153,7 +154,20 @@ RECALL_SIGNAL_KEYWORDS = [
     "allergen",
     "foreign material",
     "outbreak",
+    "cyclospora",
+    "cyclosporiasis",
+    "foodborne illness",
+    "food poisoning",
+    "public health alert",
 ]
+
+LOW_QUALITY_TITLES = {
+    "facebook",
+    "instagram",
+    "linkedin",
+    "news",
+    "home",
+}
 
 # ============================================================================
 # SEARCH QUERIES
@@ -182,9 +196,10 @@ RECALL_QUERIES = [
 # Note: Exa only allows either include_domains OR exclude_domains, not both
 # We use exclude_domains to filter non-US + US keywords in queries
 SHOPPERS_QUERIES = [
-    # 1. US Grocery news and retail coverage
+    # 1. Broad US grocery-news query. This runs first so the time budget always
+    # produces consumer grocery candidates before narrower searches.
     {
-        "query": "US grocery store opening American retail pricing changes grocery inflation Walmart Kroger Target Costco",
+        "query": "top US grocery news this week supermarkets food brands new products store openings prices shoppers",
         "category": "SHOPPERS",
         "subcategory": "grocery_retail",
         "exclude_domains": EXCLUDE_NON_US_DOMAINS,
@@ -234,11 +249,12 @@ SHOPPERS_QUERIES = [
         "subcategory": "food_trends",
         "exclude_domains": EXCLUDE_NON_US_DOMAINS,
     },
-    # 5. US General food safety/health news (non-recall)
+    # 5. General grocery and packaged-food industry news. Recall and outbreak
+    # coverage is intentionally handled only by the dedicated roundup queries.
     {
-        "query": "US food safety tips American foodborne illness prevention CDC food handling",
+        "query": "US grocery news packaged food launches supermarket changes consumer grocery shopping",
         "category": "SHOPPERS",
-        "subcategory": "food_safety_general",
+        "subcategory": "grocery_news",
         "exclude_domains": EXCLUDE_DOMAINS_FOR_SHOPPERS_SAFETY + EXCLUDE_NON_US_DOMAINS,
     },
 ]
@@ -313,14 +329,47 @@ def keyword_boost(title, desc):
     return min(sum(10 for k in RECALL_SIGNAL_KEYWORDS if k in t), 60)
 
 
-def within_days(pub_iso, days):
-    """Check if date is within the specified number of days."""
+def within_days(pub_iso, days, now=None):
+    """Check that a publication timestamp is neither future nor too old."""
     if not pub_iso:
         return False
     try:
-        return datetime.now(timezone.utc) - datetime.fromisoformat(pub_iso) <= timedelta(days=days)
+        published = datetime.fromisoformat(pub_iso.replace("Z", "+00:00"))
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        age = (now or datetime.now(timezone.utc)) - published.astimezone(timezone.utc)
+        return timedelta(0) <= age <= timedelta(days=days)
     except Exception:
         return False
+
+
+def is_low_quality_article(item):
+    """Reject results that do not identify a usable editorial article."""
+    title = html_to_text(item.get("title", "")).strip().lower()
+    return not title or title in LOW_QUALITY_TITLES
+
+
+def is_recall_or_food_safety_article(item):
+    """Identify recall/outbreak coverage that cannot fill grocery-news slots."""
+    title = html_to_text(item.get("title", "")).strip().lower()
+    description = html_to_text(item.get("description", "")).lower()
+
+    combined = f"{title} {description}"
+    return any(keyword in combined for keyword in RECALL_SIGNAL_KEYWORDS)
+
+
+def is_valid_recall_source(item):
+    """Require an actual alert/recall page, not any page returned by a domain query."""
+    if is_low_quality_article(item):
+        return False
+
+    title = html_to_text(item.get("title", "")).lower()
+    url = str(item.get("link", "")).lower()
+    return (
+        any(keyword in title for keyword in RECALL_SIGNAL_KEYWORDS)
+        or "/recall" in url
+        or "/outbreak" in url
+    )
 
 
 def get_date_range(days_back):
@@ -501,15 +550,14 @@ def process_exa_result(result, category, query_index, result_index):
     
     # Calculate score using existing scoring logic
     score = (
-        KEYWORD_BOOST_WEIGHT * keyword_boost(title, text)
-        + (FIRST_ENTRY_BOOST_PRIMARY if result_index == 0 else FIRST_ENTRY_BOOST_OTHER)
+        (FIRST_ENTRY_BOOST_PRIMARY if result_index == 0 else FIRST_ENTRY_BOOST_OTHER)
         + LENGTH_SCORE_WEIGHT * length_score(text)
         + AGE_SCORE_WEIGHT * age_score(pub_dt)
     )
     
     # Add category boost for RECALL items
     if category == "RECALL":
-        score += 50
+        score += 50 + KEYWORD_BOOST_WEIGHT * keyword_boost(title, text)
     
     return {
         "feedIndex": query_index,
@@ -534,8 +582,8 @@ def main(input_data):
         input_data: dict with optional keys:
             - batch_size: int (default 30)
             - batch_index: int (default 0)
-            - recent_window_days: int (default 14)
-            - search_days_back: int (default 30)
+            - recent_window_days: int (default 7)
+            - search_days_back: int (default 7)
     
     Returns:
         dict with keys:
@@ -546,8 +594,10 @@ def main(input_data):
     """
     batch_size = int(input_data.get("batch_size", 30))
     batch_index = int(input_data.get("batch_index", 0))
-    recent_days = int(input_data.get("recent_window_days", RECENT_WINDOW_DAYS))
-    search_days = int(input_data.get("search_days_back", EXA_SEARCH_DAYS_BACK))
+    requested_recent_days = int(input_data.get("recent_window_days", RECENT_WINDOW_DAYS))
+    requested_search_days = int(input_data.get("search_days_back", EXA_SEARCH_DAYS_BACK))
+    search_days = min(MAX_SEARCH_DAYS_BACK, max(1, requested_search_days))
+    recent_days = min(search_days, max(1, requested_recent_days))
     
     items = []
     start_ts = time.time()
@@ -567,19 +617,30 @@ def main(input_data):
     # Get date range for searches
     start_date, end_date = get_date_range(search_days)
     
-    # Combine all queries
-    all_queries = RECALL_QUERIES + SHOPPERS_QUERIES
+    # Search one broad grocery query and one official recall query before the
+    # remaining narrower searches. The old recall-first ordering could spend
+    # the entire soft time budget before searching for any grocery news.
+    all_queries = (
+        [SHOPPERS_QUERIES[0], RECALL_QUERIES[0]]
+        + SHOPPERS_QUERIES[1:]
+        + RECALL_QUERIES[1:]
+    )
+    searched_categories = set()
     
     # Execute searches
     for query_index, query_config in enumerate(all_queries):
         # Check time limit
-        if time.time() - start_ts > PROCESSING_SOFT_LIMIT_SEC:
+        if (
+            time.time() - start_ts > PROCESSING_SOFT_LIMIT_SEC
+            and {"SHOPPERS", "RECALL"}.issubset(searched_categories)
+        ):
             break
         
         # Execute search
         results, category, subcategory = execute_search(
             exa, query_config, start_date, end_date
         )
+        searched_categories.add(category)
         
         # Process results
         for result_index, result in enumerate(results):
@@ -599,48 +660,44 @@ def main(input_data):
         if item["link"] and item["link"] not in seen_urls:
             seen_urls.add(item["link"])
             unique_items.append(item)
-    items = unique_items
+    # Exa's date filters are advisory. Enforce the seven-day window locally
+    # and reject missing/unparseable dates so old evergreen pages cannot enter
+    # a current-news batch.
+    items = [
+        item for item in unique_items
+        if within_days(item.get("pubDate"), search_days)
+    ]
     
     # =========================================================================
     # SEPARATE BY CATEGORY - Rank shoppers and recall separately
     # =========================================================================
-    shoppers_items = [item for item in items if item["category"] != "RECALL"]
-    recall_only_items = [item for item in items if item["category"] == "RECALL"]
+    shoppers_items = [
+        item for item in items
+        if item["category"] != "RECALL"
+        and not is_low_quality_article(item)
+        and not is_recall_or_food_safety_article(item)
+    ]
+    recall_only_items = [
+        item for item in items
+        if item["category"] == "RECALL"
+        and is_valid_recall_source(item)
+    ]
     
     # Rank each category separately by score (descending)
     shoppers_items.sort(key=lambda x: -x["score"])
     recall_only_items.sort(key=lambda x: -x["score"])
     
     # =========================================================================
-    # BALANCED SELECTION - Ensure both categories are represented
+    # BATCH SLICE - reserve at most one visible output slot for recalls. The
+    # full source list is returned separately and consolidated downstream.
     # =========================================================================
-    # Target: ~80% shoppers, ~20% recall (but ensure at least 1 recall if available)
-    recall_count = min(len(recall_only_items), max(1, batch_size // 5))
-    shoppers_count = min(len(shoppers_items), batch_size - recall_count)
-    
-    # Adjust if we don't have enough shoppers
-    if shoppers_count < (batch_size - recall_count):
-        # Fill remaining with more recall items
-        recall_count = min(len(recall_only_items), batch_size - shoppers_count)
-    
-    # Merge top results: shoppers first, then recall
-    # Explicitly limit to batch_size to prevent over-selection
-    balanced_items = (shoppers_items[:shoppers_count] + recall_only_items[:recall_count])[:batch_size]
-
-    # =========================================================================
-    # BATCH SLICE - Get the requested batch
-    # =========================================================================
-    start = batch_index * batch_size
-    end = start + batch_size
-
-    # For batch_index 0, use balanced_items directly
-    # For later batches, fall back to remaining items from full sorted list
-    if batch_index == 0:
-        batch_items = balanced_items[:batch_size]  # Extra safety limit
-    else:
-        # Merge all items for pagination of later batches
-        all_sorted = shoppers_items + recall_only_items
-        batch_items = all_sorted[start:end]
+    has_recall_roundup = bool(recall_only_items)
+    shopper_slots = max(0, batch_size - 1) if has_recall_roundup else batch_size
+    start = batch_index * shopper_slots
+    end = start + shopper_slots
+    batch_items = shoppers_items[start:end]
+    if batch_index == 0 and has_recall_roundup:
+        batch_items = batch_items + recall_only_items[:1]
     
     # =========================================================================
     # EXTRACT RECALL ITEMS - Recent recalls for dedicated recall section
@@ -658,6 +715,9 @@ def main(input_data):
     
     return {
         "items": batch_items,
+        # Internal consumers use the full ranked pool so cross-run URL dedup
+        # can still fill every regular slot.
+        "shoppers_items": shoppers_items,
         "recall_items": recall_items,
         "processed_count": len(batch_items),
         "total_ranked_count": len(items),

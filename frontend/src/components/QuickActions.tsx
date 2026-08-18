@@ -48,7 +48,7 @@ export function QuickActions({
         }
       }
       const batchSize = Math.min(10, Math.max(1, Number(preferences.batchSize) || 6))
-      const searchDaysBack = Math.min(90, Math.max(1, Number(preferences.searchDaysBack) || 3))
+      const searchDaysBack = Math.min(7, Math.max(1, Number(preferences.searchDaysBack) || 7))
       const response = await api.startGeneration({
         batch_size: batchSize,
         search_days_back: searchDaysBack,

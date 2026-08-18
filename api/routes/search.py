@@ -42,7 +42,7 @@ class SearchResponse(BaseModel):
 @router.get("/preview", response_model=SearchResponse)
 async def preview_search(
     batch_size: int = Query(default=10, ge=1, le=50, description="Number of articles to return"),
-    days_back: int = Query(default=30, ge=1, le=90, description="Search articles from the last N days"),
+    days_back: int = Query(default=7, ge=1, le=7, description="Search articles from the last N days"),
     category: Optional[str] = Query(default=None, description="Filter by category: SHOPPERS or RECALL")
 ):
     """
@@ -60,10 +60,12 @@ async def preview_search(
         # Filter by category if specified
         if category:
             category = category.upper()
-            if category in ["SHOPPERS", "RECALL"]:
+            if category == "RECALL":
+                result["items"] = result.get("recall_items", [])[:batch_size]
+            elif category == "SHOPPERS":
                 result["items"] = [
                     item for item in result["items"] 
-                    if item.get("category") == category
+                    if item.get("category") == "SHOPPERS"
                 ]
         
         result["timestamp"] = datetime.utcnow().isoformat()

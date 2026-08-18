@@ -18,8 +18,13 @@ logger = logging.getLogger(__name__)
 ACTIVE_JOB_STATUSES = ("pending", "running")
 TERMINAL_JOB_STATUSES = ("completed", "failed", "cancelled")
 
-DEFAULT_STALE_AFTER_SECONDS = 15 * 60
-MIN_STALE_AFTER_SECONDS = 60
+# The Vercel deployment gives generation functions a 30-minute window. Stale
+# reconciliation must run *after* that window, otherwise normal dashboard
+# polling can fail a job that still has time left to finish. Keep a five-minute
+# buffer for cold starts and delayed completion writes.
+GENERATION_FUNCTION_MAX_SECONDS = 30 * 60
+DEFAULT_STALE_AFTER_SECONDS = 35 * 60
+MIN_STALE_AFTER_SECONDS = GENERATION_FUNCTION_MAX_SECONDS + (5 * 60)
 
 
 def utc_now() -> datetime:
@@ -153,6 +158,7 @@ def reconcile_stale_jobs(
             continue
 
         elapsed_minutes = max(1, round((current - reference_time).total_seconds() / 60))
+        timeout_minutes = max(1, round(timeout_seconds / 60))
         transitioned = transition_job(
             supabase,
             str(job["id"]),
@@ -161,7 +167,9 @@ def reconcile_stale_jobs(
                 "status": "failed",
                 "completed_at": isoformat_utc(current),
                 "error": (
-                    f"Generation was marked stale after {elapsed_minutes} minutes. "
+                    "Generation did not report completion within the configured "
+                    f"{timeout_minutes}-minute window (last checked after "
+                    f"{elapsed_minutes} minutes). "
                     "The Vercel function likely timed out or stopped before reporting completion."
                 ),
             },

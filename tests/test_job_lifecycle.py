@@ -1,10 +1,15 @@
 """Focused tests for generation job stabilization helpers."""
 
+import os
 import unittest
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 from api.job_lifecycle import (
+    DEFAULT_STALE_AFTER_SECONDS,
+    MIN_STALE_AFTER_SECONDS,
+    get_stale_after_seconds,
     is_active_job_conflict,
     list_active_jobs,
     reconcile_stale_jobs,
@@ -166,6 +171,19 @@ class JobLifecycleTests(unittest.TestCase):
                 RuntimeError('23505 duplicate key violates unique constraint "job_queue_pkey"')
             )
         )
+
+    def test_default_stale_window_exceeds_function_duration(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("GENERATION_STALE_AFTER_SECONDS", None)
+            self.assertEqual(get_stale_after_seconds(), 35 * 60)
+        self.assertEqual(DEFAULT_STALE_AFTER_SECONDS, MIN_STALE_AFTER_SECONDS)
+
+    def test_stale_window_cannot_be_configured_below_safe_minimum(self):
+        with patch.dict(
+            os.environ,
+            {"GENERATION_STALE_AFTER_SECONDS": "900"},
+        ):
+            self.assertEqual(get_stale_after_seconds(), 35 * 60)
 
 
 if __name__ == "__main__":

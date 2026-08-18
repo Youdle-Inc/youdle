@@ -98,8 +98,8 @@ Examples:
     parser.add_argument(
         "--days-back", "-d",
         type=int,
-        default=30,
-        help="How far back to search for articles in days (default: 30)"
+        default=7,
+        help="How far back to search for articles in days (default: 7)"
     )
     
     parser.add_argument(

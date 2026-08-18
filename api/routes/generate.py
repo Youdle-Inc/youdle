@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 class GenerationConfig(BaseModel):
     """Configuration for blog post generation"""
     batch_size: int = Field(default=10, ge=1, le=10)
-    search_days_back: int = Field(default=30, ge=1, le=90)
+    search_days_back: int = Field(default=7, ge=1, le=7)
     model: str = "gpt-4"
     use_placeholder_images: bool = False
     use_legacy_orchestrator: bool = False
@@ -112,7 +112,7 @@ def run_generation_task(job_id: str, config: dict):
             model=config.get("model", "gpt-4"),
             use_placeholder_images=config.get("use_placeholder_images", False),
             batch_size=config.get("batch_size", 10),
-            search_days_back=config.get("search_days_back", 30),
+            search_days_back=config.get("search_days_back", 7),
             use_langgraph=use_langgraph,
             job_id=job_id,
         )
