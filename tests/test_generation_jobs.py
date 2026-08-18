@@ -227,7 +227,8 @@ def test_zero_output_is_reported_as_failed():
                 "final_posts": [],
                 "db_inserted": 0,
                 "persistence_errors": [],
-            }
+            },
+            "errors": ["No safe generated HTML remained after assembly"],
         }
     )
 
@@ -238,4 +239,5 @@ def test_zero_output_is_reported_as_failed():
         run_generation_task("job-1", {})
 
     assert jobs[0]["status"] == "failed"
-    assert "without producing" in jobs[0]["error"]
+    assert "without producing any usable blog posts" in jobs[0]["error"]
+    assert "No safe generated HTML remained" in jobs[0]["error"]

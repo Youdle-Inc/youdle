@@ -172,8 +172,20 @@ def run_generation_task(job_id: str, config: dict):
                     persistence_errors.append(message)
                     logger.exception(message)
 
+        generation_errors = list(result.get("errors", []) or [])
+        if result.get("error"):
+            generation_errors.append(str(result["error"]))
+        generation_warnings = list(result.get("warnings", []) or [])
+
         if not final_posts:
-            raise RuntimeError("Generation completed without producing any blog posts")
+            diagnostics = generation_errors or generation_warnings
+            detail = "; ".join(
+                dict.fromkeys(str(item) for item in diagnostics)
+            )[:3000]
+            raise RuntimeError(
+                "Generation completed without producing any usable blog posts"
+                + (f": {detail}" if detail else "")
+            )
         if inserted_count == 0:
             details = "; ".join(persistence_errors[:3])
             raise RuntimeError(
@@ -181,9 +193,6 @@ def run_generation_task(job_id: str, config: dict):
                 + (f": {details}" if details else "")
             )
 
-        generation_errors = list(result.get("errors", []) or [])
-        if result.get("error"):
-            generation_errors.append(str(result["error"]))
         generation_errors.extend(persistence_errors)
 
         completed = transition_job(
@@ -197,6 +206,7 @@ def run_generation_task(job_id: str, config: dict):
                     "posts_generated": inserted_count,
                     "posts_attempted": len(final_posts),
                     "errors": generation_errors,
+                    "warnings": generation_warnings,
                 },
                 "error": None,
             },

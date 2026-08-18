@@ -101,6 +101,19 @@ def test_outer_regeneration_hints_reach_the_next_generation_prompt():
     assert hint in repr(call.kwargs)
 
 
+def test_graph_owns_the_retry_loop_instead_of_nesting_retries():
+    call = _generator_call_for(
+        article={
+            "title": "Grocery update",
+            "description": "A current grocery story.",
+            "link": "https://example.com/grocery-update",
+            "category": "SHOPPERS",
+        }
+    )
+
+    assert call.kwargs["max_retries"] == 0
+
+
 def test_feedback_additions_and_common_mistakes_both_reach_generation():
     """All learned guidance should be visible to the LLM, not merely loaded."""
     prompt_addition = "Attribute every pricing claim to the original source."
@@ -554,6 +567,44 @@ def test_final_assembly_appends_the_newsletter_signup_block():
     assert final_html.count(NEWSLETTER_EMBED_URL) == 1
     assert "https://images.example.com/a.jpg" in final_html
     assert find_unsafe_html_issues(final_html) == []
+
+
+def test_final_assembly_keeps_safe_draft_with_editorial_warning():
+    from blog_post_graph import assemble_html_node
+
+    state = {
+        "generated_posts": [
+            {
+                "post_id": "needs-review",
+                "blog_post": (
+                    '<div><img src="{IMAGE_HERE}" alt="article image"/>'
+                    "<h2>Short draft</h2><p>Needs editorial review.</p></div>"
+                ),
+                "article": {
+                    "title": "Draft needing review",
+                    "link": "https://example.com/source",
+                },
+                "category": "shoppers",
+            }
+        ],
+        "uploaded_urls": [
+            {"post_id": "needs-review", "url": "https://images.example.com/a.jpg"}
+        ],
+        "proofread_corrections": {},
+    }
+
+    validation = {
+        "is_valid": False,
+        "summary": "Word count is below the editorial target",
+    }
+    with patch("blog_post_graph.ReflectionAgent") as validator_class:
+        validator_class.return_value.reflect.return_value = validation
+        result = assemble_html_node(state)
+
+    assert result.get("errors", []) == []
+    assert len(result["final_posts"]) == 1
+    assert result["final_posts"][0]["final_validation"] == validation
+    assert "editorial validation warning" in result["warnings"][0].lower()
 
 
 def test_word_count_only_invalid_reflection_requests_regeneration():

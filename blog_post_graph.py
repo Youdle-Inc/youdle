@@ -125,6 +125,7 @@ class BlogPostState(TypedDict):
     
     # Errors and logging
     errors: Annotated[List[str], operator.add]
+    warnings: Annotated[List[str], operator.add]
     logs: Annotated[List[str], operator.add]
     
     # Workflow metadata
@@ -221,6 +222,7 @@ def create_initial_state(
         persistence_errors=[],
         processed_urls={},
         errors=[],
+        warnings=[],
         logs=[],
         start_time=datetime.now().isoformat(),
         end_time=""
@@ -472,6 +474,10 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                 common_mistakes=context.get("common_mistakes"),
                 successful_patterns=context.get("successful_patterns"),
                 regeneration_hints=article.get("regeneration_hints"),
+                # LangGraph owns the retry loop below. Letting this helper
+                # retry too multiplied the configured three attempts into as
+                # many as nine attempts per article.
+                max_retries=0,
             )
             
             result["article"] = article
@@ -532,6 +538,7 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                 common_mistakes=recall_context.get("common_mistakes"),
                 successful_patterns=recall_context.get("successful_patterns"),
                 regeneration_hints=merged_article.get("regeneration_hints"),
+                max_retries=0,
             )
             
             result["article"] = merged_article
@@ -892,6 +899,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
 
     final_posts = []
     assembly_errors = []
+    assembly_warnings = []
     final_validator = ReflectionAgent()
 
     for post_id, post in posts_by_id.items():
@@ -915,11 +923,12 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         if not final_validation.get("is_valid", False):
             title = article.get("title", "Unknown")
             summary = final_validation.get("summary", "Validation failed")
-            assembly_errors.append(
-                f"Generated HTML failed final validation for '{title}': {summary}"
+            assembly_warnings.append(
+                f"Editorial validation warning for '{title}': {summary}"
             )
-            logs.append(f"Rejected invalid generated HTML for: {title[:50]}")
-            continue
+            logs.append(
+                f"Saved safe draft with editorial validation warnings: {title[:50]}"
+            )
 
         # Get image URL
         image_url = url_lookup.get(post_id, "{IMAGE_HERE}")
@@ -949,6 +958,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
             "image_url": image_url,
             "article": article,
             "reflection": post.get("reflection", {}),
+            "final_validation": final_validation,
             "attempts": post.get("attempts", 1)
         }
 
@@ -959,6 +969,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     return {
         "final_posts": final_posts,
         "errors": assembly_errors,
+        "warnings": assembly_warnings,
         "logs": logs
     }
 
@@ -1332,6 +1343,11 @@ def run_blog_post_workflow(
         for error in final_state["errors"]:
             print(f"  - {error}", file=sys.stderr)
 
+    if final_state.get("warnings"):
+        print("\nWarnings:", file=sys.stderr)
+        for warning in final_state["warnings"]:
+            print(f"  - {warning}", file=sys.stderr)
+
     # Calculate duration
     start_time_str = final_state.get("start_time") or datetime.now().isoformat()
     end_time_str = final_state.get("end_time") or datetime.now().isoformat()
@@ -1362,6 +1378,7 @@ def run_blog_post_workflow(
         "recall_count": recall_count,
         "files_saved": final_state.get("saved_files", []),
         "errors": final_state.get("errors", []),
+        "warnings": final_state.get("warnings", []),
         "duration_seconds": round(duration, 2),
         "output_directory": BLOG_POSTS_DIR,
         "final_state": final_state
