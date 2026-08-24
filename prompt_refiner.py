@@ -100,7 +100,7 @@ class PromptRefiner:
         patterns = {
             "missing link": "Include all four required closing links: Youdle Search, Community, Blog, and the original source",
             "wrong structure": "CRITICAL: Follow the exact HTML structure with <div>, <h2>, <p>, <ul>/<li>",
-            "missing image": "Place <img src=\"{IMAGE_HERE}\" alt=\"article image\"/> immediately after the Back to News Blog navigation block",
+            "missing image": "Place <img src=\"{IMAGE_HERE}\" alt=\"article image\"/> as the first element inside the outer <div>",
             "word count": "Keep content within the required 400-600 word range",
             "memphis": "Begin first paragraph with: MEMPHIS, Tenn. (Youdle) –",
             "community": "Include the Youdle Community link naturally within the required four-part closing paragraph",

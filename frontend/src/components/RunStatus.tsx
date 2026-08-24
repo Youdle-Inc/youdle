@@ -2,6 +2,7 @@
 
 import { cn, getStatusColor, formatDate, formatElapsedTime } from '@/lib/utils'
 import { Loader2, CheckCircle2, XCircle, Clock, Ban, Timer } from 'lucide-react'
+import { DEFAULT_OPENAI_MODEL } from '@/lib/api'
 
 interface Job {
   id: string
@@ -77,7 +78,7 @@ export function RunStatus({ jobs, className, onCancel }: RunStatusProps) {
 
                 <div className="flex-1">
                   <p className="text-sm font-medium text-stone-900 ">
-                    {job.config?.batch_size || 10} articles • {job.config?.model || 'gpt-4'}
+                    {job.config?.batch_size || 10} articles • {job.config?.model || DEFAULT_OPENAI_MODEL}
                   </p>
                   <div className="flex items-center gap-3 mt-1">
                     <p className="text-xs text-stone-500 ">

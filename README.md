@@ -83,6 +83,7 @@ Create a `.env` file with your API keys:
 # Required
 EXA_API_KEY=your_exa_api_key
 OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4o  # must be a large-context model; gpt-4 (8k) is too small
 
 # Optional (for full functionality)
 GEMINI_API_KEY=your_gemini_api_key
@@ -100,7 +101,7 @@ python generate_blog_posts.py
 ```
 
 Options:
-- `--model gpt-3.5-turbo` - Use a faster/cheaper model
+- `--model gpt-4o-mini` - Use a faster/cheaper model
 - `--placeholder-images` - Skip Gemini image generation
 - `--batch-size 50` - Search more articles
 - `--days-back 14` - Limit search to recent articles

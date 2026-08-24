@@ -14,12 +14,17 @@ from datetime import datetime
 from dateutil.parser import isoparse
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 # Add the repository and api directories before importing shared API helpers.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from ai_models import (
+    OPENAI_MODEL_PATTERN,
+    get_default_openai_model,
+    validate_openai_model,
+)
 from job_lifecycle import (
     ACTIVE_JOB_STATUSES,
     is_active_job_conflict,
@@ -37,9 +42,23 @@ class GenerationConfig(BaseModel):
     """Configuration for blog post generation"""
     batch_size: int = Field(default=10, ge=1, le=10)
     search_days_back: int = Field(default=7, ge=1, le=7)
-    model: str = "gpt-4"
+    model: str = Field(
+        default_factory=get_default_openai_model,
+        pattern=OPENAI_MODEL_PATTERN.pattern,
+    )
     use_placeholder_images: bool = False
     use_legacy_orchestrator: bool = False
+
+    @field_validator("model")
+    @classmethod
+    def _model_context_is_large_enough(cls, value: str) -> str:
+        """Reject small-context models when the job is created.
+
+        A model that cannot hold a full prompt otherwise fails deep inside the
+        workflow, where the 400 is swallowed and the run simply reports zero
+        posts. Failing here surfaces the real reason to the caller.
+        """
+        return validate_openai_model(value)
 
 
 class GenerationResponse(BaseModel):
@@ -109,7 +128,7 @@ def run_generation_task(job_id: str, config: dict):
 
         use_langgraph = not config.get("use_legacy_orchestrator", False)
         result = run_generation(
-            model=config.get("model", "gpt-4"),
+            model=config.get("model") or get_default_openai_model(),
             use_placeholder_images=config.get("use_placeholder_images", False),
             batch_size=config.get("batch_size", 10),
             search_days_back=config.get("search_days_back", 7),
@@ -234,12 +253,18 @@ def run_generation_task(job_id: str, config: dict):
 @router.post("/run", response_model=GenerationResponse)
 async def run_generation_endpoint(
     background_tasks: BackgroundTasks,
-    config: GenerationConfig = GenerationConfig()
+    config: Optional[GenerationConfig] = None
 ):
     """
     Start a new blog post generation run.
     Returns immediately with a job ID that can be used to track progress.
+
+    The default is built per request rather than as a default argument: a
+    default argument is evaluated when this module is imported, so anything
+    the model's defaults touch could stop the whole app from starting.
     """
+    config = config or GenerationConfig()
+
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()

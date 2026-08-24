@@ -10,6 +10,26 @@ const defaultApiUrl = process.env.NODE_ENV === 'development'
 
 export const API_BASE_URL = (configuredApiUrl || defaultApiUrl).replace(/\/+$/, '')
 
+export const DEFAULT_OPENAI_MODEL = 'gpt-4o'
+
+// Only large-context models are offered. A full generation prompt is the
+// editorial template plus source text plus few-shot examples from the learning
+// store (~14k tokens), so the 8k-context 'gpt-4' and 16k 'gpt-3.5-turbo'
+// return context_length_exceeded and the run saves no posts.
+export const OPENAI_MODELS = [
+  { value: 'gpt-4o', label: 'GPT-4o' },
+  { value: 'gpt-4o-mini', label: 'GPT-4o mini (faster)' },
+  { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+] as const
+
+// Browsers still hold 'gpt-4' in saved preferences from before this fix, so a
+// stale value is mapped back to the default instead of failing the run.
+export function normalizeOpenAIModel(model?: string): string {
+  return OPENAI_MODELS.some((option) => option.value === model)
+    ? model as string
+    : DEFAULT_OPENAI_MODEL
+}
+
 // Types
 export interface SearchResult {
   title: string
@@ -383,7 +403,7 @@ class ApiClient {
       body: JSON.stringify({
         batch_size: config.batch_size ?? 10,
         search_days_back: config.search_days_back ?? 7,
-        model: config.model ?? 'gpt-4',
+        model: normalizeOpenAIModel(config.model),
         use_placeholder_images: config.use_placeholder_images ?? false,
         use_legacy_orchestrator: config.use_legacy_orchestrator ?? false,
       }),

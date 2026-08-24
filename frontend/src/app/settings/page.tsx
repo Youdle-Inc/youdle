@@ -3,14 +3,19 @@
 import { useEffect, useState } from 'react'
 import { Settings, Save, RefreshCw, Server, Key } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { API_BASE_URL } from '@/lib/api'
+import {
+  API_BASE_URL,
+  OPENAI_MODELS,
+  DEFAULT_OPENAI_MODEL,
+  normalizeOpenAIModel,
+} from '@/lib/api'
 import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 
 export default function SettingsPage() {
   const [config, setConfig] = useState({
     batchSize: 10,
     searchDaysBack: 7,
-    model: 'gpt-4',
+    model: DEFAULT_OPENAI_MODEL,
     usePlaceholderImages: false,
     useLegacyOrchestrator: false,
   })
@@ -28,6 +33,7 @@ export default function SettingsPage() {
         ...current,
         ...saved,
         searchDaysBack: Math.min(7, Math.max(1, Number(saved.searchDaysBack) || 7)),
+        model: normalizeOpenAIModel(saved.model),
       }))
     } catch {
       // Ignore invalid browser preferences and retain safe defaults.
@@ -157,9 +163,9 @@ export default function SettingsPage() {
               onChange={(e) => setConfig({ ...config, model: e.target.value })}
               className="w-full px-3 py-2 rounded-lg border border-midnight-300 bg-white text-stone-900 focus:ring-2 focus:ring-youdle-500 focus:border-transparent"
             >
-              <option value="gpt-4">GPT-4</option>
-              <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+              {OPENAI_MODELS.map((model) => (
+                <option key={model.value} value={model.value}>{model.label}</option>
+              ))}
             </select>
           </div>
 

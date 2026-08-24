@@ -5,17 +5,21 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda
 
 from html_safety import find_unsafe_html_issues
-from blog_post_html import (
-    NEWS_BLOG_BACK_LINK_HTML,
-    NEWSLETTER_EMBED_URL,
-    NEWSLETTER_SIGNUP_BLOCK_HTML,
-    ensure_news_blog_back_link,
-    ensure_newsletter_signup_block,
+from ai_models import (
+    DEFAULT_MAX_TOKENS,
+    EXAMPLES_SECTION_MAX_CHARS,
+    MIN_CONTEXT_TOKENS,
+    resolve_max_tokens,
 )
-from langchain_blog_agent import BlogPostGenerator, EDITORIAL_SYSTEM_PROMPT
+from langchain_blog_agent import (
+    BlogPostGenerator,
+    EDITORIAL_SYSTEM_PROMPT,
+    create_openai_chat_model,
+)
 from prompt_refiner import PromptRefiner
 from prompts import RECALL_BLOG_PROMPT, SHOPPERS_BLOG_PROMPT
 from reflection_agent import ReflectionAgent
@@ -151,48 +155,15 @@ def test_rendered_prompt_substitutes_source_url_and_preserves_image_placeholder(
     assert f"<source_url>{source_url}</source_url>" in rendered
     assert "{original_link}" not in rendered
     assert '{IMAGE_HERE}' in rendered
-    assert 'href="https://news.youdle.io/"' in rendered
-    assert "Back to News Blog" in rendered
-    assert rendered.index("Back to News Blog") < rendered.index('{IMAGE_HERE}')
+    # Navigation and signup chrome now live in the Blogger theme, not the post.
+    assert "Back to News Blog" not in rendered
+    assert "Back to Youdle" not in rendered
 
 
-def test_news_blog_back_link_is_canonical_above_image_and_idempotent():
-    html = """<div>
-<img src="{IMAGE_HERE}" alt="article image"/>
-<h2>Headline</h2>
-<div><a href="https://news.youdle.io/">Back to News Blog</a></div>
-</div>"""
-
-    updated = ensure_news_blog_back_link(html)
-
-    assert updated.count("https://news.youdle.io/") == 1
-    assert updated.count("Back to News Blog") == 1
-    assert NEWS_BLOG_BACK_LINK_HTML in updated
-    assert updated.index("Back to News Blog") < updated.index("<img")
-    assert ensure_news_blog_back_link(updated) == updated
-
-
-def test_newsletter_signup_block_is_canonical_at_article_bottom_and_idempotent():
-    html = """<div>
-<img src="{IMAGE_HERE}" alt="article image"/>
-<h2>Headline</h2>
-<p>Closing article copy.</p>
-</div>"""
-
-    updated = ensure_newsletter_signup_block(html)
-
-    assert updated.count(NEWSLETTER_EMBED_URL) == 1
-    assert NEWSLETTER_SIGNUP_BLOCK_HTML in updated
-    assert updated.index("Closing article copy") < updated.index(NEWSLETTER_EMBED_URL)
-    assert updated.index(NEWSLETTER_EMBED_URL) < updated.rindex("</div>")
-    assert ensure_newsletter_signup_block(updated) == updated
-
-
-def test_generation_adds_news_blog_link_before_reflection():
+def test_generation_passes_model_html_to_reflection_unmodified():
+    raw_html = '<div><img src="{IMAGE_HERE}" alt="article image"/></div>'
     generator = object.__new__(BlogPostGenerator)
-    generator.generate_shoppers_post = MagicMock(
-        return_value='<div><img src="{IMAGE_HERE}" alt="article image"/></div>'
-    )
+    generator.generate_shoppers_post = MagicMock(return_value=raw_html)
     generator.generate_recall_post = MagicMock()
     generator.reflect_on_post = MagicMock(return_value={"is_valid": True})
 
@@ -203,9 +174,9 @@ def test_generation_adds_news_blog_link_before_reflection():
     )
 
     reflected_html = generator.reflect_on_post.call_args.args[0]
-    assert "Back to News Blog" in reflected_html
-    assert reflected_html.index("Back to News Blog") < reflected_html.index("<img")
-    assert result["blog_post"] == reflected_html
+    assert reflected_html == raw_html
+    assert "Back to News Blog" not in reflected_html
+    assert result["blog_post"] == raw_html
 
 
 @pytest.mark.parametrize("prompt_template", [SHOPPERS_BLOG_PROMPT, RECALL_BLOG_PROMPT])
@@ -467,13 +438,7 @@ def test_generated_html_safety_detects_executable_markup(
 
 def test_generated_html_safety_allows_normal_youdle_markup():
     normal_html = """<div>
-<div style="text-align: center; margin: 0 0 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
-  <a href="https://news.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">&larr; Back to News Blog</a>
-</div>
 <img src="{IMAGE_HERE}" alt="article image"/>
-<div style="text-align: center; margin: 10px 0; padding: 8px; background: #f8f9fa;">
-  <a href="https://www.youdle.io/" style="color: #007c89; text-decoration: none;">Back to Youdle</a>
-</div>
 <h2>A grocery update worth checking</h2>
 <p>MEMPHIS, Tenn. (Youdle) - You can review this grocery update.</p>
 <ul><li>Compare the details before shopping.</li></ul>
@@ -485,20 +450,19 @@ read the <a href="https://getyoudle.com/blog">Youdle Blog</a>, and
     assert find_unsafe_html_issues(normal_html) == []
 
 
-def test_generated_html_safety_allows_only_the_owned_newsletter_iframe():
-    assert find_unsafe_html_issues(NEWSLETTER_SIGNUP_BLOCK_HTML) == []
-
-    untrusted_iframe = NEWSLETTER_SIGNUP_BLOCK_HTML.replace(
-        NEWSLETTER_EMBED_URL,
-        "https://example.com/newsletter-embed",
+def test_generated_html_safety_rejects_every_iframe():
+    # The signup form now lives in the Blogger theme, so no post body may frame it.
+    formerly_allowed = (
+        '<div id="youdle-newsletter-signup">'
+        '<iframe src="https://www.youdle.io/newsletter-embed"'
+        ' title="Subscribe to the Youdle Newsletter" loading="lazy"'
+        ' sandbox="allow-forms allow-scripts allow-same-origin"></iframe>'
+        "</div>"
     )
-    assert "Unsafe HTML tag: <iframe>" in find_unsafe_html_issues(untrusted_iframe)
-
-    loosened_sandbox = NEWSLETTER_SIGNUP_BLOCK_HTML.replace(
-        'sandbox="allow-forms allow-scripts allow-same-origin"',
-        'sandbox="allow-forms allow-scripts allow-same-origin allow-popups"',
+    assert "Unsafe HTML tag: <iframe>" in find_unsafe_html_issues(formerly_allowed)
+    assert "Unsafe HTML tag: <iframe>" in find_unsafe_html_issues(
+        '<iframe src="https://example.com/embed"></iframe>'
     )
-    assert "Unsafe HTML tag: <iframe>" in find_unsafe_html_issues(loosened_sandbox)
 
 
 def test_final_assembly_rejects_unsafe_generated_html():
@@ -564,7 +528,8 @@ def test_final_assembly_appends_the_newsletter_signup_block():
     assert result.get("errors", []) == []
     assert len(result["final_posts"]) == 1
     final_html = result["final_posts"][0]["html"]
-    assert final_html.count(NEWSLETTER_EMBED_URL) == 1
+    assert "<iframe" not in final_html
+    assert "youdle-newsletter-signup" not in final_html
     assert "https://images.example.com/a.jpg" in final_html
     assert find_unsafe_html_issues(final_html) == []
 
@@ -609,9 +574,6 @@ def test_final_assembly_keeps_safe_draft_with_editorial_warning():
 
 def test_word_count_only_invalid_reflection_requests_regeneration():
     short_but_structurally_valid = """<div>
-<div style="text-align: center; margin: 0 0 10px 0; padding: 8px; background: #f8f9fa; border-radius: 4px;">
-  <a href="https://news.youdle.io/" style="color: #007c89; text-decoration: none; font-weight: 500;">&larr; Back to News Blog</a>
-</div>
 <img src="{IMAGE_HERE}" alt="article image"/>
 <h2>A grocery update worth checking</h2>
 <p>MEMPHIS, Tenn. (Youdle) - You can use these facts before shopping.</p>
@@ -634,3 +596,99 @@ def test_word_count_only_invalid_reflection_requests_regeneration():
         f"Word count issue: {reflection['word_count']['word_count']} words"
     ]
     assert agent.should_regenerate(reflection) is True
+
+
+def test_openai_client_uses_the_server_side_key_and_bounded_output(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    with patch("langchain_blog_agent.ChatOpenAI") as client:
+        create_openai_chat_model("gpt-4o")
+
+    client.assert_called_once_with(
+        model="gpt-4o",
+        temperature=0.7,
+        max_tokens=DEFAULT_MAX_TOKENS,
+        max_retries=3,
+        api_key="test-openai-key",
+    )
+
+
+def test_openai_client_clamps_output_to_the_model_ceiling(monkeypatch):
+    """Asking for more completion tokens than a model allows is a 400."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    with patch("langchain_blog_agent.ChatOpenAI") as client:
+        create_openai_chat_model("gpt-4-turbo")
+
+    assert client.call_args.kwargs["max_tokens"] == resolve_max_tokens("gpt-4-turbo")
+    assert client.call_args.kwargs["max_tokens"] < DEFAULT_MAX_TOKENS
+
+
+def test_openai_client_rejects_models_too_small_for_a_full_prompt(monkeypatch):
+    """gpt-4 has an 8k window; a full prompt is ~14k, so every run produced
+    zero posts. The model must be rejected with an explanation instead."""
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai-key")
+
+    for undersized in ("gpt-4", "gpt-3.5-turbo"):
+        with pytest.raises(ValueError, match="context window"):
+            create_openai_chat_model(undersized)
+
+
+def test_openai_client_rejects_missing_credentials(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        create_openai_chat_model("gpt-4o")
+
+
+def test_examples_section_stays_within_its_character_budget():
+    """The learning store grows without bound; the prompt section must not."""
+    generator = object.__new__(BlogPostGenerator)
+    huge = "<p>" + ("filler " * 5000) + "</p>"
+
+    section = generator._format_examples_section([huge] * 3, [huge] * 2)
+
+    assert len(section) < EXAMPLES_SECTION_MAX_CHARS * 1.1
+    assert "Good Example 3" in section
+    assert "Bad Example 2" in section
+
+
+def test_examples_section_keeps_short_examples_intact():
+    generator = object.__new__(BlogPostGenerator)
+    short = "<p>A short but complete example post.</p>"
+
+    section = generator._format_examples_section([short], [])
+
+    assert short in section
+    assert "example truncated" not in section
+
+
+def test_full_recall_prompt_fits_the_default_model_context():
+    """End-to-end guard on the failure that produced no blog posts."""
+    import blog_post_graph as graph
+
+    generator = object.__new__(BlogPostGenerator)
+    examples = generator._format_examples_section(
+        ["<p>" + ("example " * 3000) + "</p>"] * 3,
+        ["<p>" + ("example " * 3000) + "</p>"] * 2,
+    )
+    guidance = generator._format_guidance_section(
+        prompt_additions="Stay practical.",
+        common_mistakes=["mistake"] * 5,
+        successful_patterns=["pattern"] * 5,
+    )
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", EDITORIAL_SYSTEM_PROMPT),
+        ("human", RECALL_BLOG_PROMPT),
+    ])
+    messages = prompt.format_messages(
+        title="Weekly recall roundup",
+        content="X" * graph.RECALL_CONTEXT_MAX_CHARS,
+        original_link="https://example.com/a",
+        examples_section=examples,
+        guidance_section=guidance,
+    )
+
+    # ~4 characters per token is the conventional English estimate.
+    estimated_input_tokens = sum(len(m.content) for m in messages) / 4
+    assert estimated_input_tokens + DEFAULT_MAX_TOKENS < MIN_CONTEXT_TOKENS

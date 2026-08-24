@@ -7,6 +7,7 @@ import sys
 import json
 import argparse
 from datetime import datetime
+from ai_models import get_default_openai_model
 
 try:
     from dotenv import load_dotenv
@@ -70,7 +71,7 @@ def main():
         epilog="""
 Examples:
   python generate_blog_posts.py                    # Run with defaults
-  python generate_blog_posts.py --model gpt-3.5-turbo  # Use faster model
+  python generate_blog_posts.py --model gpt-4o-mini    # Use faster model
   python generate_blog_posts.py --placeholder-images   # Skip image generation
   python generate_blog_posts.py --batch-size 50        # Search more articles
         """
@@ -78,8 +79,8 @@ Examples:
     
     parser.add_argument(
         "--model", "-m",
-        default="gpt-4",
-        help="OpenAI model to use (default: gpt-4)"
+        default=get_default_openai_model(),
+        help="OpenAI model to use (default: OPENAI_MODEL or gpt-4o)"
     )
     
     parser.add_argument(
