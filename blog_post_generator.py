@@ -40,7 +40,7 @@ from example_store import ExampleStore, retrieve_similar_examples
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory, load_learning_memory
-from blog_post_html import ensure_news_blog_back_link, ensure_newsletter_signup_block
+from ai_models import get_default_openai_model
 
 # ============================================================================
 # CONFIGURATION
@@ -66,14 +66,14 @@ class BlogPostOrchestrator:
 
     def __init__(
         self,
-        model: str = "gpt-4",
+        model: Optional[str] = None,
         use_placeholder_images: bool = False
     ):
         """
         Initialize the orchestrator.
 
         Args:
-            model: OpenAI model for blog generation
+            model: OpenAI model for blog generation (default: OPENAI_MODEL or gpt-4o)
             use_placeholder_images: Use placeholder images instead of Gemini
         """
         self.generator = BlogPostGenerator(model=model)
@@ -327,18 +327,12 @@ class BlogPostOrchestrator:
         """
         html = blog_post
 
-        # Keep the navigation block consistent in the legacy generation path.
-        html = ensure_news_blog_back_link(html)
-
         # Replace image placeholder
         html = html.replace("{IMAGE_HERE}", image_url)
         html = html.replace("{{IMAGE_HERE}}", image_url)
 
         # Replace link placeholder
         html = html.replace("{original_link}", original_link)
-
-        # The signup form is a deterministic app-owned block, not LLM output.
-        html = ensure_newsletter_signup_block(html)
 
         return html
 
@@ -612,7 +606,7 @@ class BlogPostOrchestrator:
 
 
 def run_generation(
-    model: str = "gpt-4",
+    model: Optional[str] = None,
     use_placeholder_images: bool = False,
     batch_size: int = 30,
     search_days_back: int = 7,
@@ -645,7 +639,7 @@ def run_generation(
 
 
 def run_generation_legacy(
-    model: str = "gpt-4",
+    model: Optional[str] = None,
     use_placeholder_images: bool = False,
     batch_size: int = 30,
     search_days_back: int = 7
@@ -670,7 +664,11 @@ if __name__ == "__main__":
     import sys
 
     parser = argparse.ArgumentParser(description="Generate blog posts from articles")
-    parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
+    parser.add_argument(
+        "--model",
+        default=get_default_openai_model(),
+        help="OpenAI model to use",
+    )
     parser.add_argument("--placeholder-images", action="store_true", help="Use placeholder images")
     parser.add_argument("--batch-size", type=int, default=30, help="Number of articles to search")
     parser.add_argument("--days-back", type=int, default=7, help="Search window in days")

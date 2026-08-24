@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Play, Search, RefreshCw } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, normalizeOpenAIModel } from '@/lib/api'
 
 interface QuickActionsProps {
   onSearchPreview?: () => void
@@ -52,7 +52,7 @@ export function QuickActions({
       const response = await api.startGeneration({
         batch_size: batchSize,
         search_days_back: searchDaysBack,
-        model: preferences.model ?? 'gpt-4',
+        model: normalizeOpenAIModel(preferences.model),
         use_placeholder_images: preferences.usePlaceholderImages ?? false,
         use_legacy_orchestrator: preferences.useLegacyOrchestrator ?? false,
       })

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Activity, RefreshCw, Clock, CheckCircle2, XCircle, Ban, Trash2, Eye } from 'lucide-react'
-import { api } from '@/lib/api'
+import { api, DEFAULT_OPENAI_MODEL } from '@/lib/api'
 import { subscribeToJobs, Job } from '@/lib/supabase'
 import { cn, formatDate, formatRelativeTime, getStatusColor } from '@/lib/utils'
 
@@ -179,7 +179,7 @@ export default function JobsPage() {
 
                       <div>
                         <p className="font-medium text-stone-900">
-                          {job.config?.batch_size || 10} articles • {job.config?.model || 'gpt-4'}
+                          {job.config?.batch_size || 10} articles • {job.config?.model || DEFAULT_OPENAI_MODEL}
                         </p>
                         <p className="text-sm text-stone-500">
                           {formatRelativeTime(job.started_at || job.completed_at || job.created_at)}

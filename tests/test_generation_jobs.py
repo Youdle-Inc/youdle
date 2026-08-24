@@ -119,6 +119,20 @@ def test_generation_config_rejects_runaway_values():
         GenerationConfig(search_days_back=91)
 
 
+def test_generation_config_rejects_models_too_small_for_a_full_prompt():
+    """A full prompt is ~14k tokens. Small-context models silently produced
+    zero posts, so the job is rejected at creation instead."""
+    assert GenerationConfig().model == "gpt-4o"
+    assert GenerationConfig(model="gpt-4o-mini").model == "gpt-4o-mini"
+
+    for undersized in ("gpt-4", "gpt-3.5-turbo"):
+        with pytest.raises(ValidationError):
+            GenerationConfig(model=undersized)
+
+    with pytest.raises(ValidationError):
+        GenerationConfig(model="claude-opus-5")
+
+
 def test_endpoint_rejects_an_existing_active_job():
     jobs = [{
         "id": "active-job",

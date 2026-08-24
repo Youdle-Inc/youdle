@@ -27,7 +27,8 @@ from zap_exa_ranker import (
     main as search_articles_exa,
     truncate_source_text,
 )
-from langchain_blog_agent import BlogPostGenerator
+from langchain_blog_agent import BlogPostGenerator, create_openai_chat_model
+from ai_models import get_default_openai_model
 from image_generator import get_image_generator
 from supabase_storage import get_supabase_client, get_supabase_storage
 from example_store import ExampleStore
@@ -35,7 +36,6 @@ from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues
-from blog_post_html import ensure_news_blog_back_link, ensure_newsletter_signup_block
 from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
 
 
@@ -190,7 +190,7 @@ def build_recall_source_context(
 def create_initial_state(
     batch_size: int = 30,
     search_days_back: int = 7,
-    model: str = "gpt-4",
+    model: Optional[str] = None,
     use_placeholder_images: bool = False,
     job_id: Optional[str] = None,
 ) -> BlogPostState:
@@ -443,13 +443,14 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         articles_to_process = articles
     
     try:
-        generator = BlogPostGenerator(model=state.get("model", "gpt-4"))
+        generator = BlogPostGenerator(model=state.get("model") or get_default_openai_model())
         
         # Prepare articles with learning context
         shoppers_context = state.get("shoppers_context", {})
         recall_context = state.get("recall_context", {})
         
         generated_posts = []
+        article_errors: List[str] = []
         
         # Separate recall and shoppers articles (Issue #860 - consolidate recalls into roundup)
         # Fixed: use consistent case checking with uppercase "RECALL" like in select_articles_node
@@ -459,27 +460,37 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         # Debug logging
         logs.append(f"  📊 Found {len(recall_articles_to_process)} recall articles and {len(shoppers_articles_to_process)} shoppers articles")
         
-        # Generate individual shoppers posts
+        # Generate individual shoppers posts. Each article is isolated: one
+        # article failing (a provider error, a bad response) must not discard
+        # the posts already generated in this batch.
         for article in shoppers_articles_to_process:
             context = shoppers_context
 
-            result = generator.generate_with_reflection(
-                title=article.get("title", ""),
-                content=article.get("content") or article.get("description") or "",
-                original_link=article.get("link", ""),
-                category="shoppers",
-                good_examples=context.get("good_examples"),
-                bad_examples=context.get("bad_examples"),
-                prompt_additions=context.get("prompt_additions"),
-                common_mistakes=context.get("common_mistakes"),
-                successful_patterns=context.get("successful_patterns"),
-                regeneration_hints=article.get("regeneration_hints"),
-                # LangGraph owns the retry loop below. Letting this helper
-                # retry too multiplied the configured three attempts into as
-                # many as nine attempts per article.
-                max_retries=0,
-            )
-            
+            try:
+                result = generator.generate_with_reflection(
+                    title=article.get("title", ""),
+                    content=article.get("content") or article.get("description") or "",
+                    original_link=article.get("link", ""),
+                    category="shoppers",
+                    good_examples=context.get("good_examples"),
+                    bad_examples=context.get("bad_examples"),
+                    prompt_additions=context.get("prompt_additions"),
+                    common_mistakes=context.get("common_mistakes"),
+                    successful_patterns=context.get("successful_patterns"),
+                    regeneration_hints=article.get("regeneration_hints"),
+                    # LangGraph owns the retry loop below. Letting this helper
+                    # retry too multiplied the configured three attempts into as
+                    # many as nine attempts per article.
+                    max_retries=0,
+                )
+            except Exception as article_error:
+                title = article.get("title", "Unknown")
+                article_errors.append(
+                    f"Generation failed for '{title[:60]}': {article_error}"
+                )
+                logs.append(f"  ✗ {title[:50]}... ({article_error})")
+                continue
+
             result["article"] = article
             result["category"] = "shoppers"
             result["post_id"] = get_url_hash(article.get("link", ""))
@@ -527,35 +538,48 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                     "source_articles": recall_articles_to_process,
                 }
 
-            result = generator.generate_with_reflection(
-                title=combined_title,
-                content=combined_content,
-                original_link=primary_link,
-                category="recall",
-                good_examples=recall_context.get("good_examples"),
-                bad_examples=recall_context.get("bad_examples"),
-                prompt_additions=recall_context.get("prompt_additions"),
-                common_mistakes=recall_context.get("common_mistakes"),
-                successful_patterns=recall_context.get("successful_patterns"),
-                regeneration_hints=merged_article.get("regeneration_hints"),
-                max_retries=0,
-            )
-            
-            result["article"] = merged_article
-            result["category"] = "recall"
-            result["post_id"] = get_url_hash(f"recall-roundup-{datetime.now().strftime('%Y-%W')}")
-            
-            generated_posts.append(result)
-            
-            status = "✓" if result.get("success") else "✗"
-            logs.append(f"  {status} Weekly Recall Roundup ({source_count} recalls)")
+            try:
+                result = generator.generate_with_reflection(
+                    title=combined_title,
+                    content=combined_content,
+                    original_link=primary_link,
+                    category="recall",
+                    good_examples=recall_context.get("good_examples"),
+                    bad_examples=recall_context.get("bad_examples"),
+                    prompt_additions=recall_context.get("prompt_additions"),
+                    common_mistakes=recall_context.get("common_mistakes"),
+                    successful_patterns=recall_context.get("successful_patterns"),
+                    regeneration_hints=merged_article.get("regeneration_hints"),
+                    max_retries=0,
+                )
+            except Exception as roundup_error:
+                result = None
+                article_errors.append(
+                    f"Generation failed for the weekly recall roundup: {roundup_error}"
+                )
+                logs.append(f"  ✗ Weekly Recall Roundup ({roundup_error})")
+
+            if result is not None:
+                result["article"] = merged_article
+                result["category"] = "recall"
+                result["post_id"] = get_url_hash(f"recall-roundup-{datetime.now().strftime('%Y-%W')}")
+
+                generated_posts.append(result)
+
+                status = "✓" if result.get("success") else "✗"
+                logs.append(f"  {status} Weekly Recall Roundup ({source_count} recalls)")
         
         logs.append(f"Generated {len(generated_posts)} blog posts")
         
-        return {
+        # Per-article failures are reported but do not discard the posts that
+        # did generate, so a partial batch still reaches the dashboard.
+        node_update = {
             "generated_posts": generated_posts,
             "logs": logs
         }
+        if article_errors:
+            node_update["errors"] = article_errors
+        return node_update
         
     except Exception as e:
         return {
@@ -685,15 +709,13 @@ def proofread_posts_node(state: BlogPostState) -> Dict[str, Any]:
         return {"proofread_corrections": {}, "logs": logs + ["No posts to proofread"]}
 
     try:
-        from langchain_openai import ChatOpenAI
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_core.output_parsers import StrOutputParser
 
-        model = state.get("model", "gpt-4")
-        llm = ChatOpenAI(
+        model = state.get("model") or get_default_openai_model()
+        llm = create_openai_chat_model(
             model=model,
             temperature=0,  # Deterministic for proofreading
-            api_key=os.getenv("OPENAI_API_KEY")
         )
 
         prompt = ChatPromptTemplate.from_messages([
@@ -905,7 +927,6 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     for post_id, post in posts_by_id.items():
         # Use proofread version if available, otherwise original
         blog_post = proofread_corrections.get(post_id, post.get("blog_post", ""))
-        blog_post = ensure_news_blog_back_link(blog_post)
         article = post.get("article", {})
         original_link = article.get("link", "")
 
@@ -934,7 +955,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         image_url = url_lookup.get(post_id, "{IMAGE_HERE}")
 
         # Replace placeholders
-        final_html = ensure_newsletter_signup_block(blog_post)
+        final_html = blog_post
         final_html = final_html.replace("{IMAGE_HERE}", image_url)
         final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
         final_html = final_html.replace("{original_link}", original_link)
@@ -1298,7 +1319,7 @@ def create_blog_post_graph() -> StateGraph:
 def run_blog_post_workflow(
     batch_size: int = 30,
     search_days_back: int = 7,
-    model: str = "gpt-4",
+    model: Optional[str] = None,
     use_placeholder_images: bool = False,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -1308,7 +1329,7 @@ def run_blog_post_workflow(
     Args:
         batch_size: Number of articles to search
         search_days_back: How far back to search
-        model: OpenAI model for generation
+        model: OpenAI model for generation (default: OPENAI_MODEL or gpt-4o)
         use_placeholder_images: Use placeholder images instead of Gemini
         
     Returns:
@@ -1391,7 +1412,11 @@ if __name__ == "__main__":
     import json
     
     parser = argparse.ArgumentParser(description="Run LangGraph blog post workflow")
-    parser.add_argument("--model", default="gpt-4", help="OpenAI model to use")
+    parser.add_argument(
+        "--model",
+        default=get_default_openai_model(),
+        help="OpenAI model to use",
+    )
     parser.add_argument("--placeholder-images", action="store_true", help="Use placeholder images")
     parser.add_argument("--batch-size", type=int, default=30, help="Number of articles to search")
     parser.add_argument("--days-back", type=int, default=7, help="Search window in days")

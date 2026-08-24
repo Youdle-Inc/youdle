@@ -10,11 +10,12 @@ on:
       model:
         description: 'OpenAI model to use'
         required: false
-        default: 'gpt-4'
+        default: 'gpt-4o'
         type: choice
         options:
-          - gpt-4
-          - gpt-3.5-turbo
+          - gpt-4o
+          - gpt-4o-mini
+          - gpt-4-turbo
       batch_size:
         description: 'Number of articles to search'
         required: false
@@ -110,7 +111,7 @@ jobs:
           else
             echo "🔵 Running real blog post generation..."
             python generate_blog_posts.py \
-              --model ${{ github.event.inputs.model || 'gpt-4' }} \
+              --model ${{ github.event.inputs.model || 'gpt-4o' }} \
               --batch-size ${{ github.event.inputs.batch_size || '10' }} \
               --days-back ${{ github.event.inputs.days_back || '7' }} \
               --json > generation_result.json 2> generation_error.log
