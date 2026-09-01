@@ -91,7 +91,7 @@ youdle/
 ├── mailchimp_campaign.py   # Newsletter creation
 ├── check_blog_status.py    # Weekly publish status
 ├── fetch_published_posts.py# Fetch posts for newsletter
-└── sendgrid_notifier.py    # Email notifications
+└── email_notifier.py       # Email notifications (SMTP)
 ```
 
 ---
@@ -269,7 +269,7 @@ Output: 80% SHOPPERS, 20% RECALL
 
 ### reminder-emails.yml
 
-- Sends reminders via SendGrid
+- Sends reminders over SMTP
 - Shows current publish status
 - Final warning on Wednesday 8 PM
 
@@ -368,7 +368,7 @@ key, value
 | Google Blogger | Post publishing | `BLOGGER_*` credentials |
 | Mailchimp | Newsletters | `MAILCHIMP_*` credentials |
 | imgBB | Image CDN | `IMGBB_API_KEY` |
-| SendGrid | Email notifications | `SENDGRID_API_KEY` |
+| Google Workspace SMTP | Email notifications | `SMTP_USERNAME`, `SMTP_PASSWORD` |
 | Supabase | Database & storage | `SUPABASE_URL`, `SUPABASE_KEY` |
 
 ---
@@ -402,7 +402,8 @@ BLOGGER_CLIENT_SECRET=
 BLOGGER_REFRESH_TOKEN=
 
 # Notifications
-SENDGRID_API_KEY=
+SMTP_USERNAME=
+SMTP_PASSWORD=
 ADMIN_NOTIFICATION_EMAIL=
 ```
 

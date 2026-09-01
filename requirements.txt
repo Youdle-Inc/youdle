@@ -33,8 +33,7 @@ exa_py>=1.0.0
 # Mailchimp API
 mailchimp3>=3.0.0
 
-# SendGrid for transactional notification emails
-sendgrid>=6.9.0
+# Notification emails are sent over SMTP via stdlib smtplib
 
 # Async HTTP for concurrent operations
 aiohttp>=3.9.0

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Helper script for GitHub Actions to send SendGrid notifications.
+Helper script for GitHub Actions to send notification emails.
 Usage: python send_notifications.py <type> <published_count> <shoppers_published> <recall_published>
 """
 
 import sys
-from sendgrid_notifier import SendGridNotifier
+from email_notifier import EmailNotifier
 
 def main():
     if len(sys.argv) != 5:
@@ -17,7 +17,7 @@ def main():
     shoppers_published = int(sys.argv[3])
     recall_published = int(sys.argv[4])
     
-    notifier = SendGridNotifier()
+    notifier = EmailNotifier()
     
     if notification_type == "met":
         result = notifier.send_requirements_met_notification(
@@ -37,6 +37,13 @@ def main():
         print(f'Cancellation notification result: {result}')
     else:
         print(f"Unknown notification type: {notification_type}")
+        sys.exit(1)
+
+    # Fail the workflow step on a send failure. SMTP gives us no delivery
+    # dashboard, so a silent exit 0 here would hide a broken app password
+    # until someone noticed the missing email days later.
+    if not result.get("success"):
+        print(f"Notification send failed: {result.get('error', 'Unknown error')}")
         sys.exit(1)
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.caches import InMemoryCache
 from langchain_core.globals import set_llm_cache
+from langchain_core.runnables import RunnableLambda
 from ai_models import (
     DEFAULT_MAX_TOKENS,
     EXAMPLES_SECTION_MAX_CHARS,
@@ -16,6 +17,7 @@ from ai_models import (
     resolve_max_tokens,
     validate_openai_model,
 )
+from html_safety import strip_code_fences
 
 try:
     from dotenv import load_dotenv
@@ -102,7 +104,15 @@ class BlogPostGenerator:
             ("system", EDITORIAL_SYSTEM_PROMPT),
             ("human", prompt_template),
         ])
-        return prompt | (llm or self.llm) | StrOutputParser()
+        # Strip the fence on the way out of every chain, so no caller has to
+        # remember to. The model is told to return bare HTML but intermittently
+        # wraps it in ```html, which renders as literal text once published.
+        return (
+            prompt
+            | (llm or self.llm)
+            | StrOutputParser()
+            | RunnableLambda(strip_code_fences)
+        )
     
     def _format_examples_section(
         self,

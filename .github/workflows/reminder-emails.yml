@@ -41,7 +41,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install sendgrid python-dotenv supabase pytz
+          pip install python-dotenv supabase pytz
 
       - name: Determine reminder type
         id: reminder
@@ -94,7 +94,8 @@ jobs:
 
       - name: Send reminder email
         env:
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ADMIN_NOTIFICATION_EMAIL: ${{ secrets.ADMIN_NOTIFICATION_EMAIL }}
         run: |
           REMINDER_TYPE="${{ steps.reminder.outputs.type }}"
@@ -108,8 +109,8 @@ jobs:
           if [ "$REMINDER_TYPE" == "wednesday_evening" ]; then
             # Final warning notification
             python -c "
-          from sendgrid_notifier import SendGridNotifier
-          notifier = SendGridNotifier()
+          from email_notifier import EmailNotifier
+          notifier = EmailNotifier()
           result = notifier.send_final_warning_notification(
               published_count=${PUBLISHED},
               required_count=7,
@@ -123,8 +124,8 @@ jobs:
           else
             # Regular reminder notification
             python -c "
-          from sendgrid_notifier import SendGridNotifier
-          notifier = SendGridNotifier()
+          from email_notifier import EmailNotifier
+          notifier = EmailNotifier()
           result = notifier.send_reminder_notification(
               reminder_type='${REMINDER_TYPE}',
               published_count=${PUBLISHED},

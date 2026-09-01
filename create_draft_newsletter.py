@@ -125,8 +125,8 @@ def create_draft_newsletter(custom_subject: str = None) -> dict:
 
     # Send notification email
     try:
-        from sendgrid_notifier import SendGridNotifier
-        notifier = SendGridNotifier()
+        from email_notifier import EmailNotifier
+        notifier = EmailNotifier()
         notifier.send_newsletter_draft_ready_notification(
             newsletter_id=newsletter_id,
             subject=subject,

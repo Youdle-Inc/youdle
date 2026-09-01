@@ -32,6 +32,10 @@ on:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    # download-artifact needs actions:read to reach the triggering run's artifact
+    permissions:
+      actions: read
+      contents: read
     # Only run if the triggering workflow succeeded (or manual trigger)
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
 
@@ -48,7 +52,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install sendgrid python-dotenv supabase pytz
+          pip install python-dotenv supabase pytz
 
       - name: Get generation results (from workflow_run)
         if: ${{ github.event_name == 'workflow_run' }}
@@ -62,7 +66,8 @@ jobs:
 
       - name: Check blog status and send notification
         env:
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           ADMIN_NOTIFICATION_EMAIL: ${{ secrets.ADMIN_NOTIFICATION_EMAIL }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -98,8 +103,8 @@ jobs:
           echo "Sending notification: $POSTS posts generated ($SHOPPERS shoppers, $RECALL recall)"
 
           python -c "
-          from sendgrid_notifier import SendGridNotifier
-          notifier = SendGridNotifier()
+          from email_notifier import EmailNotifier
+          notifier = EmailNotifier()
           result = notifier.send_blogs_generated_notification(
               posts_generated=${POSTS:-7},
               shoppers_count=${SHOPPERS:-6},
