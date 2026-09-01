@@ -1,5 +1,6 @@
 """Deterministic safety checks for generated HTML before it is rendered."""
 
+import re
 from html import unescape
 from html.parser import HTMLParser
 from typing import List, Optional, Tuple
@@ -81,3 +82,29 @@ def find_unsafe_html_issues(html_content: str) -> List[str]:
         return ["Generated HTML could not be parsed safely"]
 
     return list(dict.fromkeys(parser.issues))
+
+
+# A model asked for raw HTML will sometimes wrap the whole document in a
+# markdown code fence. The fence is not part of the post and renders as
+# literal text once published, so it is removed deterministically rather
+# than being left to the reflection loop to catch.
+_CODE_FENCE_OPEN = re.compile(r"\A```[ \t]*[A-Za-z0-9_+-]*[ \t]*\r?\n?")
+_CODE_FENCE_CLOSE = re.compile(r"\r?\n?[ \t]*```\Z")
+
+
+def strip_code_fences(content: str) -> str:
+    """Remove a markdown code fence that wraps an entire generated document.
+
+    Only a fence opening the document is stripped, so a fence that appears
+    inside the body (an article legitimately quoting one) is left intact.
+    """
+    if not isinstance(content, str):
+        return content
+
+    candidate = content.strip()
+    if not candidate.startswith("```"):
+        return content
+
+    candidate = _CODE_FENCE_OPEN.sub("", candidate, count=1)
+    candidate = _CODE_FENCE_CLOSE.sub("", candidate, count=1)
+    return candidate.strip()

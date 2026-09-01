@@ -1,8 +1,16 @@
-# sendgrid_notifier.py
-# SendGrid integration for transactional notification emails
+# email_notifier.py
+# SMTP integration for transactional notification emails.
+#
+# Sends through Google Workspace, which already owns the SPF record for
+# getyoudle.com, so these messages authenticate as the domain instead of
+# relying on a third-party ESP.
 
 import os
+import smtplib
+import ssl
 from datetime import datetime
+from email.message import EmailMessage
+from email.utils import formataddr
 from typing import Dict, Any, Optional
 
 try:
@@ -10,13 +18,6 @@ try:
     load_dotenv()
 except ImportError:
     pass
-
-try:
-    from sendgrid import SendGridAPIClient
-    from sendgrid.helpers.mail import Mail, Email, To, Content, Personalization
-except ImportError:
-    SendGridAPIClient = None
-    print("Warning: sendgrid not installed. Run: pip install sendgrid")
 
 
 # ============================================================================
@@ -26,6 +27,65 @@ except ImportError:
 DEFAULT_SENDER_EMAIL = "info@getyoudle.com"
 DEFAULT_SENDER_NAME = "Youdle"
 DASHBOARD_URL = "https://youdle-agent-dashboard.vercel.app"
+
+DEFAULT_SMTP_HOST = "smtp.gmail.com"
+DEFAULT_SMTP_PORT = 587
+
+# Values that look like a credential but are not one. A placeholder is truthy,
+# so it connects fine and only fails at login with an opaque auth error.
+PLACEHOLDER_SECRETS = {
+    "your-app-password",
+    "your_app_password",
+    "changeme",
+    "todo",
+    "none",
+    "null",
+}
+
+
+def _clean_secret(raw: Optional[str]) -> Optional[str]:
+    """
+    Normalize a credential read from the environment.
+
+    A secret pasted with a trailing newline or wrapping quotes is still truthy,
+    so it authenticates as garbage. Google app passwords are also displayed in
+    four space-separated groups, and the spaces must be removed before use.
+    """
+    if not raw:
+        return None
+    cleaned = raw.strip().strip('"').strip("'").strip()
+    return cleaned or None
+
+
+def _describe_send_error(error: Exception) -> str:
+    """
+    Build an actionable message from an SMTP failure.
+
+    smtplib exceptions stringify to a bare tuple of code and server bytes, so
+    add the interpretation rather than leaving the caller to decode it.
+    """
+    parts = [f"{type(error).__name__}: {error}"]
+
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        parts.append(
+            "Google rejected the login. SMTP_PASSWORD must be a 16-character "
+            "app password (not the account password), and the account needs "
+            "2-Step Verification enabled to create one."
+        )
+    elif isinstance(error, smtplib.SMTPSenderRefused):
+        parts.append(
+            "Google refused the From address. SENDER_EMAIL must be the "
+            "SMTP_USERNAME account or an alias it is allowed to send as."
+        )
+    elif isinstance(error, smtplib.SMTPRecipientsRefused):
+        parts.append("Every recipient was rejected. Check ADMIN_NOTIFICATION_EMAIL.")
+    elif isinstance(error, (smtplib.SMTPConnectError, OSError)):
+        parts.append(
+            f"Could not reach the SMTP server. Check SMTP_HOST/SMTP_PORT and "
+            f"that outbound port {DEFAULT_SMTP_PORT} is not blocked."
+        )
+
+    return " | ".join(parts)
 
 
 # ============================================================================
@@ -78,30 +138,52 @@ BASE_EMAIL_TEMPLATE = """<!DOCTYPE html>
 </html>"""
 
 
-class SendGridNotifier:
+class EmailNotifier:
     """
-    SendGrid integration for sending transactional notification emails.
+    SMTP integration for sending transactional notification emails.
     """
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        smtp_password: Optional[str] = None,
         admin_emails: Optional[str] = None,
         sender_email: Optional[str] = None,
-        sender_name: Optional[str] = None
+        sender_name: Optional[str] = None,
+        smtp_host: Optional[str] = None,
+        smtp_port: Optional[int] = None,
+        smtp_username: Optional[str] = None,
+        dry_run: bool = False
     ):
         """
-        Initialize SendGrid client.
+        Initialize the SMTP notifier.
 
         Args:
-            api_key: SendGrid API key (defaults to SENDGRID_API_KEY env var)
+            smtp_password: Google app password (defaults to SMTP_PASSWORD env var)
             admin_emails: Admin email(s) to receive notifications, comma-separated for multiple
                          (defaults to ADMIN_NOTIFICATION_EMAIL env var)
-            sender_email: Sender email address (defaults to DEFAULT_SENDER_EMAIL)
+            sender_email: Sender email address (defaults to SMTP_USERNAME, then DEFAULT_SENDER_EMAIL)
             sender_name: Sender display name (defaults to DEFAULT_SENDER_NAME)
+            smtp_host: SMTP server (defaults to SMTP_HOST env var, then smtp.gmail.com)
+            smtp_port: SMTP port (defaults to SMTP_PORT env var, then 587)
+            smtp_username: Account to authenticate as (defaults to SMTP_USERNAME env var)
+            dry_run: Print the message instead of sending it. Works without
+                     credentials, so it can be used to preview content.
         """
-        self.api_key = api_key or os.getenv("SENDGRID_API_KEY")
-        self.sender_email = sender_email or os.getenv("SENDER_EMAIL", DEFAULT_SENDER_EMAIL)
+        self.dry_run = dry_run
+        self.smtp_host = smtp_host or os.getenv("SMTP_HOST", DEFAULT_SMTP_HOST)
+        self.smtp_port = int(smtp_port or os.getenv("SMTP_PORT", DEFAULT_SMTP_PORT))
+        self.smtp_username = _clean_secret(smtp_username or os.getenv("SMTP_USERNAME"))
+        # Google displays app passwords in four space-separated groups; the
+        # spaces are presentation only and must not be sent.
+        password = _clean_secret(smtp_password or os.getenv("SMTP_PASSWORD"))
+        self.smtp_password = password.replace(" ", "") if password else None
+
+        self.sender_email = (
+            sender_email
+            or os.getenv("SENDER_EMAIL")
+            or self.smtp_username
+            or DEFAULT_SENDER_EMAIL
+        )
         self.sender_name = sender_name or DEFAULT_SENDER_NAME
 
         # Parse admin emails (comma-separated)
@@ -110,12 +192,17 @@ class SendGridNotifier:
             email.strip() for email in admin_emails_str.split(",") if email.strip()
         ]
 
-        self.client = None
-        if self.api_key and SendGridAPIClient:
-            try:
-                self.client = SendGridAPIClient(self.api_key)
-            except Exception as e:
-                print(f"Warning: Could not initialize SendGrid client: {e}")
+        if self.smtp_password and self.smtp_password.lower() in PLACEHOLDER_SECRETS:
+            print(
+                "Warning: SMTP_PASSWORD is a placeholder, not a real app password. "
+                "Set the real value or sending will fail to authenticate."
+            )
+            self.smtp_password = None
+
+    @property
+    def is_configured(self) -> bool:
+        """True when there are enough credentials to attempt a send."""
+        return bool(self.smtp_username and self.smtp_password)
 
     def _build_html(self, subject: str, content: str) -> str:
         """Build full HTML email from content."""
@@ -144,10 +231,39 @@ class SendGridNotifier:
         """
         recipients = to_emails or self.admin_emails
 
-        if not self.client:
+        # Ensure recipients is a list
+        if isinstance(recipients, str):
+            recipients = [recipients]
+
+        # Checked before the credential guard so content can be previewed
+        # without a configured mailbox.
+        if self.dry_run:
+            print("=" * 78)
+            print("DRY RUN - nothing sent")
+            print("=" * 78)
+            print(f"From    : {self.sender_name} <{self.sender_email}>")
+            print(f"To      : {', '.join(recipients) if recipients else '(none)'}")
+            print(f"Subject : {subject}")
+            print("-" * 78)
+            print(html_content)
+            print("=" * 78)
+            return {
+                "success": True,
+                "dry_run": True,
+                "to_emails": recipients,
+                "subject": subject
+            }
+
+        if not self.is_configured:
+            missing = [
+                name for name, value in (
+                    ("SMTP_USERNAME", self.smtp_username),
+                    ("SMTP_PASSWORD", self.smtp_password),
+                ) if not value
+            ]
             return {
                 "success": False,
-                "error": "SendGrid client not initialized. Check SENDGRID_API_KEY."
+                "error": f"SMTP not configured. Missing: {', '.join(missing)}."
             }
 
         if not recipients:
@@ -156,26 +272,35 @@ class SendGridNotifier:
                 "error": "No recipient email provided. Set ADMIN_NOTIFICATION_EMAIL."
             }
 
-        # Ensure recipients is a list
-        if isinstance(recipients, str):
-            recipients = [recipients]
-
         try:
-            # Create list of To objects for all recipients
-            to_list = [To(email) for email in recipients]
+            message = EmailMessage()
+            message["Subject"] = subject
+            message["From"] = formataddr((self.sender_name, self.sender_email))
+            message["To"] = ", ".join(recipients)
 
-            message = Mail(
-                from_email=Email(self.sender_email, self.sender_name),
-                to_emails=to_list,
-                subject=subject,
-                html_content=Content("text/html", html_content)
+            # Plain-text part first, then the HTML alternative clients prefer.
+            message.set_content(
+                "This notification is formatted as HTML. "
+                f"View it in an HTML-capable client, or open {DASHBOARD_URL}."
             )
+            message.add_alternative(html_content, subtype="html")
 
-            response = self.client.send(message)
+            context = ssl.create_default_context()
+            if self.smtp_port == 465:
+                server = smtplib.SMTP_SSL(self.smtp_host, self.smtp_port,
+                                          timeout=30, context=context)
+            else:
+                server = smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30)
+
+            with server:
+                if self.smtp_port != 465:
+                    server.starttls(context=context)
+                server.login(self.smtp_username, self.smtp_password)
+                server.send_message(message)
 
             return {
                 "success": True,
-                "status_code": response.status_code,
+                "status_code": 250,
                 "to_emails": recipients,
                 "subject": subject
             }
@@ -183,7 +308,7 @@ class SendGridNotifier:
         except Exception as e:
             return {
                 "success": False,
-                "error": str(e)
+                "error": _describe_send_error(e)
             }
 
     def send_blogs_generated_notification(
@@ -221,7 +346,7 @@ class SendGridNotifier:
             </div>
         </div>
 
-        <p><strong>Action Required:</strong> Please review and publish these blog posts before Thursday 9 AM CST when the newsletter will be sent.</p>
+        <p><strong>Action Required:</strong> Please review and publish these blog posts before Thursday. The newsletter is built from published posts, and still needs your approval on the dashboard before it goes out.</p>
 
         <p style="text-align: center;">
             <a href="{DASHBOARD_URL}/posts" class="cta-button">Review Blog Posts</a>
@@ -260,11 +385,13 @@ class SendGridNotifier:
         shoppers_needed = max(0, 6 - shoppers_published)
         recall_needed = max(0, 1 - recall_published)
 
-        # Determine urgency based on reminder type
+        # Determine urgency based on reminder type. The deadline describes when
+        # posts must be published by, not when the newsletter sends -- sending
+        # is a manual approval step on the dashboard.
         urgency_map = {
-            "tuesday_evening": ("medium", "Wednesday"),
-            "wednesday_morning": ("medium", "tomorrow morning"),
-            "wednesday_evening": ("high", "tomorrow at 9 AM CST")
+            "tuesday_evening": ("medium", "by Wednesday"),
+            "wednesday_morning": ("medium", "by tomorrow morning"),
+            "wednesday_evening": ("high", "by tomorrow morning")
         }
         urgency, deadline = urgency_map.get(reminder_type, ("medium", "soon"))
 
@@ -288,7 +415,7 @@ class SendGridNotifier:
         content = f"""
         <div class="urgency-{urgency}">
             <h2>Blog Publishing Reminder</h2>
-            <p>The weekly newsletter will be sent <strong>{deadline}</strong>. Please ensure all required blog posts are published.</p>
+            <p>This week's newsletter is put together from published posts, so everything needs to be published <strong>{deadline}</strong>. Once the draft is ready you'll get a separate email to review and approve it.</p>
         </div>
 
         <div class="status-box">
@@ -336,14 +463,14 @@ class SendGridNotifier:
             shoppers_published: Number of SHOPPERS posts published
             recall_published: Number of RECALL posts published
         """
-        subject = "FINAL NOTICE: Newsletter Will Be Sent Tomorrow Morning"
+        subject = "FINAL NOTICE: Publish Blog Posts Before Tomorrow's Newsletter"
 
         meets_requirement = (shoppers_published >= 6 and recall_published >= 1)
 
         if meets_requirement:
             status_message = """
             <p style="color: #28a745; font-weight: bold;">
-                All publishing requirements are met! The newsletter will be created and sent automatically tomorrow at 9 AM CST.
+                All publishing requirements are met. A draft newsletter can be created tomorrow morning — you'll get an email to review and approve it before anything sends.
             </p>
             """
         else:
@@ -363,7 +490,7 @@ class SendGridNotifier:
         content = f"""
         <div class="urgency-high">
             <h2>Final Newsletter Notice</h2>
-            <p>The weekly newsletter will be created and sent <strong>tomorrow at 9 AM CST</strong>.</p>
+            <p>This week's newsletter is assembled <strong>tomorrow morning</strong>, and only includes posts that are published by then.</p>
         </div>
 
         <div class="status-box">
@@ -414,7 +541,7 @@ class SendGridNotifier:
         content = f"""
         <div class="urgency-low">
             <h2>Newsletter Requirements Met</h2>
-            <p>All publishing requirements have been met. The newsletter will be created and sent automatically at <strong>9 AM CST today</strong>.</p>
+            <p>All publishing requirements have been met, so a <strong>draft</strong> newsletter is being created now. It will not send until you approve it on the dashboard.</p>
         </div>
 
         <div class="status-box">
@@ -434,10 +561,10 @@ class SendGridNotifier:
         </div>
 
         <p style="color: #28a745; font-weight: bold;">
-            The newsletter campaign will be created and sent shortly.
+            You'll get a follow-up email once the draft is ready to review.
         </p>
 
-        <p>You can review the posts that will be included in the newsletter:</p>
+        <p>In the meantime you can review the posts that will be included:</p>
 
         <p style="text-align: center;">
             <a href="{DASHBOARD_URL}/posts?status=published" class="cta-button">View Published Posts</a>
@@ -470,8 +597,8 @@ class SendGridNotifier:
 
         content = f"""
         <div class="urgency-high">
-            <h2>Newsletter Automation Failed</h2>
-            <p>The automatic newsletter was <strong>cancelled</strong> because the required blog posts were not published in time.</p>
+            <h2>Newsletter Run Cancelled</h2>
+            <p>This week's newsletter run was <strong>cancelled</strong> because the required blog posts were not published in time. No draft was created.</p>
         </div>
 
         <div class="status-box">
@@ -575,7 +702,7 @@ class SendGridNotifier:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Send notification emails via SendGrid")
+    parser = argparse.ArgumentParser(description="Send notification emails via SMTP")
     parser.add_argument("--type", "-t", required=True,
                         choices=["generated", "reminder", "warning", "cancelled", "requirements_met"],
                         help="Type of notification to send")
@@ -588,12 +715,12 @@ if __name__ == "__main__":
                         help="Number of published shoppers posts")
     parser.add_argument("--recall", type=int, default=0,
                         help="Number of published recall posts")
-    parser.add_argument("--test", action="store_true",
-                        help="Test mode - print email instead of sending")
+    parser.add_argument("--dry-run", "--test", action="store_true", dest="dry_run",
+                        help="Print the email instead of sending it")
 
     args = parser.parse_args()
 
-    notifier = SendGridNotifier()
+    notifier = EmailNotifier(dry_run=args.dry_run)
 
     if args.type == "generated":
         result = notifier.send_blogs_generated_notification(

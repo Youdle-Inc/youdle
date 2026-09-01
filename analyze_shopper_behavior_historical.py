@@ -24,13 +24,23 @@ try:
 except ImportError:
     pass
 
-from sendgrid_notifier import SendGridNotifier, BASE_EMAIL_TEMPLATE
+from email_notifier import EmailNotifier, BASE_EMAIL_TEMPLATE
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
-RECIPIENT_EMAILS = ["kontji@getyoudle.com", "johnita@getyoudle.com"]
+# Reports go to the same people as the pipeline notifications, so the list is
+# read from ADMIN_NOTIFICATION_EMAIL rather than duplicated here -- one secret
+# to edit when someone joins or leaves. The fallback keeps the report working
+# if that variable is ever missing.
+_FALLBACK_RECIPIENTS = ["kontji@getyoudle.com", "johnita@getyoudle.com"]
+
+RECIPIENT_EMAILS = [
+    email.strip()
+    for email in os.getenv("ADMIN_NOTIFICATION_EMAIL", "").split(",")
+    if email.strip()
+] or _FALLBACK_RECIPIENTS
 
 from supabase import create_client, Client
 
@@ -545,7 +555,7 @@ def send_report(analysis: Dict[str, Any], dry_run: bool = False) -> Dict[str, An
         print("=" * 80)
         return {"success": True, "dry_run": True}
 
-    notifier = SendGridNotifier()
+    notifier = EmailNotifier()
     result = notifier.send_notification(
         subject=subject,
         html_content=full_html,

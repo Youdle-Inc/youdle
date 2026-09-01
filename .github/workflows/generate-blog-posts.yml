@@ -115,9 +115,10 @@ jobs:
               --batch-size ${{ github.event.inputs.batch_size || '10' }} \
               --days-back ${{ github.event.inputs.days_back || '7' }} \
               --json > generation_result.json 2> generation_error.log
+            GEN_EXIT=$?
 
-            if [ $? -ne 0 ]; then
-              echo "generate_blog_posts.py failed with exit code $?. Error log:"
+            if [ $GEN_EXIT -ne 0 ]; then
+              echo "generate_blog_posts.py failed with exit code $GEN_EXIT. Error log:"
               cat generation_error.log
               exit 1
             fi

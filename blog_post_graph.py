@@ -35,7 +35,7 @@ from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
-from html_safety import find_unsafe_html_issues
+from html_safety import find_unsafe_html_issues, strip_code_fences
 from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
 
 
@@ -734,7 +734,7 @@ def proofread_posts_node(state: BlogPostState) -> Dict[str, Any]:
                 continue
 
             try:
-                corrected = chain.invoke({"blog_post": blog_post})
+                corrected = strip_code_fences(chain.invoke({"blog_post": blog_post}))
 
                 # Only accept correction if it preserves the HTML structure
                 if corrected.strip().startswith("<div") and corrected.strip().endswith("</div>"):
@@ -925,8 +925,12 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     final_validator = ReflectionAgent()
 
     for post_id, post in posts_by_id.items():
-        # Use proofread version if available, otherwise original
-        blog_post = proofread_corrections.get(post_id, post.get("blog_post", ""))
+        # Use proofread version if available, otherwise original.
+        # Stripped again here so posts reaching assembly from any path
+        # (regeneration, a cached generation) cannot carry a fence to save.
+        blog_post = strip_code_fences(
+            proofread_corrections.get(post_id, post.get("blog_post", ""))
+        )
         article = post.get("article", {})
         original_link = article.get("link", "")
 

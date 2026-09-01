@@ -26,9 +26,9 @@ jobs:
 
       - name: Generate and send historical behavior report
         env:
-          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
-          ADMIN_NOTIFICATION_EMAIL: kontji@getyoudle.com,johnita@getyoudle.com
-          SENDER_EMAIL: info@getyoudle.com
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ADMIN_NOTIFICATION_EMAIL: ${{ secrets.ADMIN_NOTIFICATION_EMAIL }}
           SEARCH_SUPABASE_URL: ${{ secrets.SEARCH_SUPABASE_URL }}
           SEARCH_SUPABASE_KEY: ${{ secrets.SEARCH_SUPABASE_KEY }}
         run: |

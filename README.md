@@ -386,7 +386,8 @@ Add these to your GitHub repository secrets:
 - `MAILCHIMP_API_KEY`
 - `MAILCHIMP_LIST_ID`
 - `MAILCHIMP_SERVER_PREFIX`
-- `SENDGRID_API_KEY`
+- `SMTP_USERNAME` (Google Workspace account that sends notifications)
+- `SMTP_PASSWORD` (16-character Google app password)
 - `ADMIN_NOTIFICATION_EMAIL` (comma-separated for multiple recipients)
 
 ## Email Notification Reminder System
@@ -416,7 +417,7 @@ At 9 AM CST on Thursday, the system checks if requirements are met:
 - **If NO** → Newsletter is cancelled and you receive an email with instructions to publish remaining posts and create the newsletter manually via the dashboard
 
 ### Configuration
-Notifications are sent via SendGrid to the email(s) configured in `ADMIN_NOTIFICATION_EMAIL`. Multiple recipients can be added using comma-separated values (e.g., `email1@example.com,email2@example.com`).
+Notifications are sent over Google Workspace SMTP to the email(s) configured in `ADMIN_NOTIFICATION_EMAIL`. Multiple recipients can be added using comma-separated values (e.g., `email1@example.com,email2@example.com`).
 
 ## Workflow
 
