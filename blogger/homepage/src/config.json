@@ -1,0 +1,110 @@
+{
+  "_comment": [
+    "Configuration for the news.youdle.io homepage.",
+    "Edit this file, then run:  python blogger/homepage/build_theme.py",
+    "Every value is substituted into src/homepage.xml at build time, so the",
+    "generated theme contains plain literals and stays readable in Blogger's",
+    "theme editor.",
+    "",
+    "Any image URL left empty renders a styled CSS placeholder instead of a",
+    "broken image, so the page is presentable before photography is hosted."
+  ],
+
+  "site": {
+    "name": "Youdle",
+    "brief_name": "The Youdle Brief",
+    "copyright": "© 2026 Youdle. All rights reserved.",
+    "definition": "Youdle brings together grocery news, recalls, price changes, shopper finds, and tools to help people shop smarter.",
+    "footer_about": "Youdle connects you with real grocery information and a community of shoppers to help you save time, money, and stress."
+  },
+
+  "urls": {
+    "_comment": "Verified live 2026-08-31. See README.md 'Link map' for provenance.",
+    "home": "https://youdle.io/",
+    "grocery_today": "https://news.youdle.io/",
+    "community": "https://www.youdle.io/community",
+    "grocery_list": "https://www.youdle.io/grocery",
+    "about": "https://www.youdle.io/about-us",
+    "contact": "https://forms.gle/mmFXxZwx71bjnKta8",
+    "advertise": "mailto:info@getyoudle.com?subject=Advertising%20with%20Youdle",
+    "privacy": "https://www.youdle.io/privacy-policy",
+    "terms": "https://www.youdle.io/terms",
+    "guidelines": "https://www.youdle.io/terms#acceptable-use-policy",
+    "facebook": "https://www.facebook.com/groups/getyoudle/",
+    "instagram": "https://www.instagram.com/getyoudle",
+    "tiktok": "https://www.tiktok.com/@getyoudle",
+    "email": "mailto:info@getyoudle.com"
+  },
+
+  "newsletter": {
+    "_comment": "Existing Mailchimp integration, carried over verbatim from the theme's youdleNewsletterSignup includable so subscribers land on the same list.",
+    "action": "https://ProductSightings.us10.list-manage.com/subscribe/post?u=a8e33153b11c8b750221ce4aa&id=77d558bfda&f_id=005547e4f0",
+    "honeypot_name": "b_a8e33153b11c8b750221ce4aa_77d558bfda"
+  },
+
+  "images": {
+    "_comment": [
+      "Blogger cannot host theme assets, so these must be absolute URLs.",
+      "Starter placeholders extracted from the approved comp live in",
+      "blogger/homepage/assets/img/ - upload them (or real photography) and",
+      "paste the URLs here. Leave a value empty to render a CSS placeholder.",
+      "The local preview server substitutes its own local paths, so you can",
+      "see the intended design before anything is hosted."
+    ],
+    "hero": "",
+    "hero_alt": "A canvas grocery tote on a kitchen counter, filled with kale, a yellow pepper, a tomato, a baguette and a bottle of milk. The tote reads: Real info. Real shoppers. Real help.",
+    "grocery": "",
+    "grocery_alt": "A canvas Youdle tote overflowing with fresh vegetables"
+  },
+
+  "community_posts": {
+    "_comment": "Preview content only - handoff §4 Link Map: 'No required link for V1'.",
+    "one": {
+      "image": "",
+      "image_alt": "Punnets of fresh blueberries and blackberries on a supermarket shelf",
+      "author": "Tina M.",
+      "initials": "TM",
+      "time": "2h",
+      "text": "Found these for $2.49! Best price I’ve seen.",
+      "likes": "32"
+    },
+    "two": {
+      "image": "",
+      "image_alt": "A bright yellow sale tag reading $3.99 on a grocery shelf",
+      "author": "James R.",
+      "initials": "JR",
+      "time": "4h",
+      "text": "Price drop at my store today!",
+      "likes": "18"
+    },
+    "three": {
+      "image": "",
+      "image_alt": "A crate of ripe avocados in a produce aisle",
+      "author": "Maria S.",
+      "initials": "MS",
+      "time": "6h",
+      "text": "Perfectly ripe this week!",
+      "likes": "27"
+    }
+  },
+
+  "seo": {
+    "_comment": [
+      "Blogger emits <title>, meta description and Open Graph tags from",
+      "Settings, so we do NOT duplicate them here. Recommended values to set",
+      "in Blogger Settings are documented in README.md. Twitter Card tags are",
+      "not emitted by Blogger, so we add those.",
+      "organization_id / website_id are JSON-LD @id anchors."
+    ],
+    "twitter_site": "@getyoudle",
+    "logo_url": "https://www.youdle.io/_next/static/media/logo.89bc6d22.png",
+    "same_as": [
+      "https://www.facebook.com/groups/getyoudle/",
+      "https://www.instagram.com/getyoudle",
+      "https://www.tiktok.com/@getyoudle",
+      "https://www.linkedin.com/company/youdle/",
+      "https://www.youtube.com/@youdle",
+      "https://twitter.com/getyoudle"
+    ]
+  }
+}

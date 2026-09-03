@@ -1,0 +1,429 @@
+@@PART:head@@
+    <b:comment>Youdle homepage: fonts, structured data and styles. Homepage view only.</b:comment>
+    <b:if cond='data:view.isHomepage'>
+      <link href='https://fonts.gstatic.com' rel='preconnect' crossorigin='anonymous'/>
+      <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,600;6..72,700&amp;display=swap' rel='stylesheet'/>
+      <meta content='#173e2f' name='theme-color'/>
+      <b:comment>Blogger emits title, description and Open Graph from Settings; Twitter Card tags it does not.</b:comment>
+      <meta content='summary_large_image' name='twitter:card'/>
+      <meta expr:content='data:blog.title' name='twitter:title'/>
+      <meta content='{{site.definition}}' name='twitter:description'/>
+      <meta content='{{seo.twitter_site}}' name='twitter:site'/>
+      <meta content='{{seo.logo_url}}' name='twitter:image'/>
+      <script type='application/ld+json'>{{raw jsonld_org}}</script>
+      <script type='application/ld+json'>{{raw jsonld_site}}</script>
+      <style type='text/css'>{{raw css}}</style>
+    </b:if>
+
+@@PART:header@@
+    <b:if cond='data:view.isHomepage'>
+      <header class='yd-header' role='banner'>
+        <div class='yd-container yd-header__inner'>
+          <b:comment>Handoff link map: Logo / Home goes to the main Youdle site.</b:comment>
+          <a class='yd-header__brand' href='{{urls.home}}'>
+            {{raw logo_svg}}
+            <span class='yd-visually-hidden'>Youdle home</span>
+          </a>
+
+          <nav aria-label='Primary' class='yd-nav'>
+            <a aria-current='page' class='yd-nav__link' expr:href='data:blog.homepageUrl'>Grocery Today</a>
+            <a class='yd-nav__link' data-yd-event='nav_community_click' data-yd-placement='homepage_header' href='{{urls.community}}'>Community</a>
+            <a class='yd-nav__link' data-yd-event='nav_grocery_list_click' data-yd-placement='homepage_header' href='{{urls.grocery_list}}'>Grocery List</a>
+          </nav>
+
+          <div class='yd-header__actions'>
+            <a class='yd-btn yd-btn--primary yd-header__cta' data-yd-event='newsletter_cta_click' data-yd-placement='homepage_header' data-yd-scroll-to-signup='true' href='#the-youdle-brief'>
+              <span class='yd-header__cta-long'>Subscribe to The Youdle Brief</span>
+              <span class='yd-header__cta-short'>Subscribe</span>
+            </a>
+            <b:comment>
+              Button and menu share a positioning context so the dropdown hangs
+              directly beneath the button. Anchoring to the header instead put
+              it against the viewport edge, well right of the button on wide
+              screens.
+            </b:comment>
+            <div class='yd-menu'>
+              <button aria-controls='yd-menu' aria-expanded='false' class='yd-menu-toggle' data-yd-menu-toggle='true' type='button'>
+                <span class='yd-visually-hidden'>Menu</span>
+                <svg aria-hidden='true' class='yd-menu-toggle__open' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-width='2' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><path d='M3.5 7h17'/><path d='M3.5 12h17'/><path d='M3.5 17h17'/></svg>
+                <svg aria-hidden='true' class='yd-menu-toggle__close' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-width='2' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><path d='M5.5 5.5l13 13'/><path d='M18.5 5.5l-13 13'/></svg>
+              </button>
+
+              <nav aria-label='More' class='yd-drawer' data-yd-menu='true' hidden='hidden' id='yd-menu'>
+                <div class='yd-drawer__group'>
+                  <h2 class='yd-drawer__label' id='yd-menu-explore'>Explore</h2>
+                  <ul aria-labelledby='yd-menu-explore'>
+                    <li><a expr:href='data:blog.homepageUrl'>Grocery Today</a></li>
+                    <li><a href='{{urls.community}}'>Community</a></li>
+                    <li><a href='{{urls.grocery_list}}'>Grocery List</a></li>
+                    <b:comment>
+                      The stock homepage reached the full archive through its
+                      sidebar drawer; keep that path open from the new menu.
+                    </b:comment>
+                    <li><a expr:href='data:blog.homepageUrl + &quot;search&quot;'>All stories</a></li>
+                  </ul>
+                </div>
+                <div class='yd-drawer__group'>
+                  <h2 class='yd-drawer__label' id='yd-menu-company'>Company</h2>
+                  <ul aria-labelledby='yd-menu-company'>
+                    <li><a href='{{urls.about}}'>About Youdle</a></li>
+                    <li><a href='{{urls.contact}}' rel='noopener' target='_blank'>Contact</a></li>
+                    <li><a href='{{urls.advertise}}'>Advertise With Us</a></li>
+                  </ul>
+                </div>
+              </nav>
+              <b:comment>
+                Below 900px the desktop nav is hidden and this menu is the only
+                route to the other sections, so with no scripting it simply
+                renders open, in the same place the toggle would put it.
+              </b:comment>
+              <noscript>
+                <style type='text/css'>.yd-drawer[hidden]{display:block}</style>
+              </noscript>
+            </div>
+          </div>
+        </div>
+      </header>
+    </b:if>
+
+@@PART:main@@
+  <b:comment>
+    Sections 02 to 06 of the homepage. This lives inside the Blog1 widget
+    because it is the only scope where data:posts is available. The stock
+    theme wrapper chain around it is flattened by CSS scoped to
+    body.homepage-view.
+  </b:comment>
+
+  <b:comment>02 Hero</b:comment>
+  <section class='yd-hero' aria-labelledby='yd-hero-title'>
+    <div class='yd-container yd-hero__inner'>
+      <div class='yd-hero__copy'>
+        <p class='yd-eyebrow yd-hero__eyebrow'>Real grocery info. Real shoppers. Real help.</p>
+        <h1 class='yd-hero__title' id='yd-hero-title'>See this before your next <span class='yd-underline'>grocery run.<svg aria-hidden='true' class='yd-underline__stroke' focusable='false' preserveAspectRatio='none' viewBox='0 0 320 20' xmlns='http://www.w3.org/2000/svg'><path d='M5 14.2C88 5.6 208 2.9 315 7.9' fill='none' stroke='currentColor' stroke-linecap='round' stroke-width='7'/></svg></span></h1>
+        <p class='yd-hero__lede'>Recalls, price drops, new finds, and the grocery stories people are talking about.</p>
+        <div class='yd-hero__actions'>
+          <b:comment>
+            The handoff routes this to Grocery Today, which on this site IS this
+            page. Adapted to an in-page jump to the story row rather than a
+            reload; see README "Decisions that need your sign-off".
+          </b:comment>
+          <a class='yd-btn yd-btn--primary' data-yd-event='hero_news_click' data-yd-placement='homepage_hero' href='#yd-stories'>
+            See What’s Happening
+            <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M2.5 8h11'/><path d='M9 3.5 13.5 8 9 12.5'/></svg>
+          </a>
+          <a class='yd-btn yd-btn--ghost' data-yd-event='hero_community_click' data-yd-placement='homepage_hero' href='{{urls.community}}'>Join the Community</a>
+        </div>
+      </div>
+      <div class='yd-hero__media'>
+        <div class='yd-hero__figure'>
+{{#if images.hero}}
+          <b:comment>
+            width/height describe the shipped placeholder crop. They only hint
+            the intrinsic ratio - the figure controls the box, so nothing
+            shifts - but update them alongside the production photograph.
+          </b:comment>
+          <img alt='{{images.hero_alt}}' fetchpriority='high' height='450' src='{{images.hero}}' width='554'/>
+{{else}}
+          <p aria-hidden='true' class='yd-media-fallback'>Real info.<br/>Real shoppers.<br/>Real help.</p>
+{{/if}}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <b:comment>
+    03 What Everyone’s Talking About.
+    The whole section is gated on there being posts: a heading over empty space
+    reads as broken, and "View all stories" has nothing to point at.
+  </b:comment>
+  <b:if cond='data:posts.any'>
+    <section class='yd-stories' aria-labelledby='yd-stories-title' id='yd-stories'>
+    <div class='yd-container'>
+      <h2 class='yd-eyebrow yd-stories__heading' id='yd-stories-title'>What everyone’s talking about</h2>
+
+      <b:if cond='data:posts.any'>
+        <div class='yd-stories__grid'>
+          <b:loop index='i' values='data:posts' var='post'>
+            <b:if cond='data:i &lt; 3'>
+              <article class='yd-story'>
+                <div class='yd-story__media'>
+                  <b:if cond='data:post.featuredImage'>
+                    <b:comment>
+                      alt is empty on purpose: the headline is announced right
+                      after and is the link, so a description here would just
+                      repeat it. srcset is only meaningful for Google-hosted
+                      images; the live blog also uses i.ibb.co, which Blogger
+                      cannot resize, and an empty srcset falls back to src.
+                    </b:comment>
+                    <img alt='' class='yd-story__img' expr:src='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 800, &quot;16:7&quot;) : data:post.featuredImage' expr:srcset='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 400, &quot;16:7&quot;) + &quot; 400w, &quot; + resizeImage(data:post.featuredImage, 800, &quot;16:7&quot;) + &quot; 800w&quot; : &quot;&quot;' height='350' loading='lazy' sizes='(max-width: 640px) 100vw, (max-width: 900px) 50vw, 380px' width='800'/>
+                  <b:else/>
+                    <p aria-hidden='true' class='yd-media-fallback'>Grocery Today</p>
+                  </b:if>
+
+                  <b:comment>
+                    The live blog stores raw pipeline constants as labels
+                    (SHOPPERS, RECALL, GROCERS...). Map them to the reader-facing
+                    category names from the approved comp; anything unmapped
+                    falls through to the label as written.
+                  </b:comment>
+                  <b:if cond='data:post.labels'>
+                    <b:with value='data:post.labels.first.name' var='ydLabel'>
+                      <span class='yd-story__chip'>
+                        <b:if cond='data:ydLabel in {&quot;RECALL&quot;, &quot;recall&quot;, &quot;Recall&quot;, &quot;consumer warning&quot;}'>Recalls &amp; Warnings
+                        <b:elseif cond='data:ydLabel in {&quot;deals&quot;, &quot;Deals&quot;, &quot;DEALS&quot;}'/>Prices &amp; Deals
+                        <b:elseif cond='data:ydLabel in {&quot;SHOPPERS&quot;, &quot;shoppers&quot;, &quot;Shoppers&quot;}'/>Grocery News
+                        <b:elseif cond='data:ydLabel in {&quot;GROCERS&quot;, &quot;grocers&quot;}'/>For Grocers
+                        <b:elseif cond='data:ydLabel in {&quot;EMERGENCY&quot;, &quot;emergency&quot;}'/>Emergency Prep
+                        <b:else/><data:ydLabel/>
+                        </b:if>
+                      </span>
+                    </b:with>
+                  </b:if>
+                </div>
+
+                <div class='yd-story__body'>
+                  <p class='yd-story__meta'>
+                    <time expr:datetime='data:post.date.iso8601'><b:eval expr='format(data:post.date, &quot;MMMM d, YYYY&quot;)'/></time>
+                  </p>
+                  <h3 class='yd-story__title'>
+                    <a data-yd-event='homepage_story_click' data-yd-placement='homepage_stories' expr:href='data:post.url'><data:post.title/></a>
+                  </h3>
+                  <p class='yd-story__dek'><b:eval expr='snippet(data:post.snippets.long, { length: 132, links: false, linebreaks: false, ellipsis: true })'/></p>
+                </div>
+              </article>
+            </b:if>
+          </b:loop>
+        </div>
+
+        <b:comment>GEO: ItemList for the three previews. Article schema stays on the article pages.</b:comment>
+        <script type='application/ld+json'>{&quot;@context&quot;:&quot;https://schema.org&quot;,&quot;@type&quot;:&quot;ItemList&quot;,&quot;name&quot;:&quot;What everyone is talking about&quot;,&quot;itemListElement&quot;:[<b:loop index='i' values='data:posts' var='post'><b:if cond='data:i &lt; 3'><b:if cond='data:i != 0'>,</b:if>{&quot;@type&quot;:&quot;ListItem&quot;,&quot;position&quot;:<b:eval expr='data:i + 1'/>,&quot;url&quot;:&quot;<b:eval expr='data:post.url.canonical.jsonEscaped'/>&quot;,&quot;name&quot;:&quot;<b:eval expr='data:post.title.jsonEscaped'/>&quot;}</b:if></b:loop>]}</script>
+      </b:if>
+
+      <div class='yd-stories__more'>
+        <b:comment>
+          Blogger's /search with no query is the full reverse-chronological post
+          list with paging - the only real "all stories" archive this blog has.
+        </b:comment>
+        <a class='yd-textlink' data-yd-event='view_all_stories_click' data-yd-placement='homepage_stories' expr:href='data:blog.homepageUrl + &quot;search&quot;'>
+          View all stories
+          <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M2.5 8h11'/><path d='M9 3.5 13.5 8 9 12.5'/></svg>
+        </a>
+      </div>
+    </div>
+    </section>
+  </b:if>
+
+  <b:comment>04 Community Preview</b:comment>
+  <section class='yd-community' aria-labelledby='yd-community-title'>
+    <div class='yd-container'>
+      <div class='yd-community__panel'>
+        <div class='yd-community__copy'>
+          <p class='yd-eyebrow yd-community__eyebrow'>Real shoppers. Real conversations.</p>
+          <h2 class='yd-community__title' id='yd-community-title'>See what shoppers are finding.</h2>
+          <p class='yd-community__lede'>Deals, price changes, new products, and what’s happening in stores.</p>
+          <a class='yd-btn yd-btn--primary' data-yd-event='community_cta_click' data-yd-placement='homepage_community' href='{{urls.community}}'>
+            Join the Community
+            <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M2.5 8h11'/><path d='M9 3.5 13.5 8 9 12.5'/></svg>
+          </a>
+        </div>
+
+        <div class='yd-community__feed'>
+          <b:comment>Preview content. Handoff link map: no required link for V1.</b:comment>
+          <ul class='yd-community__cards'>
+{{#each community_posts}}
+            <li class='yd-post'>
+              <div class='yd-post__media'>
+{{#if item.image}}
+                <img alt='{{item.image_alt}}' height='200' loading='lazy' src='{{item.image}}' width='300'/>
+{{else}}
+                <p aria-hidden='true' class='yd-media-fallback'>Shopper find</p>
+{{/if}}
+              </div>
+              <div class='yd-post__body'>
+                <div class='yd-post__head'>
+                  <span aria-hidden='true' class='yd-post__avatar'>{{item.initials}}</span>
+                  <span class='yd-post__author'>{{item.author}}</span>
+                  <span class='yd-post__time'>{{item.time}}<span class='yd-visually-hidden'> ago</span></span>
+                </div>
+                <p class='yd-post__text'>{{item.text}}</p>
+                <p class='yd-post__likes'>
+                  <svg aria-hidden='true' focusable='false' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M8 14.2 2.9 9.3A3.4 3.4 0 0 1 8 4.8a3.4 3.4 0 0 1 5.1 4.5z' fill='currentColor'/></svg>
+                  {{item.likes}}
+                  <span class='yd-visually-hidden'>likes</span>
+                </p>
+              </div>
+            </li>
+{{/each}}
+          </ul>
+
+          <div class='yd-community__more'>
+            <a class='yd-textlink' data-yd-event='community_cta_click' data-yd-placement='homepage_community_feed' href='{{urls.community}}'>
+              Go to Community
+              <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M2.5 8h11'/><path d='M9 3.5 13.5 8 9 12.5'/></svg>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <b:comment>05 Grocery List</b:comment>
+  <section class='yd-grocery' aria-labelledby='yd-grocery-title'>
+    <div class='yd-container'>
+      <div class='yd-grocery__panel'>
+        <div class='yd-grocery__copy'>
+          <p class='yd-eyebrow yd-grocery__eyebrow'>Shop smarter</p>
+          <h2 class='yd-grocery__title' id='yd-grocery-title'>Your Grocery List, anywhere.</h2>
+          <p class='yd-grocery__lede'>Build it. Share it. Take it with you.</p>
+          <a class='yd-btn yd-btn--ghost' data-yd-event='grocery_list_click' data-yd-placement='homepage_grocery_list' href='{{urls.grocery_list}}'>
+            Go to Grocery List
+            <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M2.5 8h11'/><path d='M9 3.5 13.5 8 9 12.5'/></svg>
+          </a>
+        </div>
+
+        <div class='yd-grocery__visual'>
+          <b:comment>Phone mock is real markup, not an image, so the list text stays crawlable.</b:comment>
+          <div aria-hidden='true' class='yd-phone'>
+            <div class='yd-phone__screen'>
+              <div class='yd-phone__statusbar'>
+                <svg fill='none' stroke='currentColor' stroke-linecap='round' stroke-width='2.4' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M10 3 5 8l5 5'/></svg>
+                <span>9:41</span>
+              </div>
+              <div class='yd-phone__titlebar'>
+                <span class='yd-phone__title'>My Grocery List</span>
+                <span class='yd-phone__grip'><i/><i/><i/><i/><i/><i/><i/><i/><i/></span>
+              </div>
+              <ul class='yd-phone__list'>
+                <li class='yd-phone__item'><span class='yd-phone__box'/>Milk</li>
+                <li class='yd-phone__item'><span class='yd-phone__box'/>Eggs</li>
+                <li class='yd-phone__item'><span class='yd-phone__box'/>Bread</li>
+                <li class='yd-phone__item'><span class='yd-phone__box'/>Bananas</li>
+                <li class='yd-phone__item'><span class='yd-phone__box'/>Spinach</li>
+              </ul>
+            </div>
+          </div>
+
+          <div class='yd-grocery__illus'>
+{{#if images.grocery}}
+            <img alt='{{images.grocery_alt}}' height='580' loading='lazy' src='{{images.grocery}}' width='780'/>
+{{else}}
+            <p aria-hidden='true' class='yd-media-fallback'>Build it. Share it.<br/>Take it with you.</p>
+{{/if}}
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <b:comment>06 The Youdle Brief</b:comment>
+  <section class='yd-brief' aria-labelledby='yd-brief-title' id='the-youdle-brief'>
+    <div class='yd-container'>
+      <div class='yd-brief__panel'>
+        <div class='yd-brief__copy'>
+          <span class='yd-brief__icon'>
+            <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><rect height='14' rx='2' width='19' x='2.5' y='5'/><path d='m3 6.5 9 6.5 9-6.5'/></svg>
+          </span>
+          <div>
+            <h2 class='yd-brief__title' id='yd-brief-title'><span>Don’t miss what matters.</span> <span>Get The Youdle Brief.</span></h2>
+            <p class='yd-brief__lede'>The grocery stories worth knowing, delivered to your inbox.</p>
+          </div>
+        </div>
+
+        <div class='yd-brief__form-wrap'>
+          <b:comment>
+            Existing Mailchimp list. JS upgrades this to the JSONP endpoint for
+            inline success and error states; with JS off it posts normally.
+          </b:comment>
+          <form action='{{newsletter.action}}' class='yd-brief__form' data-yd-newsletter='true' method='post' name='yd-brief-form' target='_blank'>
+            <div>
+              <label class='yd-visually-hidden yd-brief__label' for='yd-brief-email'>Email address</label>
+              <input aria-describedby='yd-brief-status' autocomplete='email' class='yd-brief__input' id='yd-brief-email' name='EMAIL' placeholder='Enter your email' required='required' type='email'/>
+            </div>
+            <button class='yd-btn yd-btn--cream yd-brief__submit' data-yd-newsletter-submit='true' name='subscribe' type='submit'>Sign me up</button>
+            <div aria-hidden='true' class='yd-brief__hp'>
+              <input name='{{newsletter.honeypot_name}}' tabindex='-1' type='text' value=''/>
+            </div>
+          </form>
+          <p aria-live='polite' class='yd-brief__status' data-yd-newsletter-status='true' id='yd-brief-status' role='status'/>
+          <p class='yd-brief__fine'>It’s free and you can unsubscribe anytime.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+@@PART:footer@@
+    <b:if cond='data:view.isHomepage'>
+      <footer class='yd-footer' role='contentinfo'>
+        <div class='yd-container'>
+          <div class='yd-footer__top'>
+            <div class='yd-footer__about-col'>
+              <b:comment>AEO: a plain-language definition of Youdle in crawlable text.</b:comment>
+              <p class='yd-footer__about'>{{site.footer_about}}</p>
+              <p class='yd-footer__definition'>{{site.definition}}</p>
+              <div class='yd-social'>
+                <a href='{{urls.facebook}}' rel='noopener' target='_blank'>
+                  <span class='yd-visually-hidden'>Youdle on Facebook</span>
+                  <svg aria-hidden='true' focusable='false' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><path d='M12 2a10 10 0 0 0-1.6 19.9v-7h-2.5V12h2.5V9.8c0-2.5 1.5-3.9 3.7-3.9 1.1 0 2.2.2 2.2.2v2.4h-1.2c-1.2 0-1.6.8-1.6 1.6V12h2.7l-.4 2.9h-2.3v7A10 10 0 0 0 12 2z' fill='currentColor'/></svg>
+                </a>
+                <a href='{{urls.instagram}}' rel='noopener' target='_blank'>
+                  <span class='yd-visually-hidden'>Youdle on Instagram</span>
+                  <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-width='1.9' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><rect height='18' rx='5' width='18' x='3' y='3'/><circle cx='12' cy='12' r='4'/><circle cx='17.4' cy='6.6' fill='currentColor' r='1.2' stroke='none'/></svg>
+                </a>
+                <a href='{{urls.tiktok}}' rel='noopener' target='_blank'>
+                  <span class='yd-visually-hidden'>Youdle on TikTok</span>
+                  <svg aria-hidden='true' focusable='false' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><path d='M16.5 2h-2.9v13.1a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.6a5.6 5.6 0 1 0 4.7 5.5V8.7a6.6 6.6 0 0 0 3.9 1.3V7a3.9 3.9 0 0 1-3.9-3.9V2z' fill='currentColor'/></svg>
+                </a>
+                <a href='{{urls.email}}'>
+                  <span class='yd-visually-hidden'>Email Youdle</span>
+                  <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.8' viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'><rect height='14' rx='2' width='18' x='3' y='5'/><path d='m3.5 6.5 8.5 6 8.5-6'/></svg>
+                </a>
+              </div>
+            </div>
+
+            <div>
+              <h2 class='yd-footer__colhead'>Explore</h2>
+              <ul class='yd-footer__list'>
+                <li><a expr:href='data:blog.homepageUrl'>Grocery Today</a></li>
+                <li><a href='{{urls.community}}'>Community</a></li>
+                <li><a href='{{urls.grocery_list}}'>Grocery List</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <h2 class='yd-footer__colhead'>Company</h2>
+              <ul class='yd-footer__list'>
+                <li><a href='{{urls.about}}'>About Youdle</a></li>
+                <li><a href='{{urls.contact}}' rel='noopener' target='_blank'>Contact</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <h2 class='yd-footer__colhead'>Partner</h2>
+              <ul class='yd-footer__list'>
+                <li><a href='{{urls.advertise}}'>Advertise With Us</a></li>
+              </ul>
+            </div>
+
+            <div>
+              <h2 class='yd-footer__colhead'>Legal</h2>
+              <ul class='yd-footer__list'>
+                <li><a href='{{urls.privacy}}'>Privacy Policy</a></li>
+                <li><a href='{{urls.terms}}'>Terms of Use</a></li>
+                <li><a href='{{urls.guidelines}}'>Community Guidelines</a></li>
+              </ul>
+            </div>
+          </div>
+
+          <p class='yd-footer__legal'>{{site.copyright}}</p>
+        </div>
+      </footer>
+    </b:if>
+
+@@PART:script@@
+    <b:if cond='data:view.isHomepage'>
+      <script type='text/javascript'>
+        //<![CDATA[
+{{raw js}}
+        //]]>
+      </script>
+    </b:if>
