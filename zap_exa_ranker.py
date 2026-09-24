@@ -4,6 +4,7 @@
 
 import os
 import re
+import sys
 import time
 from datetime import datetime, timezone, timedelta
 from html import unescape
@@ -510,7 +511,13 @@ def hydrate_article_contents(
 
 
 def execute_search(exa, query_config, start_date, end_date):
-    """Execute a single Exa search query and return results."""
+    """Execute a single Exa search query and return results.
+
+    Provider failures propagate to the caller. Swallowing them here made an
+    exhausted API key, a bad key, or an outage indistinguishable from a quiet
+    news week: the batch came back empty and the run failed much later with
+    nothing to point at.
+    """
     query = query_config["query"]
     category = query_config["category"]
     
@@ -530,12 +537,8 @@ def execute_search(exa, query_config, start_date, end_date):
     if "exclude_domains" in query_config:
         search_params["exclude_domains"] = query_config["exclude_domains"]
     
-    try:
-        results = exa.search_and_contents(**search_params)
-        return results.results, category, query_config.get("subcategory")
-    except Exception as e:
-        print(f"Error searching for '{query}': {e}")
-        return [], category, query_config.get("subcategory")
+    results = exa.search_and_contents(**search_params)
+    return results.results, category, query_config.get("subcategory")
 
 
 def process_exa_result(result, category, query_index, result_index):
@@ -600,6 +603,7 @@ def main(input_data):
     recent_days = min(search_days, max(1, requested_recent_days))
     
     items = []
+    search_errors = []
     start_ts = time.time()
     
     # Initialize Exa client
@@ -636,10 +640,22 @@ def main(input_data):
         ):
             break
         
-        # Execute search
-        results, category, subcategory = execute_search(
-            exa, query_config, start_date, end_date
-        )
+        # Execute search. One failing query must not end the run, but it is
+        # recorded so the caller can tell a failed search from an empty one.
+        category = query_config["category"]
+        try:
+            results, category, subcategory = execute_search(
+                exa, query_config, start_date, end_date
+            )
+        except Exception as search_error:
+            message = (
+                f"Exa search failed for '{query_config['query'][:60]}': {search_error}"
+            )
+            # stderr only: the CLI writes a JSON summary to stdout.
+            print(message, file=sys.stderr)
+            search_errors.append(message)
+            searched_categories.add(category)
+            continue
         searched_categories.add(category)
         
         # Process results
@@ -713,7 +729,7 @@ def main(input_data):
         if len(recall_items) >= MAX_RECALL_ITEMS:
             break
     
-    return {
+    response = {
         "items": batch_items,
         # Internal consumers use the full ranked pool so cross-run URL dedup
         # can still fill every regular slot.
@@ -724,6 +740,18 @@ def main(input_data):
         "shoppers_count": len(shoppers_items),
         "recall_count": len(recall_only_items),
     }
+
+    if search_errors:
+        response["search_errors"] = search_errors
+        # Nothing came back and every attempt failed: this is a provider
+        # problem, not an empty news week, so report it as a hard error.
+        if not items:
+            response["error"] = (
+                f"All {len(search_errors)} article searches failed. "
+                f"First failure: {search_errors[0]}"
+            )
+
+    return response
 
 
 # For Zapier code step compatibility

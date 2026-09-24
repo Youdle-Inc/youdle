@@ -27,6 +27,7 @@ from ai_models import (
 )
 from job_lifecycle import (
     ACTIVE_JOB_STATUSES,
+    describe_missing_posts,
     is_active_job_conflict,
     isoformat_utc,
     list_active_jobs,
@@ -197,13 +198,8 @@ def run_generation_task(job_id: str, config: dict):
         generation_warnings = list(result.get("warnings", []) or [])
 
         if not final_posts:
-            diagnostics = generation_errors or generation_warnings
-            detail = "; ".join(
-                dict.fromkeys(str(item) for item in diagnostics)
-            )[:3000]
             raise RuntimeError(
-                "Generation completed without producing any usable blog posts"
-                + (f": {detail}" if detail else "")
+                describe_missing_posts(generation_errors, generation_warnings)
             )
         if inserted_count == 0:
             details = "; ".join(persistence_errors[:3])

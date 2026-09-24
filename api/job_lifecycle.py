@@ -11,12 +11,18 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional
+from uuid import uuid4
 
 
 logger = logging.getLogger(__name__)
 
 ACTIVE_JOB_STATUSES = ("pending", "running")
 TERMINAL_JOB_STATUSES = ("completed", "failed", "cancelled")
+
+# Shared with the CLI so a dashboard run and a scheduled run report an empty
+# batch identically.
+NO_USABLE_POSTS_MESSAGE = "Generation completed without producing any usable blog posts"
+
 
 # The Vercel deployment gives generation functions a 30-minute window. Stale
 # reconciliation must run *after* that window, otherwise normal dashboard
@@ -25,6 +31,10 @@ TERMINAL_JOB_STATUSES = ("completed", "failed", "cancelled")
 GENERATION_FUNCTION_MAX_SECONDS = 30 * 60
 DEFAULT_STALE_AFTER_SECONDS = 35 * 60
 MIN_STALE_AFTER_SECONDS = GENERATION_FUNCTION_MAX_SECONDS + (5 * 60)
+
+
+class ActiveJobConflict(RuntimeError):
+    """Raised when another generation run already holds the active-job slot."""
 
 
 def utc_now() -> datetime:
@@ -180,6 +190,87 @@ def reconcile_stale_jobs(
     if stale_job_ids:
         logger.warning("Marked stale generation jobs as failed: %s", stale_job_ids)
     return stale_job_ids
+
+
+def describe_missing_posts(
+    errors: Optional[Iterable[str]] = None,
+    warnings: Optional[Iterable[str]] = None,
+) -> str:
+    """Explain a run that finished with no usable posts.
+
+    Errors are preferred over warnings, so the message names the failure that
+    actually stopped the run rather than incidental editorial notes.
+    """
+    diagnostics = list(errors or []) or list(warnings or [])
+    detail = "; ".join(dict.fromkeys(str(item) for item in diagnostics))[:3000]
+    return NO_USABLE_POSTS_MESSAGE + (f": {detail}" if detail else "")
+
+
+def start_generation_job(
+    supabase: Any,
+    config: dict[str, Any],
+    *,
+    job_id: Optional[str] = None,
+) -> str:
+    """Register a run that executes in-process, such as the scheduled CLI run.
+
+    The dashboard's job history is the only record of generation activity, so a
+    run started outside the API still has to appear there. Raises
+    ``ActiveJobConflict`` when another run holds the single active-job slot,
+    because two concurrent runs would generate duplicate posts.
+    """
+    reconcile_stale_jobs(supabase)
+
+    active_jobs = list_active_jobs(supabase)
+    if active_jobs:
+        active_job = active_jobs[0]
+        raise ActiveJobConflict(
+            f"A generation job is already active ({active_job['id']}, "
+            f"status: {active_job.get('status')})"
+        )
+
+    new_job_id = job_id or str(uuid4())
+    try:
+        supabase.table("job_queue").insert(
+            {
+                "id": new_job_id,
+                "status": "running",
+                "config": config,
+                "started_at": isoformat_utc(),
+                "completed_at": None,
+                "result": None,
+                "error": None,
+            }
+        ).execute()
+    except Exception as insert_error:
+        if is_active_job_conflict(insert_error):
+            raise ActiveJobConflict(
+                "Another generation job started at the same time"
+            ) from insert_error
+        raise
+
+    return new_job_id
+
+
+def finish_generation_job(
+    supabase: Any,
+    job_id: str,
+    *,
+    result: Optional[dict[str, Any]] = None,
+    error: Optional[str] = None,
+) -> bool:
+    """Write the terminal state for a job started with ``start_generation_job``.
+
+    Always call this, including on failure: a job left active keeps the
+    one-active-job slot taken until stale reconciliation releases it.
+    """
+    updates: dict[str, Any] = {"completed_at": isoformat_utc()}
+    if error:
+        updates.update({"status": "failed", "error": str(error)[:4000]})
+    else:
+        updates.update({"status": "completed", "result": result, "error": None})
+
+    return transition_job(supabase, job_id, ACTIVE_JOB_STATUSES, updates)
 
 
 def is_active_job_conflict(error: Exception) -> bool:

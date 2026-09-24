@@ -9,10 +9,14 @@ from unittest.mock import patch
 from api.job_lifecycle import (
     DEFAULT_STALE_AFTER_SECONDS,
     MIN_STALE_AFTER_SECONDS,
+    ActiveJobConflict,
+    describe_missing_posts,
+    finish_generation_job,
     get_stale_after_seconds,
     is_active_job_conflict,
     list_active_jobs,
     reconcile_stale_jobs,
+    start_generation_job,
     transition_job,
 )
 
@@ -71,6 +75,21 @@ class FakeTable:
 
     def update(self, updates):
         return FakeQuery(self.rows, action="update", updates=updates)
+
+    def insert(self, payload):
+        return FakeInsert(self.rows, payload)
+
+
+class FakeInsert:
+    def __init__(self, rows, payload):
+        self.rows = rows
+        self.payload = payload
+
+    def execute(self):
+        row = deepcopy(self.payload)
+        row.setdefault("created_at", row.get("started_at"))
+        self.rows.append(row)
+        return FakeResult([deepcopy(row)])
 
 
 class FakeSupabase:
@@ -184,6 +203,81 @@ class JobLifecycleTests(unittest.TestCase):
             {"GENERATION_STALE_AFTER_SECONDS": "900"},
         ):
             self.assertEqual(get_stale_after_seconds(), 35 * 60)
+
+class ScheduledRunRecordTests(unittest.TestCase):
+    """A run started outside the dashboard still belongs in the job history."""
+
+    def setUp(self):
+        self.config = {"model": "gpt-4o", "batch_size": 6, "source": "github-actions"}
+
+    def test_scheduled_run_is_recorded_and_completed(self):
+        jobs = []
+        client = FakeSupabase(jobs)
+
+        job_id = start_generation_job(client, self.config)
+
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]["status"], "running")
+        self.assertEqual(jobs[0]["config"], self.config)
+        self.assertIsNotNone(jobs[0]["started_at"])
+
+        finished = finish_generation_job(
+            client,
+            job_id,
+            result={"posts_generated": 6, "posts_attempted": 6},
+        )
+
+        self.assertTrue(finished)
+        self.assertEqual(jobs[0]["status"], "completed")
+        self.assertEqual(jobs[0]["result"]["posts_generated"], 6)
+        self.assertIsNotNone(jobs[0]["completed_at"])
+
+    def test_failed_scheduled_run_records_the_reason(self):
+        jobs = []
+        client = FakeSupabase(jobs)
+        job_id = start_generation_job(client, self.config)
+
+        finish_generation_job(client, job_id, error="Exa credits exhausted")
+
+        self.assertEqual(jobs[0]["status"], "failed")
+        self.assertEqual(jobs[0]["error"], "Exa credits exhausted")
+
+    def test_registration_refuses_to_run_beside_an_active_job(self):
+        jobs = [{
+            "id": "dashboard-job",
+            "status": "running",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
+        }]
+
+        with self.assertRaises(ActiveJobConflict):
+            start_generation_job(FakeSupabase(jobs), self.config)
+
+        self.assertEqual(len(jobs), 1)
+
+
+class MissingPostDescriptionTests(unittest.TestCase):
+    def test_errors_are_preferred_over_editorial_warnings(self):
+        message = describe_missing_posts(
+            ["All 12 article searches failed. First failure: 402 no credits"],
+            ["Editorial validation warning for 'A story'"],
+        )
+
+        self.assertIn("402 no credits", message)
+        self.assertNotIn("Editorial validation", message)
+
+    def test_warnings_are_used_when_nothing_raised_an_error(self):
+        message = describe_missing_posts(
+            [], ["No candidate articles were available to select from"]
+        )
+
+        self.assertIn("No candidate articles", message)
+
+    def test_message_stays_recognizable_without_diagnostics(self):
+        self.assertEqual(
+            describe_missing_posts([], []),
+            "Generation completed without producing any usable blog posts",
+        )
 
 
 if __name__ == "__main__":
