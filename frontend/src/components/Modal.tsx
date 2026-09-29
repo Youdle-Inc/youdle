@@ -35,18 +35,18 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm animate-in fade-in duration-200 sm:items-center sm:p-4"
       onClick={onClose}
       aria-labelledby="modal-title"
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="relative w-full max-w-2xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
+        className="relative flex h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl animate-in zoom-in-95 duration-200 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-stone-200">
+        <div className="flex items-center justify-between border-b border-stone-200 p-4 sm:p-6">
           <h2 id="modal-title" className="text-xl font-semibold text-stone-900">
             {title}
           </h2>
@@ -60,7 +60,7 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
         </div>
 
         {/* Content */}
-        <div className={`overflow-y-auto ${footer ? 'max-h-[calc(90vh-200px)]' : 'max-h-[calc(90vh-140px)]'}`}>
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {children}
         </div>
 
