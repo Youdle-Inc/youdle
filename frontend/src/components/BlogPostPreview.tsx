@@ -110,8 +110,8 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
     )}>
       {/* Header */}
       <div className="p-4 border-b border-stone-200">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between mb-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className={cn(
               'inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-medium',
               getCategoryColor(post.category)
@@ -149,8 +149,8 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
       </div>
 
       {/* View Toggle */}
-      <div className="flex items-center justify-between px-4 py-2 bg-stone-50 border-b border-stone-200">
-        <div className="flex items-center gap-1">
+      <div className="flex flex-col gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-1">
           <button
             onClick={() => setViewMode('preview')}
             className={cn(
@@ -186,7 +186,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
           )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleCopyHtml}
             className="flex items-center gap-1 px-2 py-1 rounded-md text-xs text-stone-500 hover:text-stone-700 hover:bg-stone-100 transition-all"
@@ -221,10 +221,10 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
       </div>
 
       {/* Content */}
-      <div className="p-4 max-h-96 overflow-y-auto">
+      <div className="p-4 max-h-[70vh] overflow-y-auto sm:max-h-96">
         {viewMode === 'preview' ? (
           <div
-            className="prose prose-sm max-w-none"
+            className="prose prose-sm max-w-none break-words [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
             dangerouslySetInnerHTML={{ __html: post.html_content }}
           />
         ) : (
@@ -242,8 +242,8 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
               {publishError}
             </div>
           )}
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
               {onStatusChange && post.status !== 'published' && (
                 <>
                   <button
