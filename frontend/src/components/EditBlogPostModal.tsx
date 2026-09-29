@@ -150,9 +150,9 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
   }
 
   const footerContent = (
-    <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       {/* Left side: Blogger sync indicator and autosave status */}
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         {isPublishedToBlogger && (
           <div className="flex items-center gap-1.5 text-xs text-blue-600">
             <Globe className="w-3.5 h-3.5" />
@@ -162,7 +162,7 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
         {renderAutosaveStatus()}
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
         <button
           onClick={handleCancel}
           disabled={isSaving}
@@ -185,7 +185,7 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
 
   return (
     <Modal isOpen={isOpen} onClose={handleCancel} title="Edit Post" footer={footerContent}>
-      <div className="p-6 space-y-4">
+      <div className="p-4 space-y-4 sm:p-6">
         {/* Error Message */}
         {error && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -232,7 +232,7 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
           <label htmlFor="image_url" className="block text-xs font-medium text-stone-700 mb-1">
             Image URL (optional)
           </label>
-          <div className="flex gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <input
               id="image_url"
               type="url"
@@ -240,7 +240,7 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
               onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
               placeholder="https://example.com/image.jpg"
               disabled={isSaving}
-              className="flex-1 px-3 py-2 rounded-lg border border-stone-300 text-sm focus:ring-2 focus:ring-accent-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+              className="min-w-0 flex-1 px-3 py-2 rounded-lg border border-stone-300 text-sm focus:ring-2 focus:ring-accent-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="button"
