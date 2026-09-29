@@ -28,10 +28,10 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body className="font-sans antialiased">
         <Providers>
-          <div className="flex min-h-screen">
+          <div className="min-h-screen">
             <Sidebar />
-            <main className="flex-1 ml-64">
-              <div className="p-8">
+            <main className="min-w-0 pt-16 md:ml-64 md:pt-0">
+              <div className="p-4 sm:p-6 md:p-8">
                 {children}
               </div>
             </main>
@@ -41,6 +41,3 @@ export default function RootLayout({
     </html>
   )
 }
-
-
-
