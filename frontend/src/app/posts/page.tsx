@@ -178,7 +178,7 @@ export default function PostsPage() {
   const syncIssueCount = posts?.filter(p => p.status === 'published' && !p.blogger_url).length || 0
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-5 sm:space-y-8 animate-fade-in">
       {/* Toast Notification */}
       {toast && (
         <div className={cn(
@@ -192,12 +192,12 @@ export default function PostsPage() {
       )}
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-5xl font-display font-light text-stone-900 tracking-tight">
+          <h1 className="text-3xl sm:text-4xl md:text-5xl font-display font-light text-stone-900 tracking-tight">
             Blog Posts
           </h1>
-          <p className="mt-2 text-lg text-stone-500 font-light">
+          <p className="mt-2 max-w-3xl text-sm sm:text-base md:text-lg text-stone-500 font-light">
             View and manage generated blog posts. Update status and copy HTML for publishing.
           </p>
           {lastSyncTime && (
@@ -241,10 +241,10 @@ export default function PostsPage() {
       </div>
 
       {/* Filters */}
-      <div className="rounded-2xl bg-stone-50/50 border border-stone-200 p-8">
-        <div className="flex flex-wrap items-center gap-4">
+      <div className="rounded-2xl bg-stone-50/50 border border-stone-200 p-4 sm:p-6 md:p-8">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(220px,1fr)_auto_auto_auto] xl:items-end">
           {/* Search */}
-          <div className="flex-1 min-w-[200px] max-w-md">
+          <div className="min-w-0 sm:col-span-2 xl:col-span-1 xl:max-w-md">
             <label className="block text-xs font-medium text-stone-500 mb-2">
               Search
             </label>
@@ -265,7 +265,7 @@ export default function PostsPage() {
             <label className="block text-xs font-medium text-stone-500 mb-2">
               Status
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setStatusFilter(null)}
                 className={cn(
@@ -302,7 +302,7 @@ export default function PostsPage() {
             <label className="block text-xs font-medium text-stone-500 mb-2">
               Category
             </label>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={() => setCategoryFilter(null)}
                 className={cn(
@@ -397,7 +397,7 @@ export default function PostsPage() {
 
       {/* Posts Grid */}
       {filteredPosts && filteredPosts.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 stagger-children">
+        <div className="grid grid-cols-1 gap-4 sm:gap-6 xl:grid-cols-2 stagger-children">
           {filteredPosts.map((post) => (
             <BlogPostPreview
               key={post.id}
