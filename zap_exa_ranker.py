@@ -69,7 +69,12 @@ TRACKING_QUERY_KEYS = {
 RECALL_DOMAINS = ["fda.gov", "fsis.usda.gov"]
 EXCLUDE_DOMAINS_FOR_SHOPPERS_SAFETY = ["fda.gov", "fsis.usda.gov", "usda.gov"]
 
-# US-based domains for shoppers content (major US grocery/food news sources)
+# US-based domains for shoppers content (major US grocery/food news sources).
+# Most shoppers queries are restricted to this list; the rest of the web is
+# reachable only through the two open discovery queries, whose results are
+# outranked by anything from here. Exa accepts include_domains OR
+# exclude_domains per search, never both, which is why the split is per query
+# rather than per search.
 US_SHOPPERS_DOMAINS = [
     # Major US news sites
     "usatoday.com",
@@ -162,6 +167,20 @@ RECALL_SIGNAL_KEYWORDS = [
     "public health alert",
 ]
 
+# Paid and syndicated placements carried by otherwise reputable newsrooms.
+# USA Today runs supplement advertorials at /press-release/story/..., and they
+# outrank real reporting because they are short and freshly published. The
+# domain allowlist cannot catch these: the domain is genuinely USA Today.
+SPONSORED_PATH_MARKERS = (
+    "/press-release/",
+    "/sponsor-story/",
+    "/sponsored/",
+    "/partner-content/",
+    "/branded-content/",
+    "/advertorial/",
+    "/paid-content/",
+)
+
 LOW_QUALITY_TITLES = {
     "facebook",
     "instagram",
@@ -197,8 +216,10 @@ RECALL_QUERIES = [
 # Note: Exa only allows either include_domains OR exclude_domains, not both
 # We use exclude_domains to filter non-US + US keywords in queries
 SHOPPERS_QUERIES = [
-    # 1. Broad US grocery-news query. This runs first so the time budget always
-    # produces consumer grocery candidates before narrower searches.
+    # 1. Broad US grocery-news query. OPEN WEB: this and the grocery_news query
+    # below are the only shoppers searches that can surface a source the
+    # allowlist does not name. It runs first so the time budget always produces
+    # consumer grocery candidates before narrower searches.
     {
         "query": "top US grocery news this week supermarkets food brands new products store openings prices shoppers",
         "category": "SHOPPERS",
@@ -209,49 +230,50 @@ SHOPPERS_QUERIES = [
         "query": "American supermarket news US grocery store brands retailer mergers United States",
         "category": "SHOPPERS",
         "subcategory": "grocery_retail",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     # 2. US grocery prices and consumer impact
     {
         "query": "US grocery prices rising food inflation impact American consumers shrinkflation",
         "category": "SHOPPERS",
         "subcategory": "prices",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     {
         "query": "food ingredient changes US labeling transparency hidden additives consumer health",
         "category": "SHOPPERS",
         "subcategory": "health",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     # 3. US Shopping advice and consumer guidance
     {
         "query": "best value grocery items US shopping comparison American consumer recommendations buying guide",
         "category": "SHOPPERS",
         "subcategory": "shopping_advice",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     {
         "query": "US holiday shopping tips American budget grocery strategies store tips savings",
         "category": "SHOPPERS",
         "subcategory": "shopping_advice",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     # 4. US Food trends and lifestyle content
     {
         "query": "trending foods America viral grocery items US seasonal recipes health food American",
         "category": "SHOPPERS",
         "subcategory": "food_trends",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     {
         "query": "US convenience foods American shopper behavior food lifestyle trends United States",
         "category": "SHOPPERS",
         "subcategory": "food_trends",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
-    # 5. General grocery and packaged-food industry news. Recall and outbreak
-    # coverage is intentionally handled only by the dedicated roundup queries.
+    # 5. General grocery and packaged-food industry news. OPEN WEB, the second
+    # of the two discovery searches. Recall and outbreak coverage is
+    # intentionally handled only by the dedicated roundup queries.
     {
         "query": "US grocery news packaged food launches supermarket changes consumer grocery shopping",
         "category": "SHOPPERS",
@@ -330,6 +352,30 @@ def keyword_boost(title, desc):
     return min(sum(10 for k in RECALL_SIGNAL_KEYWORDS if k in t), 60)
 
 
+def is_trusted_us_domain(url):
+    """Is this URL from a source on the curated US shoppers allowlist?
+
+    Subdomains count: Exa returns markets.businessinsider.com for a query
+    restricted to businessinsider.com, and that is the same publisher.
+    """
+    host = ""
+    try:
+        host = urlsplit(str(url or "")).netloc.lower()
+    except ValueError:
+        return False
+
+    host = host.split("@")[-1].split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        return False
+
+    return any(
+        host == domain or host.endswith("." + domain)
+        for domain in US_SHOPPERS_DOMAINS
+    )
+
+
 def within_days(pub_iso, days, now=None):
     """Check that a publication timestamp is neither future nor too old."""
     if not pub_iso:
@@ -348,6 +394,15 @@ def is_low_quality_article(item):
     """Reject results that do not identify a usable editorial article."""
     title = html_to_text(item.get("title", "")).strip().lower()
     return not title or title in LOW_QUALITY_TITLES
+
+
+def is_sponsored_placement(item):
+    """Identify advertising a newsroom publishes under its own domain."""
+    try:
+        path = urlsplit(str(item.get("link", ""))).path.lower()
+    except ValueError:
+        return False
+    return any(marker in path for marker in SPONSORED_PATH_MARKERS)
 
 
 def is_recall_or_food_safety_article(item):
@@ -570,6 +625,7 @@ def process_exa_result(result, category, query_index, result_index):
         "link": url,
         "pubDate": pub_dt.isoformat() if pub_dt else None,
         "score": score,
+        "trusted_source": is_trusted_us_domain(url),
     }
 
 
@@ -691,6 +747,7 @@ def main(input_data):
         item for item in items
         if item["category"] != "RECALL"
         and not is_low_quality_article(item)
+        and not is_sponsored_placement(item)
         and not is_recall_or_food_safety_article(item)
     ]
     recall_only_items = [
@@ -699,8 +756,13 @@ def main(input_data):
         and is_valid_recall_source(item)
     ]
     
-    # Rank each category separately by score (descending)
-    shoppers_items.sort(key=lambda x: -x["score"])
+    # Rank shoppers results in two tiers: curated US newsrooms first, then
+    # whatever the open discovery queries found, each tier ordered by score.
+    # A flat bonus cannot do this job, because length_score peaks at 200-600
+    # characters and so pays a thin rewrite 100 points more than full
+    # reporting. Tiering states the intent directly: an unlisted source is a
+    # fallback for a thin week, not competition for a known newsroom.
+    shoppers_items.sort(key=lambda x: (not x.get("trusted_source"), -x["score"]))
     recall_only_items.sort(key=lambda x: -x["score"])
     
     # =========================================================================
