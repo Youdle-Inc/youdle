@@ -41,9 +41,6 @@ def _generator_call_for(*, article, shoppers_context=None):
 
     state = {
         "articles": [article],
-        "posts_needing_regeneration": (
-            [article] if article.get("regeneration_hints") else []
-        ),
         "shoppers_context": shoppers_context or {},
         "recall_context": {},
         "model": "test-model",
@@ -89,23 +86,12 @@ def test_feedback_word_count_guidance_matches_the_canonical_prompt_range():
     assert "250" not in guidance
 
 
-def test_outer_regeneration_hints_reach_the_next_generation_prompt():
-    """A graph-level retry must differ from the first, cacheable LLM request."""
-    hint = "Add the missing source attribution and product lot numbers."
-    article = {
-        "title": "Recall details",
-        "content": "Article source content",
-        "link": "https://example.com/recall-details",
-        "category": "SHOPPERS",
-        "regeneration_hints": hint,
-    }
+def test_generation_makes_exactly_one_model_call_per_article():
+    """No retry loop remains, in the graph or nested inside the generator.
 
-    call = _generator_call_for(article=article)
-
-    assert hint in repr(call.kwargs)
-
-
-def test_graph_owns_the_retry_loop_instead_of_nesting_retries():
+    Rewrites never once turned a rejected draft into a valid one across the
+    observed runs, so a second attempt is pure cost.
+    """
     call = _generator_call_for(
         article={
             "title": "Grocery update",
@@ -116,6 +102,20 @@ def test_graph_owns_the_retry_loop_instead_of_nesting_retries():
     )
 
     assert call.kwargs["max_retries"] == 0
+
+
+def test_workflow_graph_has_no_regeneration_cycle():
+    from blog_post_graph import create_blog_post_graph
+
+    graph = create_blog_post_graph().get_graph()
+    edges = {(edge.source, edge.target) for edge in graph.edges}
+
+    assert ("generate_posts", "proofread_posts") in edges
+    # load_learning_context is the only way into generation: nothing loops back.
+    assert {source for source, target in edges if target == "generate_posts"} == {
+        "load_learning_context"
+    }
+    assert all("regenerat" not in node for node in graph.nodes)
 
 
 def test_feedback_additions_and_common_mistakes_both_reach_generation():
@@ -572,7 +572,7 @@ def test_final_assembly_keeps_safe_draft_with_editorial_warning():
     assert "editorial validation warning" in result["warnings"][0].lower()
 
 
-def test_word_count_only_invalid_reflection_requests_regeneration():
+def test_word_count_alone_marks_a_structurally_valid_post_invalid():
     short_but_structurally_valid = """<div>
 <img src="{IMAGE_HERE}" alt="article image"/>
 <h2>A grocery update worth checking</h2>
@@ -595,7 +595,8 @@ def test_word_count_only_invalid_reflection_requests_regeneration():
     assert reflection["issues"] == [
         f"Word count issue: {reflection['word_count']['word_count']} words"
     ]
-    assert agent.should_regenerate(reflection) is True
+    # Structurally sound but short: reported as invalid, and saved anyway.
+    assert reflection["is_valid"] is False
 
 
 def test_openai_client_uses_the_server_side_key_and_bounded_output(monkeypatch):

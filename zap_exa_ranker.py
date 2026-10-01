@@ -4,6 +4,7 @@
 
 import os
 import re
+import sys
 import time
 from datetime import datetime, timezone, timedelta
 from html import unescape
@@ -66,9 +67,85 @@ TRACKING_QUERY_KEYS = {
 
 # Domains for filtering
 RECALL_DOMAINS = ["fda.gov", "fsis.usda.gov"]
+
+# fda.gov is a whole agency: devices, drugs, veterinary medicine, vaccines and
+# tobacco share the domain with food. A domain lock cannot separate them, and
+# a title test cannot either -- "Class 1 Device Recall" satisfies any recall
+# keyword. One live run offered four records of the same spinal surgery tray
+# as "food safety alerts", so the product area is decided by path.
+NON_FOOD_RECALL_PATH_MARKERS = (
+    "/scripts/cdrh/",
+    "/medical-devices/",
+    "/animal-veterinary/",
+    "/drugs/",
+    "/vaccines-blood-biologics/",
+    "/tobacco-products/",
+    "/advisory-committees/",
+    "/regulatory-information/",
+    "/careers/",
+)
+
+FOOD_RECALL_PATH_MARKERS = (
+    "/safety/recalls-market-withdrawals-safety-alerts/",
+    "/food/",
+    "/recalls-alerts/",
+    "/recalls-and-public-health-alerts/",
+)
+
+# Section fronts and search pages. These carry no single recall, so a post
+# written from one describes whatever happened to be listed that day. The
+# published Sep 15 roundup cited the first of these as its source.
+RECALL_LISTING_PATHS = frozenset({
+    "/safety/recalls-market-withdrawals-safety-alerts",
+    "/food/outbreaks-foodborne-illness",
+    "/food/recalls-outbreaks-emergencies",
+    "/recalls",
+    "/recalls-alerts",
+    "/recalls-and-public-health-alerts",
+    "/es/recalls",
+})
+
+# Titles that name a non-food product even on a food-looking path, since the
+# FDA recalls section carries every product area it regulates.
+NON_FOOD_TITLE_MARKERS = (
+    "device recall",
+    "class 1 device",
+    "class 2 device",
+    "veterinary",
+)
+
+# A second route to "this is about food", so the path list above does not have
+# to enumerate every section an agency might publish a food recall under. A
+# missed food recall is a thinner roundup; a missed non-food one is a grocery
+# newsletter reporting on surgical equipment, so the paths stay narrow and
+# this stays specific.
+FOOD_TITLE_MARKERS = (
+    "food",
+    "salmonella",
+    "listeria",
+    "e. coli",
+    "e.coli",
+    "undeclared",
+    "allergen",
+    "foodborne",
+    "produce",
+    "meat",
+    "poultry",
+    "beef",
+    "chicken",
+    "pork",
+    "seafood",
+    "dairy",
+    "infant formula",
+)
 EXCLUDE_DOMAINS_FOR_SHOPPERS_SAFETY = ["fda.gov", "fsis.usda.gov", "usda.gov"]
 
-# US-based domains for shoppers content (major US grocery/food news sources)
+# US-based domains for shoppers content (major US grocery/food news sources).
+# Most shoppers queries are restricted to this list; the rest of the web is
+# reachable only through the two open discovery queries, whose results are
+# outranked by anything from here. Exa accepts include_domains OR
+# exclude_domains per search, never both, which is why the split is per query
+# rather than per search.
 US_SHOPPERS_DOMAINS = [
     # Major US news sites
     "usatoday.com",
@@ -161,6 +238,20 @@ RECALL_SIGNAL_KEYWORDS = [
     "public health alert",
 ]
 
+# Paid and syndicated placements carried by otherwise reputable newsrooms.
+# USA Today runs supplement advertorials at /press-release/story/..., and they
+# outrank real reporting because they are short and freshly published. The
+# domain allowlist cannot catch these: the domain is genuinely USA Today.
+SPONSORED_PATH_MARKERS = (
+    "/press-release/",
+    "/sponsor-story/",
+    "/sponsored/",
+    "/partner-content/",
+    "/branded-content/",
+    "/advertorial/",
+    "/paid-content/",
+)
+
 LOW_QUALITY_TITLES = {
     "facebook",
     "instagram",
@@ -196,8 +287,10 @@ RECALL_QUERIES = [
 # Note: Exa only allows either include_domains OR exclude_domains, not both
 # We use exclude_domains to filter non-US + US keywords in queries
 SHOPPERS_QUERIES = [
-    # 1. Broad US grocery-news query. This runs first so the time budget always
-    # produces consumer grocery candidates before narrower searches.
+    # 1. Broad US grocery-news query. OPEN WEB: this and the grocery_news query
+    # below are the only shoppers searches that can surface a source the
+    # allowlist does not name. It runs first so the time budget always produces
+    # consumer grocery candidates before narrower searches.
     {
         "query": "top US grocery news this week supermarkets food brands new products store openings prices shoppers",
         "category": "SHOPPERS",
@@ -208,49 +301,50 @@ SHOPPERS_QUERIES = [
         "query": "American supermarket news US grocery store brands retailer mergers United States",
         "category": "SHOPPERS",
         "subcategory": "grocery_retail",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     # 2. US grocery prices and consumer impact
     {
         "query": "US grocery prices rising food inflation impact American consumers shrinkflation",
         "category": "SHOPPERS",
         "subcategory": "prices",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     {
         "query": "food ingredient changes US labeling transparency hidden additives consumer health",
         "category": "SHOPPERS",
         "subcategory": "health",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     # 3. US Shopping advice and consumer guidance
     {
         "query": "best value grocery items US shopping comparison American consumer recommendations buying guide",
         "category": "SHOPPERS",
         "subcategory": "shopping_advice",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     {
         "query": "US holiday shopping tips American budget grocery strategies store tips savings",
         "category": "SHOPPERS",
         "subcategory": "shopping_advice",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     # 4. US Food trends and lifestyle content
     {
         "query": "trending foods America viral grocery items US seasonal recipes health food American",
         "category": "SHOPPERS",
         "subcategory": "food_trends",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
     {
         "query": "US convenience foods American shopper behavior food lifestyle trends United States",
         "category": "SHOPPERS",
         "subcategory": "food_trends",
-        "exclude_domains": EXCLUDE_NON_US_DOMAINS,
+        "include_domains": US_SHOPPERS_DOMAINS,
     },
-    # 5. General grocery and packaged-food industry news. Recall and outbreak
-    # coverage is intentionally handled only by the dedicated roundup queries.
+    # 5. General grocery and packaged-food industry news. OPEN WEB, the second
+    # of the two discovery searches. Recall and outbreak coverage is
+    # intentionally handled only by the dedicated roundup queries.
     {
         "query": "US grocery news packaged food launches supermarket changes consumer grocery shopping",
         "category": "SHOPPERS",
@@ -329,6 +423,30 @@ def keyword_boost(title, desc):
     return min(sum(10 for k in RECALL_SIGNAL_KEYWORDS if k in t), 60)
 
 
+def is_trusted_us_domain(url):
+    """Is this URL from a source on the curated US shoppers allowlist?
+
+    Subdomains count: Exa returns markets.businessinsider.com for a query
+    restricted to businessinsider.com, and that is the same publisher.
+    """
+    host = ""
+    try:
+        host = urlsplit(str(url or "")).netloc.lower()
+    except ValueError:
+        return False
+
+    host = host.split("@")[-1].split(":")[0]
+    if host.startswith("www."):
+        host = host[4:]
+    if not host:
+        return False
+
+    return any(
+        host == domain or host.endswith("." + domain)
+        for domain in US_SHOPPERS_DOMAINS
+    )
+
+
 def within_days(pub_iso, days, now=None):
     """Check that a publication timestamp is neither future nor too old."""
     if not pub_iso:
@@ -349,6 +467,15 @@ def is_low_quality_article(item):
     return not title or title in LOW_QUALITY_TITLES
 
 
+def is_sponsored_placement(item):
+    """Identify advertising a newsroom publishes under its own domain."""
+    try:
+        path = urlsplit(str(item.get("link", ""))).path.lower()
+    except ValueError:
+        return False
+    return any(marker in path for marker in SPONSORED_PATH_MARKERS)
+
+
 def is_recall_or_food_safety_article(item):
     """Identify recall/outbreak coverage that cannot fill grocery-news slots."""
     title = html_to_text(item.get("title", "")).strip().lower()
@@ -358,17 +485,78 @@ def is_recall_or_food_safety_article(item):
     return any(keyword in combined for keyword in RECALL_SIGNAL_KEYWORDS)
 
 
+def _recall_url_parts(url):
+    """Return (path, query) lowercased, or None when the URL is unusable."""
+    try:
+        parts = urlsplit(str(url or ""))
+    except ValueError:
+        return None
+    path = (parts.path or "").lower().rstrip("/")
+    if not path:
+        return None
+    return path, parts.query
+
+
+def is_specific_recall_page(item):
+    """Reject section fronts, search results and faceted filter URLs."""
+    parts = _recall_url_parts(item.get("link"))
+    if parts is None:
+        return False
+    path, query = parts
+    # A single recall is never behind a query string; "?keywords=listeria" and
+    # "?f[0]=company%3A432" are a site search and a filter view.
+    if query:
+        return False
+    return path not in RECALL_LISTING_PATHS
+
+
+def is_food_recall_page(item):
+    """Require a food product area, by path first and then by title."""
+    parts = _recall_url_parts(item.get("link"))
+    if parts is None:
+        return False
+    path, _ = parts
+
+    title = html_to_text(item.get("title", "")).lower()
+
+    if any(marker in path + "/" for marker in NON_FOOD_RECALL_PATH_MARKERS):
+        return False
+    if any(marker in title for marker in NON_FOOD_TITLE_MARKERS):
+        return False
+
+    return (
+        any(marker in path + "/" for marker in FOOD_RECALL_PATH_MARKERS)
+        or any(marker in title for marker in FOOD_TITLE_MARKERS)
+    )
+
+
+def recall_signature(item):
+    """Collapse one recall that an agency filed as several records.
+
+    FDA's device database returned ids 219960-219963 for a single product;
+    counting those as four alerts would inflate a roundup of two real events.
+    """
+    title = html_to_text(item.get("title", "")).lower()
+    title = re.sub(r"[^a-z0-9\s]", " ", title)
+    title = re.sub(r"\b\d+\b", " ", title)
+    return re.sub(r"\s+", " ", title).strip()
+
+
 def is_valid_recall_source(item):
-    """Require an actual alert/recall page, not any page returned by a domain query."""
+    """Require a specific food recall page, not any page the domain returned."""
     if is_low_quality_article(item):
+        return False
+    if not is_specific_recall_page(item):
+        return False
+    if not is_food_recall_page(item):
         return False
 
     title = html_to_text(item.get("title", "")).lower()
-    url = str(item.get("link", "")).lower()
+    path = _recall_url_parts(item.get("link"))[0]
     return (
         any(keyword in title for keyword in RECALL_SIGNAL_KEYWORDS)
-        or "/recall" in url
-        or "/outbreak" in url
+        or "/recall" in path
+        or "/outbreak" in path
     )
 
 
@@ -510,7 +698,13 @@ def hydrate_article_contents(
 
 
 def execute_search(exa, query_config, start_date, end_date):
-    """Execute a single Exa search query and return results."""
+    """Execute a single Exa search query and return results.
+
+    Provider failures propagate to the caller. Swallowing them here made an
+    exhausted API key, a bad key, or an outage indistinguishable from a quiet
+    news week: the batch came back empty and the run failed much later with
+    nothing to point at.
+    """
     query = query_config["query"]
     category = query_config["category"]
     
@@ -530,12 +724,8 @@ def execute_search(exa, query_config, start_date, end_date):
     if "exclude_domains" in query_config:
         search_params["exclude_domains"] = query_config["exclude_domains"]
     
-    try:
-        results = exa.search_and_contents(**search_params)
-        return results.results, category, query_config.get("subcategory")
-    except Exception as e:
-        print(f"Error searching for '{query}': {e}")
-        return [], category, query_config.get("subcategory")
+    results = exa.search_and_contents(**search_params)
+    return results.results, category, query_config.get("subcategory")
 
 
 def process_exa_result(result, category, query_index, result_index):
@@ -567,6 +757,7 @@ def process_exa_result(result, category, query_index, result_index):
         "link": url,
         "pubDate": pub_dt.isoformat() if pub_dt else None,
         "score": score,
+        "trusted_source": is_trusted_us_domain(url),
     }
 
 
@@ -600,6 +791,7 @@ def main(input_data):
     recent_days = min(search_days, max(1, requested_recent_days))
     
     items = []
+    search_errors = []
     start_ts = time.time()
     
     # Initialize Exa client
@@ -636,10 +828,22 @@ def main(input_data):
         ):
             break
         
-        # Execute search
-        results, category, subcategory = execute_search(
-            exa, query_config, start_date, end_date
-        )
+        # Execute search. One failing query must not end the run, but it is
+        # recorded so the caller can tell a failed search from an empty one.
+        category = query_config["category"]
+        try:
+            results, category, subcategory = execute_search(
+                exa, query_config, start_date, end_date
+            )
+        except Exception as search_error:
+            message = (
+                f"Exa search failed for '{query_config['query'][:60]}': {search_error}"
+            )
+            # stderr only: the CLI writes a JSON summary to stdout.
+            print(message, file=sys.stderr)
+            search_errors.append(message)
+            searched_categories.add(category)
+            continue
         searched_categories.add(category)
         
         # Process results
@@ -675,6 +879,7 @@ def main(input_data):
         item for item in items
         if item["category"] != "RECALL"
         and not is_low_quality_article(item)
+        and not is_sponsored_placement(item)
         and not is_recall_or_food_safety_article(item)
     ]
     recall_only_items = [
@@ -683,8 +888,13 @@ def main(input_data):
         and is_valid_recall_source(item)
     ]
     
-    # Rank each category separately by score (descending)
-    shoppers_items.sort(key=lambda x: -x["score"])
+    # Rank shoppers results in two tiers: curated US newsrooms first, then
+    # whatever the open discovery queries found, each tier ordered by score.
+    # A flat bonus cannot do this job, because length_score peaks at 200-600
+    # characters and so pays a thin rewrite 100 points more than full
+    # reporting. Tiering states the intent directly: an unlisted source is a
+    # fallback for a thin week, not competition for a known newsroom.
+    shoppers_items.sort(key=lambda x: (not x.get("trusted_source"), -x["score"]))
     recall_only_items.sort(key=lambda x: -x["score"])
     
     # =========================================================================
@@ -706,14 +916,16 @@ def main(input_data):
     seen_recall = set()
     for item in recall_only_items:
         if within_days(item["pubDate"], recent_days):
-            key = (item["link"], item["title"].lower())
+            # Keyed on the normalized title alone: the same recall filed under
+            # several record ids has several URLs but one headline.
+            key = recall_signature(item) or item["link"]
             if key not in seen_recall:
                 seen_recall.add(key)
                 recall_items.append(item)
         if len(recall_items) >= MAX_RECALL_ITEMS:
             break
     
-    return {
+    response = {
         "items": batch_items,
         # Internal consumers use the full ranked pool so cross-run URL dedup
         # can still fill every regular slot.
@@ -724,6 +936,18 @@ def main(input_data):
         "shoppers_count": len(shoppers_items),
         "recall_count": len(recall_only_items),
     }
+
+    if search_errors:
+        response["search_errors"] = search_errors
+        # Nothing came back and every attempt failed: this is a provider
+        # problem, not an empty news week, so report it as a hard error.
+        if not items:
+            response["error"] = (
+                f"All {len(search_errors)} article searches failed. "
+                f"First failure: {search_errors[0]}"
+            )
+
+    return response
 
 
 # For Zapier code step compatibility

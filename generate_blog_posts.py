@@ -7,6 +7,10 @@ import sys
 import json
 import argparse
 from datetime import datetime
+
+# The job-state helpers live with the API, which shares this queue table.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "api"))
+
 from ai_models import get_default_openai_model
 
 try:
@@ -61,6 +65,121 @@ def check_environment(quiet=False):
         print("\nSome features may be limited.\n", file=sys.stderr)
 
     return True
+
+
+def start_job_record(config):
+    """Register this run in ``job_queue`` so the dashboard can see it.
+
+    Scheduled and CLI runs generate real posts, but they used to leave no job
+    row at all, so the dashboard's Jobs tab showed nothing newer than the last
+    run someone started from the UI.
+
+    Returns ``(supabase, job_id, conflict)``. Tracking is best effort: when
+    Supabase is unavailable the run still proceeds untracked. ``conflict`` is a
+    message when another run already holds the single active-job slot, and the
+    caller must not start generating in that case.
+    """
+    try:
+        from supabase_storage import get_supabase_client
+        from job_lifecycle import ActiveJobConflict, start_generation_job
+    except Exception as import_error:
+        print(
+            f"WARNING: job tracking unavailable ({import_error}); "
+            "this run will not appear in the dashboard",
+            file=sys.stderr,
+        )
+        return None, None, None
+
+    try:
+        supabase = get_supabase_client()
+    except Exception as client_error:
+        print(
+            f"WARNING: could not reach Supabase for job tracking ({client_error})",
+            file=sys.stderr,
+        )
+        return None, None, None
+
+    if supabase is None:
+        print(
+            "WARNING: Supabase is not configured; this run will not appear in "
+            "the dashboard",
+            file=sys.stderr,
+        )
+        return None, None, None
+
+    try:
+        return supabase, start_generation_job(supabase, config), None
+    except ActiveJobConflict as conflict:
+        return None, None, str(conflict)
+    except Exception as start_error:
+        print(
+            f"WARNING: could not record this run in the dashboard ({start_error})",
+            file=sys.stderr,
+        )
+        return None, None, None
+
+
+def finish_job_record(supabase, job_id, result=None, error=None):
+    """Write the terminal job state for a tracked run.
+
+    Called on every exit path: a job left running holds the active-job slot
+    until stale reconciliation releases it, which blocks the next run.
+    """
+    if not supabase or not job_id:
+        return
+
+    try:
+        from job_lifecycle import describe_missing_posts, finish_generation_job
+
+        if error:
+            finish_generation_job(supabase, job_id, error=error)
+            return
+
+        result = result or {}
+        final_state = result.get("final_state") or {}
+        errors = list(result.get("errors") or [])
+        if result.get("error"):
+            errors.append(str(result["error"]))
+        warnings = list(result.get("warnings") or [])
+        attempted = int(result.get("posts_generated") or 0)
+        persistence_errors = list(final_state.get("persistence_errors") or [])
+
+        if not attempted:
+            finish_generation_job(
+                supabase, job_id, error=describe_missing_posts(errors, warnings)
+            )
+            return
+
+        # Only the LangGraph orchestrator persists posts; the legacy fallback
+        # writes files only, so its runs are not judged on inserted rows.
+        inserted = int(final_state.get("db_inserted") or 0) if final_state else attempted
+        if final_state and not inserted:
+            details = "; ".join(persistence_errors[:3])
+            finish_generation_job(
+                supabase,
+                job_id,
+                error=(
+                    "Generation produced posts but none were saved to Supabase"
+                    + (f": {details}" if details else "")
+                ),
+            )
+            return
+
+        finish_generation_job(
+            supabase,
+            job_id,
+            result={
+                "posts_generated": inserted,
+                "posts_attempted": attempted,
+                "errors": errors + persistence_errors,
+                "warnings": warnings,
+            },
+        )
+    except Exception as finish_error:
+        print(
+            f"WARNING: could not record the job outcome ({finish_error})",
+            file=sys.stderr,
+        )
 
 
 def main():
@@ -209,14 +328,43 @@ Examples:
         print(f"Output: {args.output}/")
         print()
 
+    job_config = {
+        "model": args.model,
+        "batch_size": args.batch_size,
+        "search_days_back": args.days_back,
+        "use_placeholder_images": args.placeholder_images,
+        "use_legacy_orchestrator": args.legacy,
+        # Recorded so the dashboard can tell a scheduled run from a local one.
+        "source": "github-actions" if os.getenv("GITHUB_ACTIONS") else "cli",
+    }
+    supabase, job_id, conflict = start_job_record(job_config)
+    if conflict:
+        message = (
+            f"{conflict}. Wait for it to finish or mark it cancelled before "
+            "starting another run."
+        )
+        if args.json:
+            print(json.dumps({
+                "success": False,
+                "error": message,
+                "posts_generated": 0,
+                "posts_failed": 0,
+                "duration_seconds": 0,
+            }, indent=2), flush=True)
+        else:
+            print(f"\nERROR: {message}", file=sys.stderr)
+        sys.exit(1)
+
     try:
         result = run_generation(
             model=args.model,
             use_placeholder_images=args.placeholder_images,
             batch_size=args.batch_size,
             search_days_back=args.days_back,
-            use_langgraph=not args.legacy
+            use_langgraph=not args.legacy,
+            job_id=job_id,
         )
+        finish_job_record(supabase, job_id, result=result)
 
         if args.json:
             # Exclude full state from JSON output for readability
@@ -256,6 +404,7 @@ Examples:
                 sys.exit(1)
 
     except KeyboardInterrupt:
+        finish_job_record(supabase, job_id, error="Interrupted by user")
         if args.json:
             # Output valid JSON even on interrupt
             error_result = {
@@ -270,6 +419,7 @@ Examples:
             print("\n\nInterrupted by user", file=sys.stderr)
         sys.exit(130)
     except Exception as e:
+        finish_job_record(supabase, job_id, error=str(e))
         if args.json:
             # Output valid JSON even on error
             error_result = {

@@ -1,0 +1,181 @@
+@@PART:head@@
+    <b:if cond='data:view.isHomepage'>
+      <link href='https://fonts.googleapis.com' rel='preconnect'/>
+      <link crossorigin='anonymous' href='https://fonts.gstatic.com' rel='preconnect'/>
+      <link href='https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Newsreader:opsz,wght@6..72,500;6..72,600;6..72,700&amp;display=swap' rel='stylesheet'/>
+      <meta content='#173e2f' name='theme-color'/>
+      <meta content='summary_large_image' name='twitter:card'/>
+      <meta expr:content='data:blog.title' name='twitter:title'/>
+      <meta content='{{seo.twitter_site}}' name='twitter:site'/>
+      <script type='application/ld+json'>{{raw jsonld_org}}</script>
+      <script type='application/ld+json'>{{raw jsonld_site}}</script>
+      <style type='text/css'>
+{{raw css}}
+      </style>
+    </b:if>
+
+@@PART:header@@
+    <b:if cond='data:view.isHomepage'>
+      <b:comment>
+        The masthead, not site chrome. news.youdle.io is an article index, so
+        the page states what it is and links back to the product site; the
+        drawer, the primary nav and the footer columns that the earlier
+        homepage draft carried are deliberately absent.
+      </b:comment>
+      <header class='yd-masthead' role='banner'>
+        <div class='yd-container yd-masthead__inner'>
+          <a class='yd-masthead__brand' href='{{urls.home}}'>
+            {{raw logo_svg}}
+            <span class='yd-visually-hidden'>Youdle home</span>
+          </a>
+          <div class='yd-masthead__copy'>
+            <h1 class='yd-masthead__title'>{{site.title}}</h1>
+            <p class='yd-masthead__tagline'>{{site.tagline}}</p>
+          </div>
+        </div>
+      </header>
+    </b:if>
+
+@@PART:main@@
+  <b:comment>
+    The article index. Everything Blogger put on this page is listed, newest
+    first, with no editorial slicing: a post missing a label, or carrying one
+    the chips below do not name, still appears here.
+  </b:comment>
+  <nav aria-label='Filter by category' class='yd-filters'>
+    <div class='yd-container yd-filters__inner'>
+      <a aria-current='page' class='yd-chip yd-chip--active' expr:href='data:blog.homepageUrl'>All</a>
+{{#each categories}}
+      <a class='yd-chip' data-yd-event='category_filter_click' data-yd-label='{{item.blogger_label}}' expr:href='data:blog.homepageUrl + &quot;search/label/{{item.blogger_label}}&quot;'>{{item.label}}</a>
+{{/each}}
+    </div>
+  </nav>
+
+  <div class='yd-container yd-layout'>
+    <div class='yd-layout__main'>
+  <b:if cond='data:posts.any'>
+    <section aria-labelledby='yd-list-heading' class='yd-list'>
+        <h2 class='yd-visually-hidden' id='yd-list-heading'>Articles</h2>
+
+        <ol class='yd-list__items'>
+          <b:loop index='i' values='data:posts' var='post'>
+            <li class='yd-item'>
+              <article class='yd-item__inner'>
+                <a class='yd-item__thumb' expr:href='data:post.url' tabindex='-1'>
+                  <b:if cond='data:post.featuredImage'>
+                    <b:comment>
+                      alt is empty on purpose: the headline is announced right
+                      after and is the link, so a description here would just
+                      repeat it. srcset is only meaningful for Google-hosted
+                      images; the live blog also uses i.ibb.co, which Blogger
+                      cannot resize, and an empty srcset falls back to src.
+                    </b:comment>
+                    <img alt='' loading='lazy' expr:src='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 400, &quot;4:3&quot;) : data:post.featuredImage' expr:srcset='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 200, &quot;4:3&quot;) + &quot; 200w, &quot; + resizeImage(data:post.featuredImage, 400, &quot;4:3&quot;) + &quot; 400w&quot; : &quot;&quot;' height='144' sizes='(max-width: 640px) 96px, 192px' width='192'/>
+                  <b:else/>
+                    <span aria-hidden='true' class='yd-item__thumb-fallback'>Youdle</span>
+                  </b:if>
+                </a>
+
+                <div class='yd-item__body'>
+                  <p class='yd-item__meta'>
+                    <b:if cond='data:post.labels'>
+                      <b:with value='data:post.labels.first.name' var='ydLabel'>
+                        <b:comment>
+                          The live blog stores raw pipeline constants as labels
+                          (SHOPPERS, RECALL, GROCERS...). Map them to reader
+                          facing names; anything unmapped falls through to the
+                          label as written rather than disappearing.
+                        </b:comment>
+                        <a class='yd-item__chip' expr:href='data:blog.homepageUrl + &quot;search/label/&quot; + data:ydLabel'>
+                          <b:if cond='data:ydLabel in {&quot;RECALL&quot;, &quot;recall&quot;, &quot;Recall&quot;, &quot;consumer warning&quot;}'>Recalls
+                          <b:elseif cond='data:ydLabel in {&quot;deals&quot;, &quot;Deals&quot;, &quot;DEALS&quot;}'/>Prices &amp; deals
+                          <b:elseif cond='data:ydLabel in {&quot;SHOPPERS&quot;, &quot;shoppers&quot;, &quot;Shoppers&quot;}'/>Grocery news
+                          <b:elseif cond='data:ydLabel in {&quot;GROCERS&quot;, &quot;grocers&quot;}'/>For grocers
+                          <b:elseif cond='data:ydLabel in {&quot;EMERGENCY&quot;, &quot;emergency&quot;}'/>Emergency prep
+                          <b:else/><data:ydLabel/>
+                          </b:if>
+                        </a>
+                      </b:with>
+                      <span aria-hidden='true' class='yd-item__dot'>&#183;</span>
+                    </b:if>
+                    <time expr:datetime='data:post.date.iso8601'><b:eval expr='format(data:post.date, &quot;MMMM d, YYYY&quot;)'/></time>
+                  </p>
+
+                  <h3 class='yd-item__title'>
+                    <a data-yd-event='article_click' data-yd-placement='news_index' expr:href='data:post.url'><data:post.title/></a>
+                  </h3>
+
+                  <p class='yd-item__dek'><b:eval expr='snippet(data:post.snippets.long, { length: 150, links: false, linebreaks: false, ellipsis: true })'/></p>
+                </div>
+              </article>
+            </li>
+          </b:loop>
+        </ol>
+
+        <b:comment>GEO: the index as an ItemList. Article schema stays on the article pages.</b:comment>
+        <script type='application/ld+json'>{&quot;@context&quot;:&quot;https://schema.org&quot;,&quot;@type&quot;:&quot;ItemList&quot;,&quot;name&quot;:&quot;{{site.title}}&quot;,&quot;itemListOrder&quot;:&quot;https://schema.org/ItemListOrderDescending&quot;,&quot;itemListElement&quot;:[<b:loop index='i' values='data:posts' var='post'><b:if cond='data:i != 0'>,</b:if>{&quot;@type&quot;:&quot;ListItem&quot;,&quot;position&quot;:<b:eval expr='data:i + 1'/>,&quot;url&quot;:&quot;<b:eval expr='data:post.url.canonical.jsonEscaped'/>&quot;,&quot;name&quot;:&quot;<b:eval expr='data:post.title.jsonEscaped'/>&quot;}</b:loop>]}</script>
+
+        <b:comment>
+          Blogger's own pager, reused rather than rebuilt. postPagination is
+          a stock includable of this same Blog widget, so it reads the page
+          URLs in the scope Blogger expects. Hand-written markup reading those
+          same URLs was the one construct on this page that appears nowhere in
+          the theme Blogger currently serves, and the restore upload failed
+          with it present.
+        </b:comment>
+        <b:include name='postPagination'/>
+    </section>
+  <b:else/>
+    <section class='yd-list'>
+      <p class='yd-empty'>No articles have been published yet.</p>
+    </section>
+  </b:if>
+    </div>
+
+    <b:comment>
+      The newsletter signup, kept from the previous page. Same Mailchimp list
+      and the same honeypot field name, so existing subscribers are unaffected.
+      It sits in the sidebar rather than below the list, so it is on screen
+      while someone is still reading headlines; below 900px there is no second
+      column and it stacks under the list, where it was before.
+    </b:comment>
+    <aside aria-labelledby='yd-brief-title' class='yd-side'>
+      <div class='yd-side__inner yd-brief' id='the-youdle-brief'>
+        <h2 class='yd-brief__title' id='yd-brief-title'>Get {{site.brief_name}}.</h2>
+        <p class='yd-brief__lede'>Recalls, price moves and the week&#8217;s grocery news, in one email.</p>
+      <form class='yd-brief__form' data-yd-newsletter='true' method='post' novalidate='novalidate' target='_blank' action='{{newsletter.action}}'>
+        <label class='yd-visually-hidden' for='yd-brief-email'>Email address</label>
+        <input autocomplete='email' class='yd-brief__input' id='yd-brief-email' name='EMAIL' placeholder='you@example.com' required='required' type='email'/>
+        <b:comment>Mailchimp's bot trap: a real person never fills this in, and it must keep its generated name.</b:comment>
+        <div aria-hidden='true' class='yd-brief__trap'>
+          <input name='{{newsletter.honeypot_name}}' tabindex='-1' type='text' value=''/>
+        </div>
+        <button class='yd-btn yd-btn--primary' data-yd-event='newsletter_submit' data-yd-newsletter-submit='true' data-yd-placement='news_index' type='submit'>Subscribe</button>
+        <p aria-live='polite' class='yd-brief__status' data-yd-newsletter-status='true'/>
+      </form>
+      </div>
+    </aside>
+  </div>
+
+@@PART:footer@@
+    <b:if cond='data:view.isHomepage'>
+      <footer class='yd-footer' role='contentinfo'>
+        <div class='yd-container yd-footer__inner'>
+          <p class='yd-footer__line'>{{site.copyright}}</p>
+          <p class='yd-footer__links'>
+            <a href='{{urls.home}}'>Youdle</a>
+            <a href='{{urls.privacy}}'>Privacy</a>
+            <a href='{{urls.terms}}'>Terms</a>
+          </p>
+        </div>
+      </footer>
+    </b:if>
+
+@@PART:script@@
+    <b:if cond='data:view.isHomepage'>
+      <script type='text/javascript'>
+        //<![CDATA[
+{{raw js}}
+        //]]>
+      </script>
+    </b:if>

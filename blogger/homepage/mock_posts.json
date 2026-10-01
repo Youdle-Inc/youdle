@@ -1,0 +1,47 @@
+{
+  "_comment": [
+    "Offline fixture for preview.py --source mock.",
+    "Shaped like the three story cards in the approved comp so the layout can",
+    "be checked without network access. Labels use the raw values the live",
+    "blog actually stores (SHOPPERS / RECALL / deals), which is what exercises",
+    "the label-to-category mapping in src/homepage.xml."
+  ],
+  "posts": [
+    {
+      "id": "1000000000000000001",
+      "title": "Frozen berries recalled nationwide over norovirus concerns",
+      "url": "https://news.youdle.io/2026/05/frozen-berries-recalled-nationwide.html",
+      "published": "2026-05-29T09:00:00-05:00",
+      "labels": ["RECALL", "SHOPPERS"],
+      "image": "/assets/img/community-1.webp",
+      "body": "<div class=\"youdle-back-nav\"><a href=\"https://news.youdle.io/\">← Back to Youdle</a></div><p>Several popular brands of frozen berries have been recalled after routine testing found possible norovirus contamination. The affected lots were distributed to grocery chains in 28 states.</p>"
+    },
+    {
+      "id": "1000000000000000002",
+      "title": "Grocery prices ease for the first time in months—here’s what dropped",
+      "url": "https://news.youdle.io/2026/05/grocery-prices-ease-first-time.html",
+      "published": "2026-05-28T08:30:00-05:00",
+      "labels": ["deals"],
+      "image": "/assets/img/community-2.webp",
+      "body": "<p>From eggs to cereal, see the items finally getting a little cheaper. The latest basket data shows the first month-over-month decline since last autumn.</p>"
+    },
+    {
+      "id": "1000000000000000003",
+      "title": "Recall alert: Chicken soup products recalled",
+      "url": "https://news.youdle.io/2026/05/recall-alert-chicken-soup-products.html",
+      "published": "2026-05-27T07:15:00-05:00",
+      "labels": ["SHOPPERS"],
+      "image": "/assets/img/community-3.webp",
+      "body": "<p>Several canned soup products have been recalled due to a labeling error that omits a known allergen. Shoppers are asked to check lot codes before eating.</p>"
+    },
+    {
+      "id": "1000000000000000004",
+      "title": "A fourth post, to prove the homepage only ever shows three",
+      "url": "https://news.youdle.io/2026/05/fourth-post.html",
+      "published": "2026-05-26T07:15:00-05:00",
+      "labels": ["GROCERS"],
+      "image": "",
+      "body": "<p>This one must not appear in the What Everyone’s Talking About row.</p>"
+    }
+  ]
+}

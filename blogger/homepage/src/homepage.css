@@ -1,0 +1,570 @@
+/* ==========================================================================
+   news.youdle.io - article index
+   Loaded only on the homepage (the <style> block is inside
+   b:if cond='data:view.isHomepage'), so post, label, archive and search views
+   keep the stock theme untouched.
+   ========================================================================== */
+
+.yd-home {
+  --yd-ink: #173e2f;
+  --yd-body: #27352f;
+  --yd-muted: #5d6b64;
+  --yd-hairline: #e2e8e4;
+  --yd-surface: #ffffff;
+  --yd-sage: #eef3ef;
+  --yd-marigold: #f5b43c;
+  --yd-marigold-deep: #e0a02b;
+  --yd-focus: #173e2f;
+  --yd-measure: 1120px;
+
+  background: var(--yd-surface);
+  color: var(--yd-body);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------------------
+   Flatten the stock theme.
+   The Blogger theme wraps the Blog widget in several fixed-width, centred
+   containers and paints its own background. Those constraints are removed on
+   this view only, so the sections below control their own width.
+   -------------------------------------------------------------------------- */
+.yd-home .content,
+.yd-home .content-inner,
+.yd-home .main-section,
+.yd-home .widget,
+.yd-home .Blog,
+.yd-home .blog-posts,
+.yd-home .post-outer-container,
+.yd-home .post-outer,
+.yd-home main,
+/* The stock skin pins these to 576px and then 922px. Left alone they set a
+   floor the page cannot go below, which is invisible on a desktop viewport and
+   shears every headline off at phone width. */
+.yd-home .centered-bottom,
+.yd-home .page {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  float: none;
+  margin: 0;
+  max-width: none;
+  padding: 0;
+  width: auto;
+}
+
+.yd-home .header-outer,
+.yd-home .hero-image,
+.yd-home #footer,
+.yd-home .centered-top-container,
+.yd-home .centered-top-placeholder,
+.yd-home .footer-outer,
+.yd-home .post-feeds,
+.yd-home .status-msg-wrap,
+.yd-home .sidebar-container,
+.yd-home .feed-links {
+  display: none !important;
+}
+
+.yd-home *,
+.yd-home *::before,
+.yd-home *::after {
+  box-sizing: border-box;
+}
+
+.yd-visually-hidden {
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+.yd-container {
+  margin: 0 auto;
+  max-width: var(--yd-measure);
+  padding: 0 20px;
+  width: 100%;
+}
+
+.yd-home a {
+  color: inherit;
+}
+
+.yd-home a:focus-visible,
+.yd-home button:focus-visible,
+.yd-home input:focus-visible {
+  outline: 3px solid var(--yd-focus);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Masthead
+   -------------------------------------------------------------------------- */
+.yd-masthead {
+  background: var(--yd-surface);
+  border-bottom: 1px solid var(--yd-hairline);
+  padding: 20px 0;
+}
+
+.yd-masthead__inner {
+  align-items: center;
+  display: flex;
+  gap: 20px;
+}
+
+.yd-masthead__brand {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.yd-masthead__brand svg {
+  display: block;
+  height: 34px;
+  width: auto;
+}
+
+.yd-masthead__copy {
+  border-left: 1px solid var(--yd-hairline);
+  min-width: 0;
+  padding-left: 20px;
+}
+
+.yd-masthead__title {
+  color: var(--yd-ink);
+  font-family: Newsreader, Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.yd-masthead__tagline {
+  color: var(--yd-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+/* --------------------------------------------------------------------------
+   Category chips
+   -------------------------------------------------------------------------- */
+.yd-filters {
+  background: var(--yd-surface);
+  border-bottom: 1px solid var(--yd-hairline);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.yd-filters__inner {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  padding-top: 12px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.yd-home .yd-chip {
+  background: var(--yd-sage);
+  border-radius: 999px;
+  color: var(--yd-ink);
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 10px 16px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.yd-home .yd-chip:hover {
+  background: #e2ebe5;
+}
+
+.yd-home .yd-chip--active {
+  background: var(--yd-ink);
+  color: #ffffff;
+}
+
+.yd-home .yd-chip--active:hover {
+  background: #0f2e22;
+}
+
+/* --------------------------------------------------------------------------
+   Two columns: the articles, and a sidebar holding the signup
+   -------------------------------------------------------------------------- */
+.yd-layout {
+  align-items: start;
+  display: grid;
+  gap: 40px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  padding-bottom: 48px;
+}
+
+.yd-layout__main {
+  min-width: 0;
+}
+
+.yd-side__inner {
+  /* Clears the sticky chip row, which is 57px tall and sits at top: 0. */
+  position: sticky;
+  top: 73px;
+}
+
+/* --------------------------------------------------------------------------
+   The list
+   -------------------------------------------------------------------------- */
+.yd-list {
+  padding: 8px 0 0;
+}
+
+.yd-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.yd-item + .yd-item {
+  border-top: 1px solid var(--yd-hairline);
+}
+
+.yd-item__inner {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  padding: 24px 0;
+}
+
+.yd-item__thumb {
+  background: var(--yd-sage);
+  border-radius: 10px;
+  display: block;
+  flex: 0 0 192px;
+  overflow: hidden;
+  position: relative;
+}
+
+.yd-item__thumb img {
+  aspect-ratio: 4 / 3;
+  display: block;
+  height: auto;
+  object-fit: cover;
+  width: 100%;
+}
+
+.yd-item__thumb-fallback {
+  align-items: center;
+  aspect-ratio: 4 / 3;
+  color: var(--yd-muted);
+  display: flex;
+  font-family: Newsreader, Georgia, serif;
+  font-size: 18px;
+  justify-content: center;
+  width: 100%;
+}
+
+.yd-item__body {
+  min-width: 0;
+}
+
+.yd-item__meta {
+  align-items: center;
+  color: var(--yd-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.yd-home .yd-item__chip {
+  color: var(--yd-ink);
+  font-weight: 600;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+}
+
+.yd-home .yd-item__chip:hover {
+  text-decoration: underline;
+}
+
+.yd-item__dot {
+  color: var(--yd-hairline);
+}
+
+.yd-item__title {
+  font-family: Newsreader, Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+  margin: 0;
+}
+
+.yd-home .yd-item__title a {
+  color: var(--yd-ink);
+  text-decoration: none;
+}
+
+.yd-home .yd-item__title a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.yd-item__dek {
+  color: var(--yd-muted);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 6px 0 0;
+}
+
+.yd-empty {
+  color: var(--yd-muted);
+  font-size: 16px;
+  padding: 48px 0;
+  text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   Pager
+   -------------------------------------------------------------------------- */
+/* Blogger's own pager markup, restyled rather than replaced. */
+.yd-home .blog-pager {
+  border-top: 1px solid var(--yd-hairline);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin: 0;
+  padding: 24px 20px 0;
+}
+
+.yd-home .blog-pager a {
+  align-items: center;
+  color: var(--yd-ink);
+  display: inline-flex;
+  font-family: Inter, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 8px;
+  text-decoration: none;
+}
+
+.yd-home .blog-pager a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The older-posts link sits right, where it belongs, even when it is alone. */
+.yd-home .blog-pager .blog-pager-older-link {
+  margin-left: auto;
+}
+
+
+
+.yd-pager__link svg {
+  height: 16px;
+  width: 16px;
+}
+
+.yd-pager__link--older:only-child {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Newsletter card
+   -------------------------------------------------------------------------- */
+.yd-brief {
+  background: var(--yd-sage);
+  border-radius: 14px;
+  padding: 24px;
+}
+
+.yd-brief__title {
+  color: var(--yd-ink);
+  font-family: Newsreader, Georgia, serif;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.yd-brief__lede {
+  color: var(--yd-muted);
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.yd-brief__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+  position: relative;
+}
+
+.yd-brief__input {
+  background: #ffffff;
+  border: 1px solid var(--yd-hairline);
+  border-radius: 10px;
+  color: var(--yd-ink);
+  font-family: inherit;
+  font-size: 15px;
+  height: 46px;
+  padding: 0 14px;
+  width: 100%;
+}
+
+.yd-brief__input[aria-invalid='true'] {
+  border-color: #b3261e;
+}
+
+.yd-brief__trap {
+  left: -5000px;
+  position: absolute;
+}
+
+.yd-btn {
+  align-items: center;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 8px;
+  height: 46px;
+  justify-content: center;
+  padding: 0 22px;
+  text-decoration: none;
+  width: 100%;
+}
+
+.yd-btn--primary {
+  background: var(--yd-marigold);
+  color: var(--yd-ink);
+}
+
+.yd-btn--primary:hover {
+  background: var(--yd-marigold-deep);
+}
+
+.yd-brief__status {
+  font-size: 14px;
+  margin: 0;
+  min-height: 1em;
+}
+
+.yd-brief__status[data-state='error'] {
+  color: #b3261e;
+}
+
+.yd-brief__status[data-state='success'] {
+  color: var(--yd-ink);
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+.yd-footer {
+  border-top: 1px solid var(--yd-hairline);
+  padding: 24px 0;
+}
+
+.yd-footer__inner {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.yd-footer__line,
+.yd-footer__links {
+  color: var(--yd-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.yd-home .yd-footer__links a {
+  color: var(--yd-muted);
+  margin-left: 16px;
+  text-decoration: none;
+}
+
+.yd-home .yd-footer__links a:first-child {
+  margin-left: 0;
+}
+
+.yd-home .yd-footer__links a:hover {
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+/* One column below 900px: the signup stacks under the list, where it was
+   before, and stops being sticky so it cannot cover the articles. */
+@media (max-width: 900px) {
+  .yd-layout {
+    gap: 32px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .yd-side__inner {
+    position: static;
+  }
+}
+
+@media (max-width: 760px) {
+  .yd-masthead__inner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .yd-masthead__copy {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .yd-masthead__title {
+    font-size: 26px;
+  }
+
+  .yd-item__inner {
+    gap: 14px;
+    padding: 18px 0;
+  }
+
+  .yd-item__thumb {
+    flex-basis: 96px;
+  }
+
+  .yd-item__title {
+    font-size: 18px;
+  }
+
+  .yd-item__dek {
+    display: none;
+  }
+
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yd-home * {
+    transition: none !important;
+  }
+}

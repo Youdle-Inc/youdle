@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Configuration for the news.youdle.io article index.",
+    "Edit this file, then run:  python blogger/homepage/build_theme.py",
+    "Every value is substituted into src/homepage.xml at build time, so the",
+    "generated theme contains plain literals and stays readable in Blogger's",
+    "theme editor."
+  ],
+
+  "site": {
+    "name": "Youdle",
+    "title": "Youdle News",
+    "tagline": "Grocery recalls, price moves and shopper finds — newest first.",
+    "brief_name": "The Youdle Brief",
+    "copyright": "© 2026 Youdle. All rights reserved.",
+    "definition": "Youdle brings together grocery news, recalls, price changes, shopper finds, and tools to help people shop smarter."
+  },
+
+  "urls": {
+    "_comment": "Verified live 2026-08-31. See README.md 'Link map' for provenance.",
+    "home": "https://youdle.io/",
+    "news": "https://news.youdle.io/",
+    "privacy": "https://www.youdle.io/privacy-policy",
+    "terms": "https://www.youdle.io/terms"
+  },
+
+  "categories": {
+    "_comment": [
+      "Chips across the top of the index. 'blogger_label' is the raw label as",
+      "it exists on the live blog, because that is what Blogger's",
+      "/search/label/ URLs match -- they are case sensitive and do not accept",
+      "two labels at once.",
+      "",
+      "The blog carries both RECALL (9 posts) and recall (7 posts) as separate",
+      "labels, so the Recalls chip reaches only the former. Those 7 posts still",
+      "appear in the main list, which is chronological and label-blind. The fix",
+      "is to relabel them in Blogger; see README 'Label hygiene'."
+    ],
+    "recalls": { "label": "Recalls", "blogger_label": "RECALL" },
+    "shoppers": { "label": "Grocery news", "blogger_label": "SHOPPERS" },
+    "grocers": { "label": "For grocers", "blogger_label": "GROCERS" },
+    "emergency": { "label": "Emergency prep", "blogger_label": "EMERGENCY" },
+    "deals": { "label": "Prices & deals", "blogger_label": "deals" }
+  },
+
+  "newsletter": {
+    "_comment": "Existing Mailchimp integration, carried over verbatim from the theme's youdleNewsletterSignup includable so subscribers land on the same list.",
+    "action": "https://ProductSightings.us10.list-manage.com/subscribe/post?u=a8e33153b11c8b750221ce4aa&id=77d558bfda&f_id=005547e4f0",
+    "honeypot_name": "b_a8e33153b11c8b750221ce4aa_77d558bfda"
+  },
+
+  "seo": {
+    "_comment": [
+      "Blogger emits <title>, meta description and Open Graph tags from",
+      "Settings, so we do NOT duplicate them here. Twitter Card tags are not",
+      "emitted by Blogger, so we add those.",
+      "organization_id / website_id are JSON-LD @id anchors."
+    ],
+    "twitter_site": "@getyoudle",
+    "logo_url": "https://www.youdle.io/_next/static/media/logo.89bc6d22.png",
+    "same_as": [
+      "https://www.facebook.com/groups/getyoudle/",
+      "https://www.instagram.com/getyoudle",
+      "https://www.tiktok.com/@getyoudle",
+      "https://www.linkedin.com/company/youdle/",
+      "https://www.youtube.com/@youdle",
+      "https://twitter.com/getyoudle"
+    ]
+  }
+}

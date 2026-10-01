@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from zap_exa_ranker import main as rank_articles
 
 
@@ -170,3 +172,199 @@ def test_generation_configuration_enforces_a_seven_day_maximum():
         pass
     else:
         raise AssertionError("Generation accepted articles older than seven days")
+
+
+def test_topical_shoppers_queries_use_the_us_allowlist():
+    """Exa takes include_domains or exclude_domains, never both.
+
+    The split is therefore per query: the topical searches are restricted to
+    curated US newsrooms, and two broad searches stay open so a source the
+    allowlist does not name can still be found.
+    """
+    from zap_exa_ranker import SHOPPERS_QUERIES, US_SHOPPERS_DOMAINS
+
+    allowlisted = [q for q in SHOPPERS_QUERIES if "include_domains" in q]
+    open_web = [q for q in SHOPPERS_QUERIES if "include_domains" not in q]
+
+    assert len(allowlisted) == 7
+    assert len(open_web) == 2
+    for query in allowlisted:
+        assert query["include_domains"] == US_SHOPPERS_DOMAINS
+        assert "exclude_domains" not in query, "Exa rejects both filters together"
+    for query in open_web:
+        assert query["exclude_domains"], "an open query still blocks non-US outlets"
+
+
+def test_recall_queries_stay_locked_to_official_sources():
+    from zap_exa_ranker import RECALL_QUERIES
+
+    for query in RECALL_QUERIES:
+        assert set(query["include_domains"]) <= {"fda.gov", "fsis.usda.gov"}
+
+
+def test_trusted_domain_test_matches_subdomains_but_not_lookalikes():
+    from zap_exa_ranker import is_trusted_us_domain
+
+    assert is_trusted_us_domain("https://www.usatoday.com/story/1")
+    assert is_trusted_us_domain("https://markets.businessinsider.com/news/x")
+    assert is_trusted_us_domain("http://CNBC.COM/2026/09/30/groceries")
+    assert not is_trusted_us_domain("https://akm.ru/eng/news/kroger")
+    assert not is_trusted_us_domain("https://usatoday.com.content-farm.net/x")
+    assert not is_trusted_us_domain("")
+    assert not is_trusted_us_domain(None)
+
+
+def test_a_curated_newsroom_is_ranked_above_an_unlisted_aggregator():
+    """Ranking must not hand a slot to a content farm because it wrote less.
+
+    length_score peaks at 200-600 characters, so a thin rewrite scores ~100
+    points above full reporting. Trust is therefore a tier, not a bonus.
+    """
+    recent = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    grocery_results = [
+        _exa_result(
+            "Kroger acquires Giant Eagle supermarket chain",
+            "https://akm.ru/eng/news/kroger-giant-eagle",
+            "A short rewrite of someone else's reporting. " * 6,
+            recent,
+        ),
+        _exa_result(
+            "Kroger acquires Giant Eagle in a $2.3B deal",
+            "https://www.usatoday.com/story/money/2026/09/30/kroger-giant-eagle",
+            "Full original reporting running well past the length the scorer rewards. " * 30,
+            recent,
+        ),
+    ]
+
+    def fake_search(_client, query_config, _start_date, _end_date):
+        category = query_config["category"]
+        results = grocery_results if category == "SHOPPERS" else []
+        return results, category, query_config.get("subcategory")
+
+    with patch("zap_exa_ranker.init_exa_client", return_value=object()), patch(
+        "zap_exa_ranker.execute_search", side_effect=fake_search
+    ):
+        result = rank_articles({"batch_size": 10, "search_days_back": 7})
+
+    ranked = result["shoppers_items"]
+    assert [item["trusted_source"] for item in ranked] == [True, False]
+    assert "usatoday.com" in ranked[0]["link"]
+    # The aggregator still scores higher; it is ranked below on trust alone.
+    assert ranked[1]["score"] > ranked[0]["score"]
+
+
+def test_sponsored_placements_on_trusted_domains_are_rejected():
+    """A domain allowlist cannot catch advertising a real newsroom carries."""
+    from zap_exa_ranker import is_sponsored_placement
+
+    advertorial = {
+        "link": "https://www.usatoday.com/press-release/story/45414/"
+                "extenze-reviews-leading-edge-health-publishes-2026-label-literacy-guide/"
+    }
+    editorial = {
+        "link": "https://www.usatoday.com/story/money/personal-finance/2026/09/27/"
+                "snap-changes-october-cola-cuts/91938378007/"
+    }
+
+    assert is_sponsored_placement(advertorial)
+    assert not is_sponsored_placement(editorial)
+    assert not is_sponsored_placement({"link": ""})
+
+
+def test_ranked_pool_excludes_advertorials_from_curated_domains():
+    recent = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
+    grocery_results = [
+        _exa_result(
+            "ExtenZe Reviews: Leading Edge Health Publishes 2026 Label-Literacy Guide",
+            "https://www.usatoday.com/press-release/story/45414/extenze-reviews/",
+            "A supplement advertorial syndicated under a newsroom domain. " * 5,
+            recent,
+        ),
+        _exa_result(
+            "SNAP checks rise Oct 1, but new rules may mean benefit cuts ahead",
+            "https://www.usatoday.com/story/money/personal-finance/2026/09/27/snap-changes/",
+            "Reporting on benefit changes that affect grocery budgets. " * 8,
+            recent,
+        ),
+    ]
+
+    def fake_search(_client, query_config, _start_date, _end_date):
+        category = query_config["category"]
+        return (grocery_results if category == "SHOPPERS" else []), category, None
+
+    with patch("zap_exa_ranker.init_exa_client", return_value=object()), patch(
+        "zap_exa_ranker.execute_search", side_effect=fake_search
+    ):
+        result = rank_articles({"batch_size": 10, "search_days_back": 7})
+
+    links = [item["link"] for item in result["shoppers_items"]]
+    assert len(links) == 1
+    assert "press-release" not in links[0]
+
+
+# Real URLs the recall branch has returned, including ones it published from.
+REAL_RECALL_CANDIDATES = [
+    ("https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/"
+     "foods-alive-recalls-organic-moringa-leaf-powder-because-possible-health-risk",
+     "Foods Alive Recalls Organic Moringa Leaf Powder", True),
+    ("https://www.fda.gov/food/outbreaks-foodborne-illness/"
+     "outbreak-investigation-e-coli-o145h28-frozen-blueberries-july-2026",
+     "Outbreak Investigation of E. coli: Frozen Blueberries", True),
+    ("https://www.fsis.usda.gov/recalls-alerts/star-meat-delivery-inc--recalls-raw-pork-beef",
+     "Star Meat Delivery Inc. Recalls Raw Pork and Beef Products", True),
+    # Section front: published as the Sep 15 roundup's source.
+    ("https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts",
+     "Recalls, Market Withdrawals, & Safety Alerts", False),
+    ("https://www.fsis.usda.gov/recalls?keywords=listeria", "Recalls | FSIS", False),
+    ("https://www.fsis.usda.gov/es/node/1430?f%5B0%5D=company%3A432", "Retiros", False),
+    # A staff profile that became a published food-safety post's source link.
+    ("https://www.fsis.usda.gov/careers/who-works-us/csi-cynthia-morris-prepares-certainty-change",
+     "CSI Cynthia Morris Prepares for Certainty of Change", False),
+    ("https://www.fda.gov/scripts/cdrh/cfdocs/cfres/res.cfm?id=219963",
+     "Class 1 Device Recall  BDSpinal Tray", False),
+    ("https://www.fda.gov/animal-veterinary/cvm-updates/fda-issues-warning-letters-fungal",
+     "FDA Issues Warning Letters Following Fungal Contamination in a Veterinary Product", False),
+    ("https://www.fda.gov/food/hfp-constituent-updates/fda-reminds-food-facilities-renewal",
+     "FDA Reminds Food Facilities of Biennial Renewal Requirements", False),
+]
+
+
+@pytest.mark.parametrize("link,title,expected", REAL_RECALL_CANDIDATES)
+def test_recall_source_validation_against_real_pages(link, title, expected):
+    from zap_exa_ranker import is_valid_recall_source
+
+    assert is_valid_recall_source({"link": link, "title": title}) is expected
+
+
+def test_one_recall_filed_as_several_records_counts_once():
+    """FDA returned ids 219960-219963 for a single spinal tray recall."""
+    recent = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    food_recall = _exa_result(
+        "Panorama Produce Recalls Mangoes Due To Possible Salmonella Contamination",
+        "https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/panorama-mangoes",
+        "The recalled mangoes may be contaminated.",
+        recent,
+    )
+    duplicates = [
+        _exa_result(
+            "Hill Country Foods Recalls Frozen Spinach, 4 Lots",
+            f"https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/hill-country-{i}",
+            "An undeclared allergen recall filed under several record ids.",
+            recent,
+        )
+        for i in range(4)
+    ]
+
+    def fake_search(_client, query_config, _start, _end):
+        category = query_config["category"]
+        results = [food_recall] + duplicates if category == "RECALL" else []
+        return results, category, query_config.get("subcategory")
+
+    with patch("zap_exa_ranker.init_exa_client", return_value=object()), patch(
+        "zap_exa_ranker.execute_search", side_effect=fake_search
+    ):
+        result = rank_articles({"batch_size": 10, "search_days_back": 7})
+
+    titles = [item["title"] for item in result["recall_items"]]
+    assert len(titles) == 2, titles
+    assert sum("Frozen Spinach" in t for t in titles) == 1

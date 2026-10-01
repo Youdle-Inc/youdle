@@ -1,0 +1,19 @@
+# Normalise text to LF in the repository. build_theme.py writes the theme with
+# LF explicitly, so without this a Windows checkout would rewrite it to CRLF and
+# the "committed artifact matches its sources" test would fail on a clean clone.
+* text=auto eol=lf
+
+# Blogger themes are uploaded byte-for-byte; never let git touch them.
+*.xml   text eol=lf
+
+# Binary: no EOL conversion, no diffing.
+*.png   binary
+*.webp  binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.docx  binary
+*.woff  binary
+*.woff2 binary

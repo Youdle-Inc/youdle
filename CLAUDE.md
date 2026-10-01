@@ -40,12 +40,17 @@ npm run lint     # ESLint
 
 ### Key Workflow Components (LangGraph StateGraph in `blog_post_graph.py`)
 ```
-search_articles → select_articles → load_learning → generate_posts → reflect_posts
-                                                                          ↓
-                                              [regenerate if failed] ← conditional
-                                                                          ↓
-                                    generate_images → upload_images → assemble_html → save_posts
+search_articles → select_articles → hydrate_articles → load_learning → generate_posts
+                                                                              ↓
+                                                        proofread_posts → generate_images
+                                                                              ↓
+              upload_images → assemble_html → save_posts → push_drafts_to_blogger
 ```
+Every article is generated exactly once. `assemble_html` runs the deterministic
+editorial checklist (`ReflectionAgent`) and records what failed it as job
+warnings; it does not rewrite. A regeneration loop used to retry rejected drafts
+here, but across every observed run it never turned a single rejected draft into
+a valid one, so it only tripled the generation bill.
 
 ### Data Flow
 - **State Management**: `BlogPostState` TypedDict flows through LangGraph nodes

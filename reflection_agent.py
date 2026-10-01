@@ -344,45 +344,6 @@ class ReflectionAgent:
             issue_count = len(issues)
             return f"Blog post has {issue_count} issue(s): {'; '.join(issues[:3])}"
     
-    def should_regenerate(self, reflection_result: Dict[str, Any]) -> bool:
-        """
-        Determine if the blog post should be regenerated.
-        
-        Args:
-            reflection_result: Result from reflect()
-            
-        Returns:
-            True if regeneration is recommended
-        """
-        # The reflection result already combines structure, the canonical
-        # 400-600 word range, deterministic mistakes, and spelling. Keep the
-        # retry decision aligned with that single validity contract.
-        return not reflection_result.get("is_valid", False)
-    
-    def get_regeneration_hints(
-        self,
-        reflection_result: Dict[str, Any]
-    ) -> str:
-        """
-        Get hints for regeneration based on reflection.
-        
-        Args:
-            reflection_result: Result from reflect()
-            
-        Returns:
-            String of hints to include in regeneration prompt
-        """
-        hints = []
-        
-        for issue in reflection_result["issues"]:
-            hints.append(f"- Fix: {issue}")
-        
-        for suggestion in reflection_result["suggestions"]:
-            if suggestion:
-                hints.append(f"- {suggestion}")
-        
-        return "\n".join(hints) if hints else "No specific hints."
-
 
 # For testing
 if __name__ == "__main__":
@@ -412,7 +373,6 @@ if __name__ == "__main__":
     print(f"Summary: {result['summary']}")
     print(f"\nWord Count: {result['word_count']['word_count']}")
     print(f"Issues: {result['issues']}")
-    print(f"Should Regenerate: {agent.should_regenerate(result)}")
 
 
 

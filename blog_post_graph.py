@@ -27,7 +27,11 @@ from zap_exa_ranker import (
     main as search_articles_exa,
     truncate_source_text,
 )
-from langchain_blog_agent import BlogPostGenerator, create_openai_chat_model
+from langchain_blog_agent import (
+    BlogPostGenerator,
+    create_openai_chat_model,
+    describe_image_subject,
+)
 from ai_models import get_default_openai_model
 from image_generator import get_image_generator
 from supabase_storage import get_supabase_client, get_supabase_storage
@@ -96,12 +100,6 @@ class BlogPostState(TypedDict):
     # Current generated posts; a retry replaces the prior result by post ID.
     generated_posts: Annotated[List[Dict[str, Any]], upsert_generated_posts]
     
-    # Reflection results
-    reflection_results: List[Dict[str, Any]]
-    posts_needing_regeneration: List[Dict[str, Any]]
-    regeneration_count: int
-    max_regenerations: int
-    
     # Image generation results
     images: List[Dict[str, Any]]
     
@@ -141,7 +139,6 @@ BLOG_POSTS_DIR = os.getenv(
     "BLOG_POSTS_DIR",
     "/tmp/blog_posts" if os.getenv("VERCEL") else "blog_posts",
 )
-MAX_REGENERATIONS = 2
 MAX_WORKERS = 4
 MAX_RECALL_ROUNDUP_SOURCES = 5
 RECALL_CONTEXT_MAX_CHARS = 18000
@@ -209,10 +206,6 @@ def create_initial_state(
         shoppers_context={},
         recall_context={},
         generated_posts=[],
-        reflection_results=[],
-        posts_needing_regeneration=[],
-        regeneration_count=0,
-        max_regenerations=MAX_REGENERATIONS,
         images=[],
         uploaded_urls=[],
         final_posts=[],
@@ -257,12 +250,35 @@ def search_articles_node(state: BlogPostState) -> Dict[str, Any]:
                 "logs": logs + [f"Search failed: {search_results['error']}"]
             }
         
+        candidate_count = len(
+            search_results.get("shoppers_items") or search_results.get("items", [])
+        ) + len(search_results.get("recall_items", []))
         logs.append(f"Found {len(search_results.get('items', []))} articles")
-        
-        return {
+
+        node_update = {
             "search_results": search_results,
-            "logs": logs
+            "logs": logs,
         }
+
+        # Some queries failed while others returned results. The run can still
+        # produce posts, but the job record must say the pool was incomplete.
+        search_errors = list(search_results.get("search_errors") or [])
+        warnings = [
+            f"{len(search_errors)} of the article searches failed; "
+            f"the candidate pool is incomplete. First failure: {search_errors[0]}"
+        ] if search_errors else []
+
+        if not candidate_count:
+            warnings.append(
+                "Article search returned no candidates published in the last "
+                f"{state['search_days_back']} day(s)"
+            )
+            logs.append("Search returned no candidate articles")
+
+        if warnings:
+            node_update["warnings"] = warnings
+
+        return node_update
         
     except Exception as e:
         return {
@@ -350,12 +366,30 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
 
     logs.append(f"Selected {len(shoppers_articles)} shoppers + {len(recall_articles)} recall articles (batch_size={batch_size}, total={len(all_articles)})")
 
-    return {
+    node_update = {
         "shoppers_articles": shoppers_articles,
         "recall_articles": recall_articles,
         "articles": all_articles,
         "logs": logs
     }
+
+    # An empty selection ends the run with nothing to generate, so name the
+    # reason here rather than leaving a bare "no usable posts" failure.
+    if not all_articles:
+        candidate_count = len(items) + len(recall_items)
+        if candidate_count:
+            node_update["warnings"] = [
+                f"All {candidate_count} candidate article(s) were skipped as "
+                f"already used: {len(recently_used_urls)} source URL(s) were "
+                "published in the last 60 days"
+            ]
+        else:
+            node_update["warnings"] = [
+                "No candidate articles were available to select from"
+            ]
+        logs.append("No articles left after deduplication")
+
+    return node_update
 
 
 def load_learning_context_node(state: BlogPostState) -> Dict[str, Any]:
@@ -434,13 +468,7 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
             "logs": logs + ["No articles to process"]
         }
     
-    # Check if we're regenerating specific posts
-    posts_needing_regeneration = state.get("posts_needing_regeneration", [])
-    if posts_needing_regeneration:
-        articles_to_process = posts_needing_regeneration
-        logs.append(f"Regenerating {len(articles_to_process)} posts...")
-    else:
-        articles_to_process = articles
+    articles_to_process = articles
     
     try:
         generator = BlogPostGenerator(model=state.get("model") or get_default_openai_model())
@@ -477,10 +505,9 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                     prompt_additions=context.get("prompt_additions"),
                     common_mistakes=context.get("common_mistakes"),
                     successful_patterns=context.get("successful_patterns"),
-                    regeneration_hints=article.get("regeneration_hints"),
-                    # LangGraph owns the retry loop below. Letting this helper
-                    # retry too multiplied the configured three attempts into as
-                    # many as nine attempts per article.
+                    # One model call per article. The helper's own retry loop
+                    # stays off: a rewrite never once turned a rejected draft
+                    # into a valid one, so retrying only multiplied the bill.
                     max_retries=0,
                 )
             except Exception as article_error:
@@ -504,39 +531,20 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         if recall_articles_to_process:
             logs.append(f"  🔄 Consolidating {len(recall_articles_to_process)} recall articles into weekly roundup...")
             
-            # A graph retry already carries the assembled roundup. Reuse it
-            # directly instead of nesting it as a one-item roundup.
-            existing_roundup = (
-                recall_articles_to_process[0]
-                if len(recall_articles_to_process) == 1
-                and recall_articles_to_process[0].get("is_roundup")
-                else None
+            source_count = len(recall_articles_to_process)
+            combined_title = (
+                f"Weekly recall roundup: {source_count} food safety alerts you need to know"
             )
-            if existing_roundup:
-                merged_article = dict(existing_roundup)
-                combined_title = merged_article.get("title", "Weekly recall roundup")
-                combined_content = (
-                    merged_article.get("content")
-                    or merged_article.get("description")
-                    or ""
-                )
-                primary_link = merged_article.get("link", "")
-                source_count = len(merged_article.get("source_articles") or []) or 1
-            else:
-                source_count = len(recall_articles_to_process)
-                combined_title = (
-                    f"Weekly recall roundup: {source_count} food safety alerts you need to know"
-                )
-                combined_content = build_recall_source_context(recall_articles_to_process)
-                primary_link = recall_articles_to_process[0].get("link", "")
-                merged_article = {
-                    "title": combined_title,
-                    "content": combined_content,
-                    "link": primary_link,
-                    "category": "RECALL",
-                    "is_roundup": True,
-                    "source_articles": recall_articles_to_process,
-                }
+            combined_content = build_recall_source_context(recall_articles_to_process)
+            primary_link = recall_articles_to_process[0].get("link", "")
+            merged_article = {
+                "title": combined_title,
+                "content": combined_content,
+                "link": primary_link,
+                "category": "RECALL",
+                "is_roundup": True,
+                "source_articles": recall_articles_to_process,
+            }
 
             try:
                 result = generator.generate_with_reflection(
@@ -549,7 +557,6 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                     prompt_additions=recall_context.get("prompt_additions"),
                     common_mistakes=recall_context.get("common_mistakes"),
                     successful_patterns=recall_context.get("successful_patterns"),
-                    regeneration_hints=merged_article.get("regeneration_hints"),
                     max_retries=0,
                 )
             except Exception as roundup_error:
@@ -587,97 +594,6 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
             "errors": [f"Generation error: {str(e)}"],
             "logs": logs + [f"Generation exception: {str(e)}"]
         }
-
-
-def reflect_posts_node(state: BlogPostState) -> Dict[str, Any]:
-    """
-    Node: Run reflection agent on generated posts to validate quality.
-    """
-    logs = [f"[{datetime.now().isoformat()}] Reflecting on generated posts..."]
-    
-    generated_posts = state.get("generated_posts", [])
-    
-    if not generated_posts:
-        return {
-            "reflection_results": [],
-            "posts_needing_regeneration": [],
-            "logs": logs + ["No posts to reflect on"]
-        }
-    
-    try:
-        reflection_agent = ReflectionAgent()
-        learning_context = state.get("learning_context", {})
-        
-        reflection_results = []
-        posts_needing_regeneration = []
-        
-        for post in generated_posts:
-            blog_post = post.get("blog_post", "")
-            category = post.get("category", "shoppers")
-            bad_examples = learning_context.get(category, {}).get("bad_examples", [])
-            
-            reflection = reflection_agent.reflect(blog_post, bad_examples)
-            
-            result = {
-                "post_id": post.get("post_id"),
-                "reflection": reflection,
-                "is_valid": reflection.get("is_valid", False),
-                "should_regenerate": reflection_agent.should_regenerate(reflection)
-            }
-            
-            reflection_results.append(result)
-            
-            if result["should_regenerate"]:
-                # Include reflection hints for regeneration
-                post_with_hints = post.get("article", {}).copy()
-                post_with_hints["regeneration_hints"] = reflection_agent.get_regeneration_hints(reflection)
-                posts_needing_regeneration.append(post_with_hints)
-                logs.append(f"  ⚠ Post {post.get('post_id')} needs regeneration")
-        
-        valid_count = sum(1 for r in reflection_results if r["is_valid"])
-        logs.append(f"Reflection complete: {valid_count}/{len(reflection_results)} valid")
-        
-        return {
-            "reflection_results": reflection_results,
-            "posts_needing_regeneration": posts_needing_regeneration,
-            "logs": logs
-        }
-        
-    except Exception as e:
-        logs.append(f"Reflection error (continuing): {str(e)}")
-        return {
-            "reflection_results": [],
-            "posts_needing_regeneration": [],
-            "logs": logs
-        }
-
-
-def should_regenerate(state: BlogPostState) -> str:
-    """
-    Conditional edge function: Determine if regeneration is needed.
-    
-    Returns:
-        "regenerate" - if posts need regeneration and we haven't exceeded max
-        "continue" - if all posts are valid or we've hit max regenerations
-    """
-    posts_needing_regeneration = state.get("posts_needing_regeneration", [])
-    regeneration_count = state.get("regeneration_count", 0)
-    max_regenerations = state.get("max_regenerations", MAX_REGENERATIONS)
-    
-    if posts_needing_regeneration and regeneration_count < max_regenerations:
-        return "regenerate"
-    
-    return "continue"
-
-
-def increment_regeneration_node(state: BlogPostState) -> Dict[str, Any]:
-    """
-    Node: Increment regeneration counter before looping back.
-    """
-    return {
-        "regeneration_count": state.get("regeneration_count", 0) + 1,
-        "logs": [f"[{datetime.now().isoformat()}] Regeneration attempt {state.get('regeneration_count', 0) + 1}"]
-    }
 
 
 PROOFREAD_PROMPT = """You are a professional copy editor. Proofread the following HTML blog post and fix ONLY:
@@ -779,7 +695,14 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
         )
         
         images = []
-        
+
+        # Treatments are handed out by position in the batch, not hashed per
+        # title: independent hashes let two posts in one run collide on the
+        # same look. The seed moves where the rotation starts so consecutive
+        # runs do not open the same way.
+        batch_seed = (generated_posts[0].get("article", {}) or {}).get("title", "")
+        image_index = 0
+
         for post in generated_posts:
             if not post.get("success") and not post.get("blog_post"):
                 continue
@@ -798,7 +721,24 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
                 })
                 continue
 
-            image_result = image_generator.generate_image_for_article(article)
+            # The model that wrote the post names what its photograph should
+            # show. The keyword table underneath is still there for when this
+            # answers badly or not at all; it reads a fixed list and cannot
+            # know that "Cheez-It Protein" is a cracker.
+            look = image_generator.look_for(image_index, batch_seed)
+            image_index += 1
+
+            subject = describe_image_subject(
+                article.get("title", ""),
+                article.get("content") or article.get("description") or "",
+                look=look,
+            )
+            if subject:
+                logs.append(f"  • {look.split('.')[0]}: {subject[:54]}")
+
+            image_result = image_generator.generate_image_for_article(
+                article, theme_override=subject, look=look
+            )
             image_result["post_id"] = post.get("post_id")
             image_result["is_recall"] = False
 
@@ -905,11 +845,17 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     # Create URL lookup
     url_lookup = {u["post_id"]: u["url"] for u in uploaded_urls}
 
-    # Deduplicate posts by post_id, keeping only the latest version
-    # (since regeneration cycles can create duplicates with operator.add)
+    # Deduplicate posts by post_id. Generation writes one entry per article,
+    # so this is a guard against a duplicate source URL, not a merge step.
     posts_by_id = {}
+    empty_generations = []
     for post in generated_posts:
         if not post.get("blog_post"):
+            # A post with no HTML cannot be assembled, but dropping it quietly
+            # left a run that generated nothing looking like it found nothing.
+            empty_generations.append(
+                (post.get("article", {}) or {}).get("title", "Unknown")
+            )
             continue
         post_id = post.get("post_id", "")
         # Keep the latest version (last one in list)
@@ -924,10 +870,17 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     assembly_warnings = []
     final_validator = ReflectionAgent()
 
+    if empty_generations:
+        titles = ", ".join(f"'{title[:40]}'" for title in empty_generations[:3])
+        assembly_errors.append(
+            f"The model returned no HTML for {len(empty_generations)} article(s): {titles}"
+        )
+        logs.append(f"Discarded {len(empty_generations)} empty generation(s)")
+
     for post_id, post in posts_by_id.items():
         # Use proofread version if available, otherwise original.
-        # Stripped again here so posts reaching assembly from any path
-        # (regeneration, a cached generation) cannot carry a fence to save.
+        # Stripped again here so a cached generation cannot carry a fence
+        # through to the saved post.
         blog_post = strip_code_fences(
             proofread_corrections.get(post_id, post.get("blog_post", ""))
         )
@@ -1273,8 +1226,6 @@ def create_blog_post_graph() -> StateGraph:
     workflow.add_node("hydrate_articles", hydrate_articles_node)
     workflow.add_node("load_learning_context", load_learning_context_node)
     workflow.add_node("generate_posts", generate_posts_node)
-    workflow.add_node("reflect_posts", reflect_posts_node)
-    workflow.add_node("increment_regeneration", increment_regeneration_node)
     workflow.add_node("proofread_posts", proofread_posts_node)
     workflow.add_node("generate_images", generate_images_node)
     workflow.add_node("upload_images", upload_images_node)
@@ -1288,25 +1239,12 @@ def create_blog_post_graph() -> StateGraph:
     workflow.add_edge("select_articles", "hydrate_articles")
     workflow.add_edge("hydrate_articles", "load_learning_context")
     workflow.add_edge("load_learning_context", "generate_posts")
-    workflow.add_edge("generate_posts", "reflect_posts")
-    
-    # Conditional edge: regenerate or continue
-    workflow.add_conditional_edges(
-        "reflect_posts",
-        should_regenerate,
-        {
-            "regenerate": "increment_regeneration",
-            "continue": "proofread_posts"
-        }
-    )
 
-    # Proofread → image generation
+    # Straight line from here: generation runs once per article, and the
+    # editorial checklist in assemble_html reports what did not comply rather
+    # than paying to rewrite it.
+    workflow.add_edge("generate_posts", "proofread_posts")
     workflow.add_edge("proofread_posts", "generate_images")
-    
-    # Regeneration loop
-    workflow.add_edge("increment_regeneration", "generate_posts")
-    
-    # Continue to image generation
     workflow.add_edge("generate_images", "upload_images")
     workflow.add_edge("upload_images", "assemble_html")
     workflow.add_edge("assemble_html", "save_posts")

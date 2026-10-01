@@ -4,6 +4,8 @@
 
 import os
 import base64
+import hashlib
+import re
 from typing import Optional, Dict, Any, List
 
 try:
@@ -30,27 +32,29 @@ except ImportError:
 DEFAULT_IMAGE_SIZE = "1K"  # Options: "1K", "2K", "4K"
 DEFAULT_ASPECT_RATIO = "16:9"
 
-IMAGE_PROMPT_TEMPLATE = """Create a unique, eye-catching image for a grocery newsletter article titled "{title}".
+IMAGE_PROMPT_TEMPLATE = """Photograph for a grocery news article.
 
-Theme/Context: {theme}
+Headline: "{title}"
 
-IMPORTANT — Make each image DISTINCT and specific to the article topic:
-- If the article is about coffee prices → show coffee beans, a coffee cup, or coffee bags
-- If it's about produce → show colorful fresh fruits and vegetables
-- If it's about a specific product → show that product type prominently
-- If it's about prices/inflation → show a shopping cart, price tags, or receipt
-- If it's about a brand → show generic versions of that product category
-- AVOID generic grocery aisle shots — every image should tell what the article is about at a glance
+What to show: {theme}
 
-Style guidelines:
-- No humans; if present, only abstract silhouettes without facial features
-- No real brand names or logos; show generic packaging
-- English-only labels; simple words and US dollar prices
-- Clean, modern, well-lit photography style
-- The main subject should fill most of the frame (close-up or medium shot)
-- Use vibrant, appetizing colors appropriate to the subject
+Render that subject with unbranded packaging and no logos or wordmarks, even if
+the line above names a brand.
 
-The image should immediately convey what the article is about without reading the title."""
+Treatment: {look}
+
+Hard rules:
+- No recognisable people. A hand or a silhouette is fine; no faces.
+- No real brand names, logos or wordmarks. Packaging is generic.
+- Any text in frame is English, short, and plausible: a shelf label, a price, a
+  receipt line. No paragraphs, no invented statistics.
+- One subject. A reader should know what the story is about at a glance.
+
+Leave room to be interesting: negative space, an off-centre crop, hard light or
+deep shadow are all welcome where they suit the subject. Do not default to a
+glossy catalogue shot.
+"""
+
 
 
 class ImageGenerator:
@@ -77,28 +81,81 @@ class ImageGenerator:
         self.client = genai_client.Client(api_key=self.api_key)
         self.model_name = "gemini-3-pro-image-preview"
 
+    # One fixed style block gave every image the same hero-object-on-a-board
+    # look, so a week of posts read as a set even where subjects differed.
+    # Each article draws a deterministic variant: the same article always
+    # renders the same way, neighbours in a batch do not.
+    # Six whole looks, not three dropdowns.
+    #
+    # The previous version mixed a surface, a light and an angle at random,
+    # which produced a setting but never an idea: ninety-six combinations of
+    # "soft diffused daylight on a weathered board" are ninety-six bland
+    # photographs. Each entry here is one coherent treatment a photo editor
+    # would recognise, and the model that reads the article is asked to come up
+    # with a specific image inside it.
+    STYLE_LOOKS = (
+        "Documentary, shelf level. Shot in a real store aisle on an ordinary "
+        "day, available light, slight imperfection welcome. Nothing styled.",
+
+        "Studio product hero. Single subject on a seamless backdrop, one hard "
+        "key light, a defined shadow, generous empty space around it.",
+
+        "Overhead flat-lay. Looking straight down, objects arranged "
+        "deliberately with a few supporting props, even light, tight crop.",
+
+        "Macro texture. Very close on the surface of the subject so the "
+        "material fills the frame, shallow focus, the object barely "
+        "identifiable at first glance.",
+
+        "Wide and quiet. The subject small in a large frame, a lot of empty "
+        "space, cool even light. Scale and absence do the work.",
+
+        "Graphic still life. Strong colour blocking, geometric arrangement, "
+        "high contrast, a price tag or receipt used as a compositional "
+        "element rather than a label.",
+    )
+
+    @classmethod
+    def look_for(cls, index: int, seed: str = "") -> str:
+        """Pick a treatment for position ``index`` in a batch.
+
+        Rotating by position rather than hashing each title independently is
+        what stops two posts in the same run sharing a look by chance: a batch
+        of six gets six different treatments. The seed offsets where the
+        rotation starts, so consecutive weeks do not open the same way.
+        """
+        offset = 0
+        if seed:
+            offset = hashlib.sha1(seed.encode("utf-8", "ignore")).digest()[0]
+        return cls.STYLE_LOOKS[(offset + index) % len(cls.STYLE_LOOKS)]
+
+
     def _create_image_prompt(
         self,
         title: str,
-        theme: str = ""
+        theme: str = "",
+        look: Optional[str] = None,
     ) -> str:
-        """Create a detailed prompt for image generation."""
-        # Extract key subject from title for better theme if none provided
+        """Create the prompt for one image."""
         effective_theme = theme
         if not effective_theme:
-            # Use the title itself as theme context so images are article-specific
-            effective_theme = f"Article topic: {title}. Focus the image on the specific subject matter."
+            effective_theme = (
+                f"Whatever this headline is about, shown concretely: {title}"
+            )
         return IMAGE_PROMPT_TEMPLATE.format(
             title=title,
-            theme=effective_theme
+            theme=effective_theme,
+            look=look or self.look_for(0, title),
         )
+
 
     def generate_image(
         self,
         title: str,
         theme: str = "",
         aspect_ratio: str = DEFAULT_ASPECT_RATIO,
-        image_size: str = DEFAULT_IMAGE_SIZE
+        image_size: str = DEFAULT_IMAGE_SIZE,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate an image for a blog post.
@@ -112,7 +169,7 @@ class ImageGenerator:
         Returns:
             Dictionary with image_data (base64), format, and metadata
         """
-        prompt = self._create_image_prompt(title, theme)
+        prompt = self._create_image_prompt(title, theme, look)
 
         try:
             print(f"[ImageGenerator] Generating image with model: {self.model_name}", flush=True)
@@ -181,19 +238,28 @@ class ImageGenerator:
                 "image_data": None
             }
 
-    def generate_image_for_article(self, article: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate an image for an article."""
-        # Issue #859 Fix: Extract meaningful theme from article content, not just category
+    def generate_image_for_article(
+        self,
+        article: Dict[str, Any],
+        theme_override: Optional[str] = None,
+        look: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Generate an image for an article.
+
+        ``theme_override`` is what the model that read the article said the
+        photograph should show, and ``look`` is the treatment chosen for this
+        position in the batch. The keyword table below is the fallback for a
+        failed or unusable answer, and for any caller that passes neither.
+        """
         title = article.get("title", "Article Image")
-        
-        # Create a more specific theme by analyzing the article content
-        theme = self._extract_article_theme(article)
-        
-        return self.generate_image(
-            title=title,
-            theme=theme
-        )
-    
+
+        theme = (theme_override or "").strip()
+        if not theme:
+            theme = self._extract_article_theme(article)
+
+        return self.generate_image(title=title, theme=theme, look=look)
+
+
     def _extract_article_theme(self, article: Dict[str, Any]) -> str:
         """
         Extract a meaningful theme from the article for image generation.
@@ -230,6 +296,7 @@ class ImageGenerator:
             "organic": "fresh organic produce with natural lighting",
             
             # Meat & Dairy
+            "meat": "raw cuts of meat on butcher paper",
             "chicken": "raw chicken pieces or cooked chicken dishes",
             "beef": "raw beef cuts or grilled beef",
             "pork": "pork chops or bacon strips",
@@ -245,12 +312,21 @@ class ImageGenerator:
             "pasta": "uncooked pasta shapes or pasta dishes",
             "rice": "grains of rice or rice in bowls",
             "cereal": "cereal boxes or bowls of cereal with milk",
+            "cracker": "stacked crackers and a bowl of them",
+            "cookie": "stacked cookies with crumbs",
+            "doughnut": "glazed doughnuts on a rack",
+            "donut": "glazed doughnuts on a rack",
+            "chip": "a bowl of tortilla or potato chips",
+            "snack": "assorted packaged snacks, generic packaging",
+            "chocolate": "chocolate bars and broken pieces",
+            "candy": "colourful wrapped candy",
             "oil": "cooking oil bottles",
             "sugar": "white sugar or sugar cubes",
             "flour": "flour bags or flour being sifted",
             
             # Price/Economic themes
             "price": "shopping cart, price tags, or receipts",
+            "price": "price tags, a till receipt, or a shopping cart",
             "expensive": "price tags with high dollar amounts",
             "cheap": "discount tags or sale signs",
             "inflation": "rising price charts or expensive shopping cart",
@@ -281,19 +357,48 @@ class ImageGenerator:
             "surplus": "abundant food items or overflowing baskets"
         }
         
-        # Check title first (most specific), then content
-        text_to_check = f"{title} {content}"
-        
-        # Look for specific food/product keywords
-        for keyword, theme in food_keywords.items():
-            if keyword in text_to_check:
+        # Match on a word start, never mid-word, and read the headline before
+        # the body.
+        #
+        # Both of those were doing real damage. A plain substring test put
+        # "rice" inside "price", so ten of twenty-five grocery posts were
+        # illustrated with bowls of rice; "fish" inside "Goldfish" gave a
+        # cracker launch a salmon fillet; "tea" inside "instead" and "steak"
+        # served tea with an article about Beyond Steak. And because the whole
+        # body was searched, a 400-word piece always matched something early,
+        # so the subject followed this dictionary's order rather than the
+        # story.
+        #
+        # The boundary is start-only, so the stems in the table still work:
+        # "strawberr" has to match "strawberries".
+        def pattern_for(keyword):
+            escaped = re.escape(keyword)
+            if len(keyword) < 6:
+                # Whole word, optionally pluralised: "tea" must not match
+                # "team", nor "oil" "oilseed", nor "rice" "price".
+                return r"\b" + escaped + r"(?:s|es)?\b"
+            # Long enough to be safe as a prefix, which the stems rely on:
+            # "strawberr" has to reach "strawberries".
+            return r"\b" + escaped
+
+        def first_match(text, table):
+            if not text:
+                return None
+            for keyword, theme in table.items():
+                if re.search(pattern_for(keyword), text):
+                    return theme
+            return None
+
+        for source in (title, content):
+            theme = first_match(source, food_keywords)
+            if theme:
                 return f"Focus on {theme}. Make it appetizing and clearly recognizable."
-        
-        # Check for trend/economic keywords  
-        for keyword, theme in trend_keywords.items():
-            if keyword in text_to_check:
+
+            theme = first_match(source, trend_keywords)
+            if theme:
                 return f"Show {theme} in a grocery context."
-                
+
+
         # Category-based fallbacks with more specific guidance
         if category == "RECALL":
             return "Food safety warning imagery with the affected product type visible"
@@ -319,7 +424,8 @@ class PlaceholderImageGenerator:
         title: str,
         theme: str = "",
         aspect_ratio: str = DEFAULT_ASPECT_RATIO,
-        image_size: str = DEFAULT_IMAGE_SIZE
+        image_size: str = DEFAULT_IMAGE_SIZE,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a placeholder image."""
         # Create a simple SVG placeholder
@@ -342,7 +448,9 @@ class PlaceholderImageGenerator:
 
     def generate_image_for_article(
         self,
-        article: Dict[str, Any]
+        article: Dict[str, Any],
+        theme_override: Optional[str] = None,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a placeholder image for an article."""
         # Use same theme extraction as the main generator for consistency

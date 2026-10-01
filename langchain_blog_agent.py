@@ -1,6 +1,7 @@
 # langchain_blog_agent.py
 # LangChain-powered blog post generation chains for Youdle
 
+import logging
 import os
 import re
 from typing import List, Dict, Optional, Any
@@ -12,12 +13,15 @@ from langchain_core.globals import set_llm_cache
 from langchain_core.runnables import RunnableLambda
 from ai_models import (
     DEFAULT_MAX_TOKENS,
+    IMAGE_SUBJECT_MODEL,
     EXAMPLES_SECTION_MAX_CHARS,
     get_default_openai_model,
     resolve_max_tokens,
     validate_openai_model,
 )
 from html_safety import strip_code_fences
+
+logger = logging.getLogger(__name__)
 
 try:
     from dotenv import load_dotenv
@@ -65,6 +69,81 @@ def create_openai_chat_model(
         max_retries=3,
         api_key=api_key,
     )
+
+
+IMAGE_SUBJECT_PROMPT = """You are briefing a photographer on the image for a
+grocery-news article. You are not writing a caption.
+
+Headline: {title}
+
+Article: {content}
+
+Treatment the photographer will use: {look}
+
+Reply with one sentence describing the specific photograph to take within that
+treatment: the concrete object or arrangement, and what makes this frame worth
+looking at.
+
+Rules:
+- Objects, never people's faces, logos or brand names. Describe the product
+  generically: "cheese crackers", not the name on the box.
+- Be specific to this story, not to groceries in general. A reader should
+  recognise the article from the picture.
+- Let the story suggest the idea: a price story can be graphic and
+  receipt-led, a shortage can be an empty shelf, a launch can be a single
+  object treated like a portrait.
+- 25 words at most. One sentence. No preamble, no explanation."""
+
+# What a usable answer looks like. The model occasionally refuses, or answers
+# with a sentence; either way the keyword table is still there to fall back on,
+# so a bad answer costs nothing but the call.
+IMAGE_SUBJECT_MAX_CHARS = 240
+IMAGE_SUBJECT_SOURCE_CHARS = 1200
+_SUBJECT_REFUSALS = ("sorry", "i cannot", "i can't", "as an ai", "unable to")
+
+
+def describe_image_subject(
+    title: str,
+    content: str = "",
+    look: str = "",
+    model: Optional[str] = None,
+) -> Optional[str]:
+    """Ask a small model what the article's photograph should show.
+
+    Returns ``None`` whenever the answer is missing, refused or implausible,
+    which leaves the caller on its keyword table. This never raises: an image
+    subject is not worth failing a run over.
+    """
+    if not (title or "").strip():
+        return None
+
+    try:
+        llm = create_openai_chat_model(
+            model=model or IMAGE_SUBJECT_MODEL,
+            temperature=0,
+            max_tokens=60,
+        )
+        prompt = ChatPromptTemplate.from_messages([
+            ("human", IMAGE_SUBJECT_PROMPT),
+        ])
+        chain = prompt | llm | StrOutputParser()
+        answer = chain.invoke({
+            "title": title,
+            "look": look or "a straightforward editorial photograph",
+            # The opening carries the subject; sending the whole article would
+            # multiply the cost of the cheapest step in the pipeline.
+            "content": (content or "")[:IMAGE_SUBJECT_SOURCE_CHARS],
+        })
+    except Exception as error:  # noqa: BLE001
+        logger.warning("Image subject lookup failed; using the keyword table (%s)", error)
+        return None
+
+    cleaned = re.sub(r"\s+", " ", str(answer or "")).strip().strip('"\'').rstrip(".")
+    if not cleaned or len(cleaned) > IMAGE_SUBJECT_MAX_CHARS:
+        return None
+    if any(refusal in cleaned.lower() for refusal in _SUBJECT_REFUSALS):
+        return None
+    return cleaned
 
 
 def _bound_example(example: str, max_chars: int) -> str:
