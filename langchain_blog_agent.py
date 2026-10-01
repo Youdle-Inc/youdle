@@ -71,31 +71,33 @@ def create_openai_chat_model(
     )
 
 
-IMAGE_SUBJECT_PROMPT = """You choose the subject of the photograph that will
-illustrate a grocery-news article. You are not writing a caption.
+IMAGE_SUBJECT_PROMPT = """You are briefing a photographer on the image for a
+grocery-news article. You are not writing a caption.
 
 Headline: {title}
 
 Article: {content}
 
-Reply with one short phrase naming what the photograph should show: the
-concrete object or scene a reader would recognise as this story at a glance.
+Treatment the photographer will use: {look}
+
+Reply with one sentence describing the specific photograph to take within that
+treatment: the concrete object or arrangement, and what makes this frame worth
+looking at.
 
 Rules:
-- Name objects, never people, logos or brand names. Describe the product
+- Objects, never people's faces, logos or brand names. Describe the product
   generically: "cheese crackers", not the name on the box.
-- Prefer the specific thing the article is about over a generic grocery scene.
-- 12 words at most. No sentence, no punctuation at the end, no explanation.
-
-Examples:
-  "a cracker launch" -> stacked square crackers spilling from a generic box
-  "beef prices climbing" -> raw beef cuts beside a price tag
-  "a recall on bagged spinach" -> a bag of loose spinach leaves"""
+- Be specific to this story, not to groceries in general. A reader should
+  recognise the article from the picture.
+- Let the story suggest the idea: a price story can be graphic and
+  receipt-led, a shortage can be an empty shelf, a launch can be a single
+  object treated like a portrait.
+- 25 words at most. One sentence. No preamble, no explanation."""
 
 # What a usable answer looks like. The model occasionally refuses, or answers
 # with a sentence; either way the keyword table is still there to fall back on,
 # so a bad answer costs nothing but the call.
-IMAGE_SUBJECT_MAX_CHARS = 120
+IMAGE_SUBJECT_MAX_CHARS = 240
 IMAGE_SUBJECT_SOURCE_CHARS = 1200
 _SUBJECT_REFUSALS = ("sorry", "i cannot", "i can't", "as an ai", "unable to")
 
@@ -103,6 +105,7 @@ _SUBJECT_REFUSALS = ("sorry", "i cannot", "i can't", "as an ai", "unable to")
 def describe_image_subject(
     title: str,
     content: str = "",
+    look: str = "",
     model: Optional[str] = None,
 ) -> Optional[str]:
     """Ask a small model what the article's photograph should show.
@@ -126,6 +129,7 @@ def describe_image_subject(
         chain = prompt | llm | StrOutputParser()
         answer = chain.invoke({
             "title": title,
+            "look": look or "a straightforward editorial photograph",
             # The opening carries the subject; sending the whole article would
             # multiply the cost of the cheapest step in the pipeline.
             "content": (content or "")[:IMAGE_SUBJECT_SOURCE_CHARS],

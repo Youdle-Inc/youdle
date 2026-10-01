@@ -14,9 +14,8 @@ def theme_for(title, content=""):
     return generator._extract_article_theme({"title": title, "content": content})
 
 
-def variant_for(title):
-    generator = ImageGenerator.__new__(ImageGenerator)
-    return generator._style_variant(title)
+def look_at(index, seed=""):
+    return ImageGenerator.look_for(index, seed)
 
 
 # The themes these must never select, quoted from the table so the assertion
@@ -91,46 +90,58 @@ def test_a_price_story_has_a_subject_of_its_own():
     assert "price tags" in theme.lower() or "receipt" in theme.lower()
 
 
-def test_the_look_varies_between_articles_but_is_stable_for_one():
-    titles = [
-        "Grocery prices rise again in September",
-        "Krispy Kreme unveils Churro Doughnut Dots",
-        "Beyond Meat announces Beyond Steak availability",
-        "Trader Joe's opens on the Upper West Side",
-        "Costco gains momentum in fresh food",
-    ]
-    variants = [variant_for(t) for t in titles]
+def test_a_batch_never_repeats_a_treatment():
+    """Hashing each title independently let two posts in one run collide."""
+    batch = [look_at(i, seed="week-of-oct-1") for i in range(len(ImageGenerator.STYLE_LOOKS))]
 
-    assert variants[0] == variant_for(titles[0]), "a retry must not reshoot differently"
-    assert len(set(variants)) >= 4, f"a batch should not share one look: {variants}"
+    assert len(set(batch)) == len(batch), batch
 
 
-def test_the_prompt_carries_the_variant_and_the_fixed_rules():
+def test_the_rotation_is_stable_for_a_position_and_moves_between_runs():
+    assert look_at(2, "week-of-oct-1") == look_at(2, "week-of-oct-1"), (
+        "a retry must not reshoot differently"
+    )
+    assert look_at(0, "week-of-oct-1") != look_at(0, "week-of-oct-8"), (
+        "consecutive runs should not open the same way"
+    )
+
+
+def test_every_look_is_a_whole_treatment_not_a_dropdown_value():
+    """Six coherent looks replaced 96 mixtures of surface, light and angle."""
+    for look in ImageGenerator.STYLE_LOOKS:
+        assert look.endswith("."), look
+        assert len(look.split()) >= 10, f"too thin to direct a photograph: {look}"
+
+
+def test_the_prompt_carries_the_look_and_the_hard_rules():
     generator = ImageGenerator.__new__(ImageGenerator)
+    look = look_at(1, "seed")
+
     prompt = generator._create_image_prompt(
         "Krispy Kreme unveils Churro Doughnut Dots",
         theme_for("Krispy Kreme unveils Churro Doughnut Dots"),
+        look,
     )
 
-    assert variant_for("Krispy Kreme unveils Churro Doughnut Dots") in prompt
-    # The rules that must not vary, whatever the look.
-    assert "No humans" in prompt
-    assert "No real brand names or logos" in prompt
-    assert "{style_variant}" not in prompt, "placeholder left unsubstituted"
+    assert look in prompt
+    assert "No recognisable people" in prompt
+    assert "No real brand names" in prompt
+    assert "{look}" not in prompt, "placeholder left unsubstituted"
+    # The licence to be interesting has to survive, or the rules alone read as
+    # a specification for a catalogue shot.
+    assert "negative space" in prompt
 
 
 def test_a_branded_subject_is_overridden_at_the_point_of_use():
     """Asked for a generic product, the model still answered "a box of
     Cheez-It Protein crackers". The instruction that follows the subject has to
-    neutralise it, because a branded pack on a publisher's own art is a problem
-    no keyword table would have created."""
+    neutralise it."""
     generator = ImageGenerator.__new__(ImageGenerator)
 
     prompt = generator._create_image_prompt(
         "Mars Debuts Cheez-It Protein",
         "Focus on a box of Cheez-It Protein crackers.",
+        look_at(0),
     )
 
-    theme_at = prompt.index("Theme/Context")
-    override_at = prompt.index("unbranded packaging")
-    assert override_at > theme_at, "the override has to come after the subject"
+    assert prompt.index("unbranded packaging") > prompt.index("What to show")

@@ -27,7 +27,8 @@ class FakeChain:
         return self.answer
 
 
-def run_with(answer=None, error=None, title="Mars debuts Cheez-It Protein", content=""):
+def run_with(answer=None, error=None, title="Mars debuts Cheez-It Protein",
+             content="", look="Studio product hero."):
     chain = FakeChain(answer, error)
     with patch("langchain_blog_agent.create_openai_chat_model"), patch(
         "langchain_blog_agent.ChatPromptTemplate"
@@ -35,7 +36,7 @@ def run_with(answer=None, error=None, title="Mars debuts Cheez-It Protein", cont
         prompt.from_messages.return_value.__or__ = lambda *_: chain
         # prompt | llm | parser collapses to the fake chain
         with patch.object(type(chain), "__or__", lambda self, _other: self, create=True):
-            return describe_image_subject(title, content), chain
+            return describe_image_subject(title, content, look=look), chain
 
 
 def test_a_good_answer_becomes_the_subject():
@@ -52,7 +53,7 @@ def test_a_good_answer_becomes_the_subject():
         (None, "nothing returned"),
         ("I'm sorry, I cannot help with that request", "a refusal"),
         ("As an AI model I would suggest a photograph of groceries", "a refusal"),
-        ("x" * 200, "too long to be a subject"),
+        ("x" * 400, "too long to be a brief"),
     ],
 )
 def test_an_unusable_answer_falls_back_to_the_table(answer, why):

@@ -695,7 +695,14 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
         )
         
         images = []
-        
+
+        # Treatments are handed out by position in the batch, not hashed per
+        # title: independent hashes let two posts in one run collide on the
+        # same look. The seed moves where the rotation starts so consecutive
+        # runs do not open the same way.
+        batch_seed = (generated_posts[0].get("article", {}) or {}).get("title", "")
+        image_index = 0
+
         for post in generated_posts:
             if not post.get("success") and not post.get("blog_post"):
                 continue
@@ -718,15 +725,19 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
             # show. The keyword table underneath is still there for when this
             # answers badly or not at all; it reads a fixed list and cannot
             # know that "Cheez-It Protein" is a cracker.
+            look = image_generator.look_for(image_index, batch_seed)
+            image_index += 1
+
             subject = describe_image_subject(
                 article.get("title", ""),
                 article.get("content") or article.get("description") or "",
+                look=look,
             )
             if subject:
-                logs.append(f"  • subject: {subject[:60]}")
+                logs.append(f"  • {look.split('.')[0]}: {subject[:54]}")
 
             image_result = image_generator.generate_image_for_article(
-                article, theme_override=subject
+                article, theme_override=subject, look=look
             )
             image_result["post_id"] = post.get("post_id")
             image_result["is_recall"] = False

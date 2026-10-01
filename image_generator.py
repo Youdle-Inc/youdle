@@ -32,32 +32,29 @@ except ImportError:
 DEFAULT_IMAGE_SIZE = "1K"  # Options: "1K", "2K", "4K"
 DEFAULT_ASPECT_RATIO = "16:9"
 
-IMAGE_PROMPT_TEMPLATE = """Create a unique, eye-catching image for a grocery newsletter article titled "{title}".
+IMAGE_PROMPT_TEMPLATE = """Photograph for a grocery news article.
 
-Theme/Context: {theme}
+Headline: "{title}"
+
+What to show: {theme}
 
 Render that subject with unbranded packaging and no logos or wordmarks, even if
 the line above names a brand.
 
-IMPORTANT — Make each image DISTINCT and specific to the article topic:
-- If the article is about coffee prices → show coffee beans, a coffee cup, or coffee bags
-- If it's about produce → show colorful fresh fruits and vegetables
-- If it's about a specific product → show that product type prominently
-- If it's about prices/inflation → show a shopping cart, price tags, or receipt
-- If it's about a brand → show generic versions of that product category
-- AVOID generic grocery aisle shots — every image should tell what the article is about at a glance
+Treatment: {look}
 
-Style guidelines:
-- No humans; if present, only abstract silhouettes without facial features
-- No real brand names or logos; show generic packaging
-- English-only labels; simple words and US dollar prices
-- Clean, modern photography style
-- Use vibrant, appetizing colors appropriate to the subject
+Hard rules:
+- No recognisable people. A hand or a silhouette is fine; no faces.
+- No real brand names, logos or wordmarks. Packaging is generic.
+- Any text in frame is English, short, and plausible: a shelf label, a price, a
+  receipt line. No paragraphs, no invented statistics.
+- One subject. A reader should know what the story is about at a glance.
 
-Composition for this image: {style_variant}. Keep the main subject clearly the
-focus of the frame.
+Leave room to be interesting: negative space, an off-centre crop, hard light or
+deep shadow are all welcome where they suit the subject. Do not default to a
+glossy catalogue shot.
+"""
 
-The image should immediately convey what the article is about without reading the title."""
 
 
 class ImageGenerator:
@@ -88,59 +85,77 @@ class ImageGenerator:
     # look, so a week of posts read as a set even where subjects differed.
     # Each article draws a deterministic variant: the same article always
     # renders the same way, neighbours in a batch do not.
-    SURFACES = (
-        "on a pale marble surface",
-        "on a weathered wooden board",
-        "on a matte charcoal backdrop",
-        "on a bright white seamless background",
-        "on a woven linen cloth",
-        "on a brushed steel counter",
-    )
-    LIGHTING = (
-        "soft diffused daylight",
-        "bright high-key lighting with crisp shadows",
-        "warm low-angle afternoon light",
-        "even overhead studio light",
-    )
-    COMPOSITIONS = (
-        "shot straight on at eye level",
-        "shot from directly overhead, flat-lay",
-        "a tight three-quarter close-up",
-        "a medium shot with shallow depth of field",
+    # Six whole looks, not three dropdowns.
+    #
+    # The previous version mixed a surface, a light and an angle at random,
+    # which produced a setting but never an idea: ninety-six combinations of
+    # "soft diffused daylight on a weathered board" are ninety-six bland
+    # photographs. Each entry here is one coherent treatment a photo editor
+    # would recognise, and the model that reads the article is asked to come up
+    # with a specific image inside it.
+    STYLE_LOOKS = (
+        "Documentary, shelf level. Shot in a real store aisle on an ordinary "
+        "day, available light, slight imperfection welcome. Nothing styled.",
+
+        "Studio product hero. Single subject on a seamless backdrop, one hard "
+        "key light, a defined shadow, generous empty space around it.",
+
+        "Overhead flat-lay. Looking straight down, objects arranged "
+        "deliberately with a few supporting props, even light, tight crop.",
+
+        "Macro texture. Very close on the surface of the subject so the "
+        "material fills the frame, shallow focus, the object barely "
+        "identifiable at first glance.",
+
+        "Wide and quiet. The subject small in a large frame, a lot of empty "
+        "space, cool even light. Scale and absence do the work.",
+
+        "Graphic still life. Strong colour blocking, geometric arrangement, "
+        "high contrast, a price tag or receipt used as a compositional "
+        "element rather than a label.",
     )
 
-    def _style_variant(self, title: str) -> str:
-        """Pick a composition, surface and light from the title, stably."""
-        digest = hashlib.sha1(title.encode("utf-8", "ignore")).digest()
-        return (
-            f"{self.COMPOSITIONS[digest[0] % len(self.COMPOSITIONS)]}, "
-            f"{self.SURFACES[digest[1] % len(self.SURFACES)]}, "
-            f"in {self.LIGHTING[digest[2] % len(self.LIGHTING)]}"
-        )
+    @classmethod
+    def look_for(cls, index: int, seed: str = "") -> str:
+        """Pick a treatment for position ``index`` in a batch.
+
+        Rotating by position rather than hashing each title independently is
+        what stops two posts in the same run sharing a look by chance: a batch
+        of six gets six different treatments. The seed offsets where the
+        rotation starts, so consecutive weeks do not open the same way.
+        """
+        offset = 0
+        if seed:
+            offset = hashlib.sha1(seed.encode("utf-8", "ignore")).digest()[0]
+        return cls.STYLE_LOOKS[(offset + index) % len(cls.STYLE_LOOKS)]
+
 
     def _create_image_prompt(
         self,
         title: str,
-        theme: str = ""
+        theme: str = "",
+        look: Optional[str] = None,
     ) -> str:
-        """Create a detailed prompt for image generation."""
-        # Extract key subject from title for better theme if none provided
+        """Create the prompt for one image."""
         effective_theme = theme
         if not effective_theme:
-            # Use the title itself as theme context so images are article-specific
-            effective_theme = f"Article topic: {title}. Focus the image on the specific subject matter."
+            effective_theme = (
+                f"Whatever this headline is about, shown concretely: {title}"
+            )
         return IMAGE_PROMPT_TEMPLATE.format(
             title=title,
             theme=effective_theme,
-            style_variant=self._style_variant(title),
+            look=look or self.look_for(0, title),
         )
+
 
     def generate_image(
         self,
         title: str,
         theme: str = "",
         aspect_ratio: str = DEFAULT_ASPECT_RATIO,
-        image_size: str = DEFAULT_IMAGE_SIZE
+        image_size: str = DEFAULT_IMAGE_SIZE,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Generate an image for a blog post.
@@ -154,7 +169,7 @@ class ImageGenerator:
         Returns:
             Dictionary with image_data (base64), format, and metadata
         """
-        prompt = self._create_image_prompt(title, theme)
+        prompt = self._create_image_prompt(title, theme, look)
 
         try:
             print(f"[ImageGenerator] Generating image with model: {self.model_name}", flush=True)
@@ -227,26 +242,24 @@ class ImageGenerator:
         self,
         article: Dict[str, Any],
         theme_override: Optional[str] = None,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate an image for an article.
 
-        ``theme_override`` is the subject named by the model that read the
-        article. The keyword table is the fallback for when that call fails or
-        answers with something unusable, and for any caller without one.
+        ``theme_override`` is what the model that read the article said the
+        photograph should show, and ``look`` is the treatment chosen for this
+        position in the batch. The keyword table below is the fallback for a
+        failed or unusable answer, and for any caller that passes neither.
         """
         title = article.get("title", "Article Image")
 
         theme = (theme_override or "").strip()
-        if theme:
-            theme = f"Focus on {theme}. Make it appetizing and clearly recognizable."
-        else:
+        if not theme:
             theme = self._extract_article_theme(article)
-        
-        return self.generate_image(
-            title=title,
-            theme=theme
-        )
-    
+
+        return self.generate_image(title=title, theme=theme, look=look)
+
+
     def _extract_article_theme(self, article: Dict[str, Any]) -> str:
         """
         Extract a meaningful theme from the article for image generation.
@@ -411,7 +424,8 @@ class PlaceholderImageGenerator:
         title: str,
         theme: str = "",
         aspect_ratio: str = DEFAULT_ASPECT_RATIO,
-        image_size: str = DEFAULT_IMAGE_SIZE
+        image_size: str = DEFAULT_IMAGE_SIZE,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a placeholder image."""
         # Create a simple SVG placeholder
@@ -434,7 +448,9 @@ class PlaceholderImageGenerator:
 
     def generate_image_for_article(
         self,
-        article: Dict[str, Any]
+        article: Dict[str, Any],
+        theme_override: Optional[str] = None,
+        look: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Generate a placeholder image for an article."""
         # Use same theme extraction as the main generator for consistency
