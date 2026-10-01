@@ -59,14 +59,14 @@ PAGE_COPY = [
     "For grocers",
     "Emergency prep",
     "Prices & deals",
-    "Older articles",
+    "Older posts",
     "Get The Youdle Brief.",
     "Recalls, price moves and the week\u2019s grocery news, in one email.",
     "Subscribe",
 ]
 
 ANALYTICS_EVENTS = [
-    "category_filter_click", "article_click", "pager_older_click",
+    "category_filter_click", "article_click",
     "newsletter_form_start", "newsletter_signup_success", "newsletter_signup_error",
 ]
 
@@ -200,7 +200,30 @@ def static_checks() -> str:
           f'for {mock_count} posts')
     check("the list is an ordered list", '<ol class="yd-list__items">' in page)
     check("category chips present", page.count('class="yd-chip') >= 6)
-    check("pager renders when there is an older page", 'class="yd-pager__link' in page)
+    check("Blogger's own pager is included, not reimplemented",
+          "<b:include name='postPagination'/>" in theme and
+          'class="blog-pager-older-link"' in page)
+
+    # The vocabulary guard. The theme Blogger currently serves is the only
+    # proof we have of what this blog's Blogger accepts, and a restore upload
+    # fails with "Could not restore theme" and no further detail. Any data:
+    # reference or b: element our page uses that the running theme does not is
+    # a candidate for that rejection, so the page stays inside its vocabulary.
+    running = REPO / "theme-youdle-homepage saved.xml"
+    if running.exists():
+        import re as _re
+
+        def vocabulary(text: str) -> set:
+            start = text.index("<b:includable id='youdleHomepage'>")
+            block = text[start:text.index("</b:includable>", start)]
+            return (set(_re.findall(r"data:[A-Za-z0-9_.]+", block))
+                    | set(_re.findall(r"<b:[a-z]+", block)))
+
+        extra = vocabulary(theme) - vocabulary(running.read_text(encoding="utf-8"))
+        # b:include is used 70+ times elsewhere in the same theme file.
+        extra.discard("<b:include")
+        check("no template vocabulary the running theme lacks",
+              not extra, ", ".join(sorted(extra)))
 
     # Strip markup first: the H1 is broken up by the accent-underline span, and
     # the newsletter headline by its two-line spans.
@@ -322,8 +345,8 @@ BROWSER_JS = r"""
      Math.abs(luminance(activeStyle.color) - luminance(activeStyle.backgroundColor)) > 0.4,
      activeStyle.color + " on " + activeStyle.backgroundColor);
 
-  var pager = document.querySelector(".yd-pager__link--older");
-  ok("the older-articles link is present and right-aligned",
+  var pager = document.querySelector(".blog-pager-older-link");
+  ok("the older-posts link is present and right-aligned",
      !!pager && pager.getBoundingClientRect().right > window.innerWidth / 2);
 
   var firstLink = document.querySelector(".yd-item__title a");

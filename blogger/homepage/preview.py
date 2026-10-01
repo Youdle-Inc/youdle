@@ -328,6 +328,15 @@ def find_homepage_blocks(theme_xml: str) -> dict:
         (n for n in root.iter(B + "includable") if n.get("id") == "youdleHomepage"), None
     )
 
+    # The stock includables the index calls into. Without these the preview
+    # would silently drop Blogger's pager and we would not see it until upload.
+    wanted = {"postPagination", "previousPageLink", "nextPageLink", "homePageLink"}
+    pieces["includes"] = {
+        n.get("id"): n
+        for n in root.iter(B + "includable")
+        if n.get("id") in wanted
+    }
+
     skin = re.search(r"<b:skin[^>]*><!\[CDATA\[(.*?)\]\]></b:skin>", theme_xml, re.DOTALL)
     pieces["skin"] = resolve_skin(skin.group(1)) if skin else ""
 
@@ -356,6 +365,12 @@ def build_scope(posts: tuple) -> dict:
             "url": bl.Str(HOMEPAGE_URL),
         },
         "posts": list(posts),
+        "widget": {"instanceId": bl.Str("Blog1")},
+        "messages": {
+            "olderPosts": bl.Str("Older posts"),
+            "newerPosts": bl.Str("Newer posts"),
+            "home": bl.Str("Home"),
+        },
         # Blogger supplies these on a paginated index. The newest page has no
         # newer page, which is the state the preview models: an empty string is
         # falsy, so the pager renders the "Older articles" link alone and the
@@ -368,7 +383,7 @@ def build_scope(posts: tuple) -> dict:
 def render_page(pieces: dict, scope: dict) -> str:
     head = bl.render_element(pieces["head"], scope)
     header = bl.render_element(pieces["header"], scope)
-    main = bl.render_element(pieces["main"], scope)
+    main = bl.render_element(pieces["main"], scope, pieces["includes"])
     footer = bl.render_element(pieces["footer"], scope)
     script = bl.render_element(pieces["script"], scope)
 

@@ -584,6 +584,12 @@ class Renderer:
             return text if raw else esc_text(text)
 
         if name == "include":
+            # Blogger honours cond on b:include, and the stock pager relies on
+            # it: previousPageLink is included only when a newer page exists.
+            # Ignoring it rendered an empty href on the newest page.
+            cond = element.get("cond")
+            if cond is not None and not truthy(evaluate(parse_expression(cond), scope)):
+                return ""
             target = element.get("name")
             if target not in self.includes:
                 return f"<!-- b:include {target} not available in preview -->"

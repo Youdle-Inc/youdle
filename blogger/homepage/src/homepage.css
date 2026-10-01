@@ -59,7 +59,6 @@
 .yd-home .centered-top-container,
 .yd-home .centered-top-placeholder,
 .yd-home .footer-outer,
-.yd-home .blog-pager,
 .yd-home .post-feeds,
 .yd-home .status-msg-wrap,
 .yd-home .sidebar-container,
@@ -319,36 +318,44 @@
 /* --------------------------------------------------------------------------
    Pager
    -------------------------------------------------------------------------- */
-.yd-pager {
+/* Blogger's own pager markup, restyled rather than replaced. */
+.yd-home .blog-pager {
   border-top: 1px solid var(--yd-hairline);
   display: flex;
   gap: 12px;
   justify-content: space-between;
-  padding-top: 24px;
+  margin: 0;
+  padding: 24px 20px 0;
 }
 
-.yd-home .yd-pager__link {
+.yd-home .blog-pager a {
   align-items: center;
   color: var(--yd-ink);
   display: inline-flex;
+  font-family: Inter, sans-serif;
   font-size: 15px;
   font-weight: 600;
   gap: 8px;
   text-decoration: none;
 }
 
-.yd-home .yd-pager__link:hover {
+.yd-home .blog-pager a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* The older-posts link sits right, where it belongs, even when it is alone. */
+.yd-home .blog-pager .blog-pager-older-link {
+  margin-left: auto;
+}
+
+
 
 .yd-pager__link svg {
   height: 16px;
   width: 16px;
 }
 
-/* A lone "Older articles" link sits on the right, where it would be if a
-   "Newer" link were present. */
 .yd-pager__link--older:only-child {
   margin-left: auto;
 }

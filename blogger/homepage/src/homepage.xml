@@ -46,7 +46,7 @@
     <div class='yd-container yd-filters__inner'>
       <a aria-current='page' class='yd-chip yd-chip--active' expr:href='data:blog.homepageUrl'>All</a>
 {{#each categories}}
-      <a class='yd-chip' data-yd-event='category_filter_click' expr:data-yd-label='&quot;{{item.blogger_label}}&quot;' expr:href='data:blog.homepageUrl + &quot;search/label/{{item.blogger_label}}&quot;'>{{item.label}}</a>
+      <a class='yd-chip' data-yd-event='category_filter_click' data-yd-label='{{item.blogger_label}}' expr:href='data:blog.homepageUrl + &quot;search/label/{{item.blogger_label}}&quot;'>{{item.label}}</a>
 {{/each}}
     </div>
   </nav>
@@ -69,7 +69,7 @@
                       images; the live blog also uses i.ibb.co, which Blogger
                       cannot resize, and an empty srcset falls back to src.
                     </b:comment>
-                    <img alt='' expr:loading='data:i &lt; 2 ? &quot;eager&quot; : &quot;lazy&quot;' expr:src='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 400, &quot;4:3&quot;) : data:post.featuredImage' expr:srcset='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 200, &quot;4:3&quot;) + &quot; 200w, &quot; + resizeImage(data:post.featuredImage, 400, &quot;4:3&quot;) + &quot; 400w&quot; : &quot;&quot;' height='144' sizes='(max-width: 640px) 96px, 192px' width='192'/>
+                    <img alt='' loading='lazy' expr:src='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 400, &quot;4:3&quot;) : data:post.featuredImage' expr:srcset='data:post.featuredImage.isResizable ? resizeImage(data:post.featuredImage, 200, &quot;4:3&quot;) + &quot; 200w, &quot; + resizeImage(data:post.featuredImage, 400, &quot;4:3&quot;) + &quot; 400w&quot; : &quot;&quot;' height='144' sizes='(max-width: 640px) 96px, 192px' width='192'/>
                   <b:else/>
                     <span aria-hidden='true' class='yd-item__thumb-fallback'>Youdle</span>
                   </b:if>
@@ -101,7 +101,7 @@
                   </p>
 
                   <h3 class='yd-item__title'>
-                    <a data-yd-event='article_click' data-yd-placement='news_index' expr:data-yd-position='data:i + 1' expr:href='data:post.url'><data:post.title/></a>
+                    <a data-yd-event='article_click' data-yd-placement='news_index' expr:href='data:post.url'><data:post.title/></a>
                   </h3>
 
                   <p class='yd-item__dek'><b:eval expr='snippet(data:post.snippets.long, { length: 150, links: false, linebreaks: false, ellipsis: true })'/></p>
@@ -115,23 +115,14 @@
         <script type='application/ld+json'>{&quot;@context&quot;:&quot;https://schema.org&quot;,&quot;@type&quot;:&quot;ItemList&quot;,&quot;name&quot;:&quot;{{site.title}}&quot;,&quot;itemListOrder&quot;:&quot;https://schema.org/ItemListOrderDescending&quot;,&quot;itemListElement&quot;:[<b:loop index='i' values='data:posts' var='post'><b:if cond='data:i != 0'>,</b:if>{&quot;@type&quot;:&quot;ListItem&quot;,&quot;position&quot;:<b:eval expr='data:i + 1'/>,&quot;url&quot;:&quot;<b:eval expr='data:post.url.canonical.jsonEscaped'/>&quot;,&quot;name&quot;:&quot;<b:eval expr='data:post.title.jsonEscaped'/>&quot;}</b:loop>]}</script>
 
         <b:comment>
-          Blogger paginates the index itself. Both links are conditional: the
-          newest page has no newer page, and the last page has no older one.
+          Blogger's own pager, reused rather than rebuilt. postPagination is
+          a stock includable of this same Blog widget, so it reads the page
+          URLs in the scope Blogger expects. Hand-written markup reading those
+          same URLs was the one construct on this page that appears nowhere in
+          the theme Blogger currently serves, and the restore upload failed
+          with it present.
         </b:comment>
-        <nav aria-label='More articles' class='yd-pager'>
-          <b:if cond='data:newerPageUrl'>
-            <a class='yd-pager__link' data-yd-event='pager_newer_click' expr:href='data:newerPageUrl'>
-              <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M13.5 8h-11'/><path d='M7 3.5 2.5 8 7 12.5'/></svg>
-              Newer articles
-            </a>
-          </b:if>
-          <b:if cond='data:olderPageUrl'>
-            <a class='yd-pager__link yd-pager__link--older' data-yd-event='pager_older_click' expr:href='data:olderPageUrl'>
-              Older articles
-              <svg aria-hidden='true' fill='none' focusable='false' stroke='currentColor' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.7' viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><path d='M2.5 8h11'/><path d='M9 3.5 13.5 8 9 12.5'/></svg>
-            </a>
-          </b:if>
-        </nav>
+        <b:include name='postPagination'/>
       </div>
     </section>
   <b:else/>
