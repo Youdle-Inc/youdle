@@ -168,6 +168,15 @@ def static_checks() -> str:
           "run build_theme.py -- the checked-in artifact is stale")
     check("no Apps Script /exec endpoint in the theme", "AKfycb" not in theme)
 
+    # Blogger's export writes blank widget settings that its own restore then
+    # rejects, with "Required field must not be blank" buried in a
+    # batchexecute response and only "Could not restore theme" on screen. The
+    # blog's hidden Feed gadget shipped with an empty feedUrl, which made every
+    # theme derived from the export unrestorable, including the untouched
+    # export itself.
+    blank = re.findall(r"<b:widget-setting name='([^']+)'></b:widget-setting>", theme)
+    check("no blank widget settings", not blank, ", ".join(blank))
+
     check("homepage includable present", "<b:includable id='youdleHomepage'>" in theme)
     check("stock post chrome untouched",
           "<b:includable id='youdleNewsletterSignup'>" in theme and "youdle-back-nav" in theme)

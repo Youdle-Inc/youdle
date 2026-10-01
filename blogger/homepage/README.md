@@ -252,9 +252,40 @@ Run `build_theme.py` after any edit.
 
 ---
 
+## If Blogger says "Could not restore theme"
+
+That dialog is the entire message the UI gives. The real reason is in the
+network response: open DevTools, attempt the restore, find the POST to
+`batchexecute`, and read its **Response** tab. It returns `200 OK` even when
+the operation fails, and the error sits in the body:
+
+    [["wrb.fr","ZmRkFc",null,null,null,[3,null,[[
+     "type.googleapis.com/google.rpc.LocalizedMessage",
+     [null,"The widget settings in widget with id <b>Feed1</b> is not valid.
+      Required field must not be blank"]]]],"generic"]]
+
+**This blog hit exactly that.** It carries a hidden Feed gadget, "Live SNAP
+Alerts!", whose `feedUrl` was never set. Blogger's theme *export* writes the
+blank setting without complaint; its theme *restore* validates the same file
+and refuses it. Every theme derived from that export was therefore
+unrestorable — including the untouched export itself, which is what proved the
+problem was never in anything this directory generates.
+
+`build_theme.py` now fills any blank required widget setting and prints what it
+filled, and a test fails if a blank one survives into the output. If you would
+rather the gadget were gone than filled, remove it in Blogger under **Layout**;
+it is invisible either way.
+
+For a rollback file, `repair_widget_settings()` in `build_theme.py` applies the
+same repair to the stock export; `theme-base-restorable.xml` at the repo root
+is that output.
+
+---
+
 ## Rolling back
 
 Blogger keeps no theme history, so the backup you took before uploading is the
 only way back. `theme-2263602681587126671.xml` at the repo root is the untouched
-base: upload it to return the blog to its stock appearance, including its stock
-homepage.
+base, but **it cannot be restored as-is** — see the section above. Use the
+repaired `theme-base-restorable.xml` to return the blog to its stock
+appearance, including its stock homepage.

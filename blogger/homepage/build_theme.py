@@ -218,6 +218,36 @@ def json_ld(cfg: dict) -> tuple[str, str]:
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# Restore repair
+# --------------------------------------------------------------------------
+
+# Blogger's theme *export* writes a widget setting that is blank; its theme
+# *restore* then refuses the same file with "The widget settings in widget with
+# id <b>Feed1</b> is not valid. Required field must not be blank", which the UI
+# shows only as "Could not restore theme". The blog carries a hidden Feed gadget
+# ("Live SNAP Alerts!") whose feedUrl was never set, so every file derived from
+# the export is unrestorable until the blank is filled.
+REQUIRED_WIDGET_SETTINGS = {"feedUrl"}
+
+
+def repair_widget_settings(theme: str, fallback_url: str) -> tuple[str, list[str]]:
+    """Fill blank settings Blogger requires, and report every blank found."""
+    notes = []
+
+    def fill(match: re.Match) -> str:
+        name = match.group(1)
+        if name in REQUIRED_WIDGET_SETTINGS:
+            notes.append(f"filled blank {name} with {fallback_url}")
+            return f"<b:widget-setting name='{name}'>{fallback_url}</b:widget-setting>"
+        notes.append(f"blank widget setting left as is: {name}")
+        return match.group(0)
+
+    theme = re.sub(
+        r"<b:widget-setting name='([^']+)'></b:widget-setting>", fill, theme)
+    return theme, notes
+
+
 def splice(theme: str, anchor: str, replacement: str, what: str) -> str:
     count = theme.count(anchor)
     if count != 1:
@@ -411,6 +441,11 @@ def build(base_path: Path, out_path: Path | None, overrides: dict | None = None)
     </b:if>""",
         "third-party scripts gate",
     )
+
+    theme, repairs = repair_widget_settings(
+        theme, cfg["urls"]["news"].rstrip("/") + "/feeds/posts/default")
+    for note in repairs:
+        print(f"    widget settings: {note}")
 
     validate(theme)
     missing = [fragment for fragment in REQUIRED_FRAGMENTS if fragment not in theme]
