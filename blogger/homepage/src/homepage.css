@@ -1,1640 +1,550 @@
 /* ==========================================================================
-   Youdle homepage — news.youdle.io
-   Implements Youdle_Homepage_Developer_Handoff.docx against the approved comp.
-
-   Everything here is scoped to `.yd-home` (the homepage markup) or to
-   `body.homepage-view` (neutralising the stock Blogger "fancy" theme chrome).
-   Nothing in this file may leak into post, archive, label or search views.
-
-   NOTE: this file is the single source of truth. It is injected verbatim into
-   the Blogger theme by build_theme.py and loaded as-is by preview.py, so the
-   local preview and the live theme always render identical CSS.
+   news.youdle.io - article index
+   Loaded only on the homepage (the <style> block is inside
+   b:if cond='data:view.isHomepage'), so post, label, archive and search views
+   keep the stock theme untouched.
    ========================================================================== */
 
+.yd-home {
+  --yd-ink: #173e2f;
+  --yd-body: #27352f;
+  --yd-muted: #5d6b64;
+  --yd-hairline: #e2e8e4;
+  --yd-surface: #ffffff;
+  --yd-sage: #eef3ef;
+  --yd-marigold: #f5b43c;
+  --yd-marigold-deep: #e0a02b;
+  --yd-focus: #173e2f;
+  --yd-measure: 1120px;
+
+  background: var(--yd-surface);
+  color: var(--yd-body);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
 /* --------------------------------------------------------------------------
-   0. Neutralise the stock theme on the homepage only
+   Flatten the stock theme.
+   The Blogger theme wraps the Blog widget in several fixed-width, centred
+   containers and paints its own background. Those constraints are removed on
+   this view only, so the sections below control their own width.
    -------------------------------------------------------------------------- */
-
-/* The stock "Soho" theme wraps the Blog widget in a stack of fixed-width,
-   margined containers and paints its own header, hero strip, drawer and
-   footer. On the homepage we render a full-bleed document of our own, so every
-   wrapper is flattened and every piece of stock chrome is removed.
-
-   Every selector below was taken from an audit of the b:skin block; the
-   comments name the rule each override exists to defeat. */
-body.homepage-view {
+.yd-home .content,
+.yd-home .content-inner,
+.yd-home .main-section,
+.yd-home .widget,
+.yd-home .Blog,
+.yd-home .blog-posts,
+.yd-home .post-outer-container,
+.yd-home .post-outer,
+.yd-home main,
+/* The stock skin pins these to 576px and then 922px. Left alone they set a
+   floor the page cannot go below, which is invisible on a desktop viewport and
+   shears every headline off at phone width. */
+.yd-home .centered-bottom,
+.yd-home .page {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  float: none;
   margin: 0;
+  max-width: none;
   padding: 0;
-  background: #ffffff;
-  /* Skin sets `word-break:break-word` on body, which hyphenates headlines
-     and button labels mid-word. */
-  word-break: normal;
-  overflow-wrap: break-word;
+  width: auto;
 }
 
-/* Flatten the wrapper chain:
-     .page_body            display:flex; min-height:100vh; margin-left:284px @1440+
-     .page_body > *        flex:0 0 auto
-     .centered-bottom      margin:0 32px; width:576px @640+; width:922px @1162+
-     .main .widget         margin:50px 0
-     .post-outer-container width:451px @1162+ (masonry column) */
-body.homepage-view .page,
-body.homepage-view .page_body,
-body.homepage-view .main-page-body-content,
-body.homepage-view main.centered-bottom,
-body.homepage-view .centered-bottom,
-body.homepage-view .main.section,
-body.homepage-view #page_body,
-body.homepage-view .widget.Blog,
-body.homepage-view .main .widget {
-  max-width: none !important;
-  width: auto !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
-  margin: 0 !important;
-  padding: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-  display: block !important;
-  float: none !important;
-  position: static !important;
-}
-
-/* Stock chrome we replace wholesale. `.centered-top-placeholder` is where the
-   Soho JS bundle clones the sticky header, so it has to go too. */
-body.homepage-view .centered-top-container,
-body.homepage-view .centered-top-placeholder,
-body.homepage-view .centered-top,
-body.homepage-view .hero-image,
-body.homepage-view .sidebar-container,
-body.homepage-view .dim-overlay,
-body.homepage-view .footer.section,
-body.homepage-view #footer,
-body.homepage-view .blog-pager,
-body.homepage-view #blog-pager,
-body.homepage-view .feed-links,
-body.homepage-view .main-heading,
-body.homepage-view .widget.Blog .title,
-body.homepage-view .post-filter-message,
-body.homepage-view .widget.FeaturedPost,
-body.homepage-view .widget.AdSense,
-body.homepage-view .widget.PopularPosts,
-body.homepage-view .inline-ad,
-body.homepage-view .no-posts-message {
+.yd-home .header-outer,
+.yd-home .hero-image,
+.yd-home #footer,
+.yd-home .centered-top-container,
+.yd-home .centered-top-placeholder,
+.yd-home .footer-outer,
+.yd-home .blog-pager,
+.yd-home .post-feeds,
+.yd-home .status-msg-wrap,
+.yd-home .sidebar-container,
+.yd-home .feed-links {
   display: none !important;
 }
 
-/* The Soho JS can still toggle the drawer from a hash or keyboard path; make
-   sure that state cannot lock scrolling or paint an overlay. */
-body.homepage-view.sidebar-visible {
-  overflow-y: visible !important;
-}
-body.homepage-view.sidebar-visible .page_body {
-  overflow-y: visible !important;
-}
-
-/* The theme's own skip link is the first element in <body>; it targets #main,
-   which is exactly where our content sections land, so we keep and restyle it
-   rather than shipping a second one. */
-body.homepage-view .skip-navigation:focus {
-  background: #173e2f;
-  color: #ffffff;
-}
-
-/* The skin sets #main{outline:0}, so the skip link's destination would take
-   focus invisibly. */
-body.homepage-view #main:focus-visible {
-  outline: 3px solid #0b5cd8;
-  outline-offset: -3px;
-}
-
-/* --------------------------------------------------------------------------
-   1. Tokens
-   -------------------------------------------------------------------------- */
-
-.yd-home {
-  /* Palette — Design System §3 */
-  --yd-green: #173e2f;
-  --yd-green-hover: #0f2c21;
-  --yd-white: #ffffff;
-  --yd-cream: #fbf3e5;
-  --yd-sage: #edf5ef;
-  --yd-yellow: #f2c100;
-  --yd-charcoal: #222222;
-  --yd-gray: #676767;
-  --yd-border: #e6e3db;
-
-  /* Focus ring — WCAG visible focus, §8 Accessibility */
-  --yd-focus: #0b5cd8;
-
-  /* Type */
-  --yd-display: "Newsreader", Georgia, "Times New Roman", serif;
-  --yd-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
-
-  /* Layout — 1440 artboard, ~1200 centred content, 8px spacing system */
-  --yd-max: 1200px;
-  --yd-gutter: 24px;
-  --yd-radius: 12px;
-  --yd-radius-sm: 6px;
-
-  /* RESOLVED. The written handoff asked for ~96-120px of vertical separation;
-     the approved comp measures ~24px between the panels below the hero, 8px
-     between Grocery List and The Youdle Brief, and one generous ~82px break
-     between the hero and the story row. Built to the comp, at the client's
-     direction, so the page reads as a stacked deck rather than a long scroll.
-     Raise these three values to go back toward the handoff's numbers. */
-  --yd-section-gap: 24px;
-  --yd-hero-gap: 82px;
-  --yd-pair-gap: 8px;
-}
-
-/* --------------------------------------------------------------------------
-   2. Scoped reset
-   -------------------------------------------------------------------------- */
-
-.yd-home,
 .yd-home *,
 .yd-home *::before,
 .yd-home *::after {
   box-sizing: border-box;
 }
 
-.yd-home {
-  font-family: var(--yd-ui);
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--yd-charcoal);
-  background: var(--yd-white);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-
-/* Everything in this reset is wrapped in `:where()`, which contributes no
-   specificity. Without it a reset like `.yd-home button{background:none}`
-   (0,1,1) outranks `.yd-btn--primary{background:...}` (0,1,0) and silently
-   strips the component styling. With it, every rule further down this file
-   wins on source order and no !important is needed. */
-.yd-home :where(h1, h2, h3, h4, h5, h6, p, ul, ol, li, figure, blockquote,
-                fieldset, legend) {
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-/* Skin sets `h1-h6{font-weight:400}` and the UA sets heading sizes and margins. */
-.yd-home :where(h1, h2, h3, h4, h5, h6) {
-  font-size: inherit;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-/* The theme's own list resets are all scoped, so UA `ul{padding-left:40px}`
-   would otherwise apply here. */
-.yd-home :where(ul, ol) {
-  list-style: none;
-}
-
-/* There is no global `img{max-width:100%}` in the theme either. */
-.yd-home :where(img, svg) {
-  display: block;
-  max-width: 100%;
-}
-
-.yd-home :where(img) {
-  height: auto;
-  border: 0;
-}
-
-/* Skin sets `a{color:#bf4138;text-decoration:none}`. */
-.yd-home :where(a) {
-  color: inherit;
-  text-decoration: none;
-  background: none;
-}
-
-/* normalize sets `button,input{font:inherit}`, which resolves to the theme's
-   20px EB Garamond unless we re-inherit from our own scope. */
-.yd-home :where(button, input) {
-  font: inherit;
-  color: inherit;
-  margin: 0;
-}
-
-.yd-home :where(button) {
-  background: none;
-  border: 0;
-  padding: 0;
-  cursor: pointer;
-}
-
-/* One visible focus treatment for every interactive element. */
-.yd-home a:focus-visible,
-.yd-home button:focus-visible,
-.yd-home input:focus-visible,
-.yd-home summary:focus-visible,
-.yd-home [tabindex]:focus-visible {
-  outline: 3px solid var(--yd-focus);
-  outline-offset: 2px;
-}
-
-/* Fallback for browsers without :focus-visible. */
-.yd-home a:focus,
-.yd-home button:focus,
-.yd-home input:focus {
-  outline: 3px solid var(--yd-focus);
-  outline-offset: 2px;
-}
-.yd-home a:focus:not(:focus-visible),
-.yd-home button:focus:not(:focus-visible),
-.yd-home input:focus:not(:focus-visible) {
-  outline: none;
-}
-
 .yd-visually-hidden {
-  position: absolute !important;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
+  border: 0;
   clip: rect(0 0 0 0);
   clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
   white-space: nowrap;
-  border: 0;
+  width: 1px;
 }
-
-/* #0b5cd8 measures 2.0:1 on Deep Green. Inside the newsletter band the ring
-   goes white instead (11.9:1) rather than spending the Accent Yellow. */
-.yd-brief a:focus-visible,
-.yd-brief button:focus-visible,
-.yd-brief input:focus-visible,
-.yd-brief a:focus,
-.yd-brief button:focus,
-.yd-brief input:focus {
-  outline-color: var(--yd-white);
-}
-
-/* The skip link is the theme's own `.skip-navigation`, restyled in §0. */
-
-/* --------------------------------------------------------------------------
-   3. Primitives
-   -------------------------------------------------------------------------- */
 
 .yd-container {
-  width: 100%;
-  max-width: calc(var(--yd-max) + (var(--yd-gutter) * 2));
   margin: 0 auto;
-  padding: 0 var(--yd-gutter);
-}
-
-/* Eyebrow / category label — Inter 600–700, tracked-out uppercase. */
-.yd-eyebrow {
-  font-family: var(--yd-ui);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.4;
-  /* Comp measures ~0.03em; the handoff only says "tracked-out". Split the
-     difference so it still reads as an eyebrow at 12px. */
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  /* Sampled from the comp: eyebrows are near-black, not green. Deep Green is
-     reserved there for the H1, CTAs and category chips. */
-  color: var(--yd-charcoal);
-}
-
-.yd-display {
-  font-family: var(--yd-display);
-  font-weight: 600;
-  color: var(--yd-green);
-  letter-spacing: -0.015em;
-}
-
-.yd-lede {
-  font-size: 17px;
-  line-height: 1.65;
-  color: var(--yd-charcoal);
-}
-
-/* Buttons — minimum 44px interactive height (§6 Mobile, §8 Accessibility). */
-.yd-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 48px;
-  padding: 12px 24px;
-  font-family: var(--yd-ui);
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.005em;
-  border-radius: var(--yd-radius-sm);
-  border: 1px solid transparent;
-  transition: background-color 0.15s ease, border-color 0.15s ease,
-    color 0.15s ease, transform 0.15s ease;
-  text-align: center;
-}
-
-.yd-btn svg {
-  flex: none;
-  width: 16px;
-  height: 16px;
-}
-
-.yd-btn--primary {
-  background: var(--yd-green);
-  border-color: var(--yd-green);
-  color: var(--yd-white);
-}
-.yd-btn--primary:hover {
-  background: var(--yd-green-hover);
-  border-color: var(--yd-green-hover);
-}
-
-.yd-btn--ghost {
-  background: transparent;
-  border-color: var(--yd-green);
-  color: var(--yd-green);
-}
-.yd-btn--ghost:hover {
-  background: var(--yd-green);
-  color: var(--yd-white);
-}
-
-.yd-btn--cream {
-  background: var(--yd-cream);
-  border-color: var(--yd-cream);
-  color: var(--yd-green);
-}
-.yd-btn--cream:hover {
-  background: #ffffff;
-  border-color: #ffffff;
-}
-
-/* Quiet inline text link with a trailing arrow. */
-.yd-textlink {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 4px 2px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--yd-green);
-}
-.yd-textlink svg {
-  width: 16px;
-  height: 16px;
-  transition: transform 0.15s ease;
-}
-.yd-textlink:hover {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.yd-textlink:hover svg {
-  transform: translateX(3px);
-}
-
-/* --------------------------------------------------------------------------
-   4. Header
-   -------------------------------------------------------------------------- */
-
-.yd-header {
-  position: relative;
-  z-index: 30;
-  background: var(--yd-white);
-}
-
-.yd-header__inner {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  min-height: 88px;
-  padding-top: 12px;
-  padding-bottom: 12px;
-}
-
-.yd-header__brand {
-  display: flex;
-  align-items: center;
-  flex: none;
-  min-height: 44px;
-  padding: 4px;
-  margin-left: -4px;
-}
-.yd-header__brand svg,
-.yd-header__brand img {
-  width: 114px;
-  height: 34px;
-}
-
-.yd-nav {
-  display: flex;
-  align-items: center;
-  gap: 40px;
-  margin: 0 auto;
-}
-
-.yd-nav__link {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--yd-charcoal);
-}
-.yd-nav__link::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 6px;
-  height: 2px;
-  background: var(--yd-green);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 0.15s ease;
-}
-.yd-nav__link:hover::after {
-  transform: scaleX(1);
-}
-.yd-nav__link[aria-current="page"]::after {
-  transform: scaleX(1);
-}
-
-.yd-header__actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex: none;
-}
-
-.yd-header__cta {
-  white-space: nowrap;
-}
-/* The full label is the default; the short one is swapped in on phones. */
-.yd-header__cta .yd-header__cta-short {
-  display: none;
-}
-
-/* Hamburger / secondary menu.
-   .yd-menu wraps the button and its dropdown so the dropdown can be anchored
-   to the button rather than to the header, which is full-bleed and would push
-   the panel to the viewport edge. */
-.yd-menu {
-  position: relative;
-  display: flex;
-}
-
-.yd-menu-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--yd-radius-sm);
-  color: var(--yd-charcoal);
-}
-.yd-menu-toggle:hover {
-  background: var(--yd-sage);
-}
-.yd-menu-toggle svg {
-  width: 24px;
-  height: 24px;
-}
-.yd-menu-toggle__close {
-  display: none;
-}
-.yd-menu-toggle[aria-expanded="true"] .yd-menu-toggle__open {
-  display: none;
-}
-.yd-menu-toggle[aria-expanded="true"] .yd-menu-toggle__close {
-  display: block;
-}
-
-.yd-drawer {
-  position: absolute;
-  /* Directly under the button, right edges flush. */
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 40;
-  width: max-content;
-  min-width: 240px;
-  max-width: min(320px, calc(100vw - (var(--yd-gutter) * 2)));
-  padding: 12px;
-  background: var(--yd-white);
-  border: 1px solid var(--yd-border);
-  border-radius: var(--yd-radius);
-  box-shadow: 0 18px 44px rgba(23, 62, 47, 0.14);
-}
-.yd-drawer[hidden] {
-  display: none;
-}
-.yd-drawer__group + .yd-drawer__group {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--yd-border);
-}
-.yd-drawer__label {
-  padding: 8px 12px 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--yd-gray);
-}
-.yd-drawer ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.yd-drawer a {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  padding: 10px 12px;
-  border-radius: var(--yd-radius-sm);
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--yd-charcoal);
-}
-.yd-drawer a:hover {
-  background: var(--yd-sage);
-  color: var(--yd-green);
-}
-
-/* Nav collapses below the tablet breakpoint; see §9. */
-
-/* --------------------------------------------------------------------------
-   5. Hero
-   -------------------------------------------------------------------------- */
-
-/* overflow-x:clip contains the hero bleed when 100vw includes a scrollbar,
-   without creating a scroll container the way overflow:hidden would. */
-.yd-hero {
-  position: relative;
-  overflow-x: clip;
-  padding-bottom: var(--yd-hero-gap);
-}
-
-.yd-hero__inner {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.06fr);
-  align-items: center;
-  gap: 48px;
-  min-height: 480px;
-}
-
-.yd-hero__copy {
-  padding: 40px 0 48px;
-  /* Narrow enough that the H1 sets on three lines, as in the comp. */
-  max-width: 500px;
-}
-
-.yd-hero__eyebrow {
-  margin-bottom: 24px;
-}
-
-.yd-hero__title {
-  font-family: var(--yd-display);
-  font-weight: 600;
-  font-size: clamp(40px, 4.4vw, 62px);
-  line-height: 1.08;
-  letter-spacing: -0.022em;
-  color: var(--yd-green);
-  /* Clears the accent stroke, which hangs below the last baseline. */
-  margin-bottom: 40px;
-}
-
-/* The single sanctioned use of Accent Yellow: the "grocery run" underline. */
-.yd-underline {
-  position: relative;
-  display: inline-block;
-  white-space: nowrap;
-}
-.yd-underline__stroke {
-  position: absolute;
-  left: -0.03em;
-  right: -0.13em;
-  bottom: -0.2em;
-  width: auto;
-  height: 0.23em;
-  color: var(--yd-yellow);
-  pointer-events: none;
-}
-
-.yd-hero__lede {
-  max-width: 25ch;
-  font-size: 18px;
-  line-height: 1.62;
-  color: var(--yd-charcoal);
-  margin-bottom: 36px;
-}
-
-.yd-hero__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-/* Comp uses two button sizes: large in the hero, medium inside panels. */
-.yd-hero__actions .yd-btn {
-  min-height: 54px;
-  padding: 14px 26px;
-  font-size: 16px;
-}
-
-.yd-hero__media {
-  position: relative;
-  align-self: stretch;
-  min-height: 400px;
-  /* The figure is sized to the photo's own ratio rather than stretched to the
-     grid row, so the image is never cropped at any window width. Update this
-     if the production photograph has different proportions; a mismatch only
-     costs a little blank space, never a crop. */
-  --yd-hero-ratio: 554 / 450;
-}
-
-/* The hero image bleeds to the right edge of the viewport, as in the comp. */
-.yd-hero__figure {
-  position: absolute;
-  inset: 0 auto 0 0;
-  /* Reach the viewport's right edge at every width. Past the container's
-     max-width that distance is half the leftover; below it, the container is
-     full-bleed and only its own gutter remains. */
-  width: calc(100% + max(var(--yd-gutter), (100vw - var(--yd-max)) / 2));
-  overflow: hidden;
-  border-radius: 0;
-}
-
-/* `contain`, never `cover`. cover crops whatever the container's proportions
-   do not match, which at some window widths sliced the left edge off the tote
-   and magnified the rest. contain shows the whole photograph at every width;
-   because the shot's own background is the same white as the page, the slack
-   it leaves is invisible rather than letterboxed. Anchored right so the image
-   still meets the viewport edge the way the comp does. */
-.yd-hero__figure img {
+  max-width: var(--yd-measure);
+  padding: 0 20px;
   width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: right center;
 }
 
-/* Stands in for any image whose URL is not configured yet, so the page reads
-   as finished rather than broken. Sized by its container, which always has an
-   aspect-ratio or fixed inset. */
-.yd-media-fallback {
-  display: flex;
+.yd-home a {
+  color: inherit;
+}
+
+.yd-home a:focus-visible,
+.yd-home button:focus-visible,
+.yd-home input:focus-visible {
+  outline: 3px solid var(--yd-focus);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
+   Masthead
+   -------------------------------------------------------------------------- */
+.yd-masthead {
+  background: var(--yd-surface);
+  border-bottom: 1px solid var(--yd-hairline);
+  padding: 20px 0;
+}
+
+.yd-masthead__inner {
   align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  padding: 20px;
-  background: linear-gradient(150deg, var(--yd-sage) 0%, var(--yd-cream) 100%);
-  color: var(--yd-green);
-  font-family: var(--yd-display);
-  font-size: 18px;
-  line-height: 1.45;
-  text-align: center;
-}
-.yd-hero__figure .yd-media-fallback {
-  font-size: 24px;
-}
-.yd-story__media .yd-media-fallback,
-.yd-post__media .yd-media-fallback {
-  font-size: 15px;
-  letter-spacing: 0.02em;
-}
-/* The grocery illustration has no intrinsic box of its own. */
-.yd-grocery__illus .yd-media-fallback {
-  aspect-ratio: 4 / 3;
-  border-radius: 10px 10px 0 0;
-}
-
-/* --------------------------------------------------------------------------
-   6. What Everyone's Talking About
-   -------------------------------------------------------------------------- */
-
-.yd-stories {
-  padding-bottom: var(--yd-section-gap);
-}
-
-.yd-stories__heading {
-  margin-bottom: 24px;
-}
-
-/* auto-fit rather than a hard 3, so a blog with one or two published posts
-   still fills the row instead of leaving dead tracks. */
-.yd-stories__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 24px;
-}
-
-/* The comp separates cards with a soft shadow, not a rule -- there is no
-   1px border anywhere in it. */
-.yd-story {
   display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--yd-white);
-  border-radius: var(--yd-radius);
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(23, 62, 47, 0.05), 0 6px 18px rgba(23, 62, 47, 0.06);
-  transition: box-shadow 0.18s ease, transform 0.18s ease;
-}
-.yd-story:hover {
-  box-shadow: 0 2px 4px rgba(23, 62, 47, 0.07), 0 16px 36px rgba(23, 62, 47, 0.12);
-  transform: translateY(-2px);
-}
-
-.yd-story__media {
-  position: relative;
-  aspect-ratio: 16 / 7;
-  background: var(--yd-sage);
-  overflow: hidden;
-}
-.yd-story__media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.yd-story__chip {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  padding: 6px 12px;
-  background: var(--yd-green);
-  color: var(--yd-white);
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  line-height: 1.3;
-}
-
-.yd-story__body {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  padding: 20px 22px 24px;
-}
-
-.yd-story__meta {
-  font-size: 13px;
-  font-weight: 400;
-  color: var(--yd-gray);
-  margin-bottom: 12px;
-}
-.yd-story__meta-sep {
-  padding: 0 6px;
-}
-
-.yd-story__title {
-  font-family: var(--yd-display);
-  font-weight: 600;
-  font-size: 21px;
-  line-height: 1.26;
-  letter-spacing: -0.012em;
-  color: var(--yd-charcoal);
-  margin-bottom: 12px;
-}
-.yd-story__title a::after {
-  /* Whole card is the hit target, but only the headline is the link. */
-  content: "";
-  position: absolute;
-  inset: 0;
-}
-.yd-story__title a:hover {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.yd-story {
-  position: relative;
-}
-
-.yd-story__dek {
-  font-size: 15px;
-  line-height: 1.6;
-  color: var(--yd-charcoal);
-}
-
-.yd-stories__more {
-  display: flex;
-  justify-content: center;
-  margin-top: 32px;
-}
-
-/* --------------------------------------------------------------------------
-   7. Community preview
-   -------------------------------------------------------------------------- */
-
-.yd-community {
-  padding-bottom: var(--yd-section-gap);
-}
-
-.yd-community__panel {
-  display: grid;
-  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.6fr);
-  gap: 48px;
-  padding: 48px;
-  background: var(--yd-sage);
-  border-radius: var(--yd-radius);
-}
-
-.yd-community__copy {
-  align-self: center;
-  max-width: 340px;
-}
-.yd-community__eyebrow {
-  margin-bottom: 16px;
-}
-.yd-community__title {
-  font-family: var(--yd-display);
-  font-weight: 600;
-  font-size: clamp(28px, 2.6vw, 36px);
-  line-height: 1.14;
-  letter-spacing: -0.018em;
-  color: var(--yd-charcoal);
-  margin-bottom: 16px;
-}
-.yd-community__lede {
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--yd-charcoal);
-  margin-bottom: 28px;
-}
-
-.yd-community__feed {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.yd-community__cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
 }
 
-.yd-post {
-  display: flex;
-  flex-direction: column;
-  background: var(--yd-white);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.yd-post__media {
-  aspect-ratio: 3 / 2;
-  background: var(--yd-sage);
-  overflow: hidden;
-}
-.yd-post__media img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.yd-post__body {
-  display: flex;
-  flex-direction: column;
-  flex: 1 1 auto;
-  padding: 14px 16px 16px;
-}
-
-.yd-post__head {
-  display: flex;
+.yd-masthead__brand {
   align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  display: inline-flex;
+  flex: 0 0 auto;
 }
 
-.yd-post__avatar {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--yd-green);
-  color: var(--yd-white);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1;
-}
-.yd-post__avatar img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.yd-post__author {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--yd-charcoal);
-}
-
-.yd-post__time {
-  margin-left: auto;
-  font-size: 13px;
-  color: var(--yd-gray);
-}
-
-.yd-post__text {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--yd-charcoal);
-  margin-bottom: 14px;
-}
-
-.yd-post__likes {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-top: auto;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--yd-charcoal);
-}
-.yd-post__likes svg {
-  width: 14px;
-  height: 14px;
-  color: var(--yd-green);
-}
-
-.yd-community__more {
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* --------------------------------------------------------------------------
-   8. Grocery List
-   -------------------------------------------------------------------------- */
-
-/* Grocery List and The Youdle Brief read as a pair in the comp, so they sit
-   closer than the section rhythm. */
-.yd-grocery {
-  padding-bottom: var(--yd-pair-gap);
-}
-
-.yd-grocery__panel {
-  display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr);
-  align-items: center;
-  gap: 40px;
-  padding: 48px 48px 0;
-  background: var(--yd-cream);
-  border-radius: var(--yd-radius);
-  overflow: hidden;
-}
-
-.yd-grocery__copy {
-  padding-bottom: 48px;
-  max-width: 340px;
-}
-.yd-grocery__eyebrow {
-  margin-bottom: 16px;
-}
-.yd-grocery__title {
-  font-family: var(--yd-display);
-  font-weight: 600;
-  font-size: clamp(28px, 2.6vw, 36px);
-  line-height: 1.14;
-  letter-spacing: -0.018em;
-  color: var(--yd-charcoal);
-  margin-bottom: 12px;
-}
-.yd-grocery__lede {
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--yd-charcoal);
-  margin-bottom: 28px;
-}
-
-.yd-grocery__visual {
-  display: grid;
-  grid-template-columns: minmax(0, 200px) minmax(0, 1fr);
-  align-items: end;
-  gap: 24px;
-  align-self: end;
-}
-
-/* Phone mock — built in HTML/CSS so the list text stays crawlable (§7 SEO:
-   "do not render essential meaning only inside images"). */
-.yd-phone {
-  position: relative;
-  width: 100%;
-  max-width: 200px;
-  padding: 10px 10px 0;
-  background: #1a1a1a;
-  border-radius: 26px 26px 0 0;
-  box-shadow: 0 -2px 0 rgba(0, 0, 0, 0.06);
-}
-
-.yd-phone__screen {
-  padding: 14px 14px 20px;
-  background: var(--yd-white);
-  border-radius: 18px 18px 0 0;
-  min-height: 210px;
-}
-
-.yd-phone__statusbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
-  font-size: 9px;
-  font-weight: 600;
-  color: var(--yd-charcoal);
-}
-.yd-phone__statusbar svg {
-  width: 9px;
-  height: 9px;
-}
-
-.yd-phone__titlebar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 14px;
-}
-.yd-phone__title {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--yd-charcoal);
-}
-.yd-phone__grip {
-  display: grid;
-  grid-template-columns: repeat(3, 3px);
-  gap: 2px;
-  color: var(--yd-gray);
-}
-.yd-phone__grip i {
+.yd-masthead__brand svg {
   display: block;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: currentColor;
+  height: 34px;
+  width: auto;
 }
 
-.yd-phone__list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.yd-phone__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  color: var(--yd-charcoal);
-}
-/* The phone is aria-hidden decoration - a picture of the Grocery List UI, not
-   a control - so the comp's light checkbox stroke is kept as drawn. */
-.yd-phone__box {
-  flex: none;
-  width: 12px;
-  height: 12px;
-  border: 1.5px solid #c9c6bd;
-  border-radius: 3px;
+.yd-masthead__copy {
+  border-left: 1px solid var(--yd-hairline);
+  min-width: 0;
+  padding-left: 20px;
 }
 
-.yd-grocery__illus {
-  align-self: end;
-}
-.yd-grocery__illus img {
-  width: 100%;
-  height: auto;
-}
-
-/* --------------------------------------------------------------------------
-   9. The Youdle Brief (newsletter band)
-   -------------------------------------------------------------------------- */
-
-.yd-brief {
-  padding-bottom: var(--yd-section-gap);
-}
-
-.yd-brief__panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
-  align-items: center;
-  gap: 40px;
-  padding: 36px 44px;
-  background: var(--yd-green);
-  border-radius: var(--yd-radius);
-  color: var(--yd-white);
-}
-
-.yd-brief__copy {
-  display: flex;
-  align-items: flex-start;
-  gap: 22px;
-}
-
-.yd-brief__icon {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 54px;
-  height: 54px;
-  border: 1.5px solid rgba(255, 255, 255, 0.55);
-  border-radius: 50%;
-  color: var(--yd-white);
-}
-.yd-brief__icon svg {
-  width: 24px;
-  height: 24px;
-}
-
-.yd-brief__title {
-  font-family: var(--yd-display);
-  font-weight: 600;
-  font-size: clamp(24px, 2.1vw, 30px);
-  line-height: 1.2;
-  letter-spacing: -0.015em;
-  color: var(--yd-white);
-  margin-bottom: 10px;
-}
-.yd-brief__title span {
-  display: block;
-}
-
-.yd-brief__lede {
-  font-size: 14px;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.86);
-}
-
-.yd-brief__form-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.yd-brief__form {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-}
-
-.yd-brief__label {
-  color: var(--yd-white);
-}
-
-.yd-brief__input {
-  width: 100%;
-  min-height: 48px;
-  padding: 12px 18px;
-  background: var(--yd-white);
-  border: 1px solid var(--yd-white);
-  border-radius: var(--yd-radius-sm);
-  color: var(--yd-charcoal);
-  font-size: 15px;
-}
-.yd-brief__input:focus-visible {
-  outline-color: var(--yd-white);
-}
-.yd-brief__input::placeholder {
-  /* #7a7a7a reads 4.29:1 on white, just under AA. */
-  color: var(--yd-gray);
-  opacity: 1;
-}
-.yd-brief__input:focus-visible {
-  outline: 3px solid var(--yd-yellow);
-  outline-offset: 2px;
-}
-.yd-brief__input[aria-invalid="true"] {
-  border-color: #ffb3a7;
-  box-shadow: 0 0 0 2px rgba(255, 179, 167, 0.6);
-}
-
-.yd-brief__submit {
-  min-width: 150px;
-}
-
-/* Honeypot — Mailchimp bot trap. Must stay in the DOM and out of the a11y tree. */
-.yd-brief__hp {
-  position: absolute;
-  left: -5000px;
-  overflow: hidden;
-}
-
-.yd-brief__fine {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.8);
-}
-
-/* A live region must stay in the accessibility tree. Hiding it with
-   display:none while empty means the first message is never announced, so it
-   collapses to zero height instead. */
-.yd-brief__status {
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.5;
+.yd-masthead__title {
+  color: var(--yd-ink);
+  font-family: Newsreader, Georgia, "Times New Roman", serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
   margin: 0;
 }
-.yd-brief__status:empty {
-  height: 0;
+
+.yd-masthead__tagline {
+  color: var(--yd-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 4px 0 0;
+}
+
+/* --------------------------------------------------------------------------
+   Category chips
+   -------------------------------------------------------------------------- */
+.yd-filters {
+  background: var(--yd-surface);
+  border-bottom: 1px solid var(--yd-hairline);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+
+.yd-filters__inner {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 12px;
+  padding-top: 12px;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
+}
+
+.yd-home .yd-chip {
+  background: var(--yd-sage);
+  border-radius: 999px;
+  color: var(--yd-ink);
+  flex: 0 0 auto;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 10px 16px;
+  text-decoration: none;
+  transition: background-color 0.15s ease;
+  white-space: nowrap;
+}
+
+.yd-home .yd-chip:hover {
+  background: #e2ebe5;
+}
+
+.yd-home .yd-chip--active {
+  background: var(--yd-ink);
+  color: #ffffff;
+}
+
+.yd-home .yd-chip--active:hover {
+  background: #0f2e22;
+}
+
+/* --------------------------------------------------------------------------
+   The list
+   -------------------------------------------------------------------------- */
+.yd-list {
+  padding: 8px 0 40px;
+}
+
+.yd-list__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.yd-item + .yd-item {
+  border-top: 1px solid var(--yd-hairline);
+}
+
+.yd-item__inner {
+  align-items: flex-start;
+  display: flex;
+  gap: 20px;
+  padding: 24px 0;
+}
+
+.yd-item__thumb {
+  background: var(--yd-sage);
+  border-radius: 10px;
+  display: block;
+  flex: 0 0 192px;
   overflow: hidden;
+  position: relative;
 }
-.yd-brief__status[data-state="success"] {
-  color: #d6f5cf;
+
+.yd-item__thumb img {
+  aspect-ratio: 4 / 3;
+  display: block;
+  height: auto;
+  object-fit: cover;
+  width: 100%;
 }
-.yd-brief__status[data-state="error"] {
-  color: #ffd7cf;
+
+.yd-item__thumb-fallback {
+  align-items: center;
+  aspect-ratio: 4 / 3;
+  color: var(--yd-muted);
+  display: flex;
+  font-family: Newsreader, Georgia, serif;
+  font-size: 18px;
+  justify-content: center;
+  width: 100%;
 }
-.yd-brief__status[data-state="pending"] {
-  color: rgba(255, 255, 255, 0.86);
+
+.yd-item__body {
+  min-width: 0;
 }
-.yd-brief__status a {
+
+.yd-item__meta {
+  align-items: center;
+  color: var(--yd-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+
+.yd-home .yd-item__chip {
+  color: var(--yd-ink);
+  font-weight: 600;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 12px;
+}
+
+.yd-home .yd-item__chip:hover {
   text-decoration: underline;
 }
 
-/* --------------------------------------------------------------------------
-   10. Footer
-   -------------------------------------------------------------------------- */
-
-.yd-footer {
-  padding-bottom: 40px;
-  color: var(--yd-charcoal);
+.yd-item__dot {
+  color: var(--yd-hairline);
 }
 
-.yd-footer__top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) repeat(4, minmax(0, 1fr));
-  gap: 40px;
-  padding-bottom: 32px;
+.yd-item__title {
+  font-family: Newsreader, Georgia, "Times New Roman", serif;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.25;
+  margin: 0;
 }
 
-.yd-footer__about {
-  font-size: 14px;
-  line-height: 1.65;
-  color: var(--yd-charcoal);
-  max-width: 30ch;
-  margin-bottom: 10px;
+.yd-home .yd-item__title a {
+  color: var(--yd-ink);
+  text-decoration: none;
 }
 
-/* AEO: the handoff's recommended plain-language definition of Youdle, kept as
-   crawlable text and set quieter than the brand line above it. */
-.yd-footer__definition {
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--yd-gray);
-  max-width: 34ch;
-  margin-bottom: 20px;
-}
-
-.yd-social {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: -10px;
-}
-.yd-social a {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: var(--yd-radius-sm);
-  color: var(--yd-charcoal);
-}
-.yd-social a:hover {
-  background: var(--yd-sage);
-  color: var(--yd-green);
-}
-.yd-social svg {
-  width: 20px;
-  height: 20px;
-}
-
-.yd-footer__colhead {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-  color: var(--yd-gray);
-  margin-bottom: 14px;
-}
-
-.yd-footer__list li + li {
-  margin-top: 2px;
-}
-.yd-footer__list a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 32px;
-  font-size: 14px;
-  color: var(--yd-charcoal);
-}
-.yd-footer__list a:hover {
-  color: var(--yd-green);
+.yd-home .yd-item__title a:hover {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 
-.yd-footer__legal {
-  padding-top: 24px;
+.yd-item__dek {
+  color: var(--yd-muted);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 6px 0 0;
+}
+
+.yd-empty {
+  color: var(--yd-muted);
+  font-size: 16px;
+  padding: 48px 0;
   text-align: center;
-  font-size: 13px;
-  color: var(--yd-gray);
 }
 
 /* --------------------------------------------------------------------------
-   11. Responsive — §6 Responsive Requirements
+   Pager
    -------------------------------------------------------------------------- */
-
-/* Between the container's max-width and the point where the hero stacks, the
-   media column is narrow enough that the photo shrinks and leaves a band of
-   empty page above and below it. Give the image more of the row. */
-@media (max-width: 1200px) {
-  .yd-hero__inner {
-    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.18fr);
-  }
+.yd-pager {
+  border-top: 1px solid var(--yd-hairline);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding-top: 24px;
 }
 
-/* Wide tablet / small desktop */
-@media (max-width: 1080px) {
-  .yd-home {
-    --yd-hero-gap: 72px;
-  }
-
-  .yd-nav {
-    gap: 28px;
-  }
-
-  .yd-hero__inner {
-    gap: 32px;
-    min-height: 0;
-  }
-
-  .yd-community__panel,
-  .yd-grocery__panel {
-    padding: 36px;
-  }
-  .yd-grocery__panel {
-    padding-bottom: 0;
-  }
-
-  .yd-community__panel {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
-  }
-  .yd-community__copy,
-  .yd-grocery__copy {
-    max-width: none;
-  }
-
-  .yd-brief__panel {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
-    padding: 36px;
-  }
+.yd-home .yd-pager__link {
+  align-items: center;
+  color: var(--yd-ink);
+  display: inline-flex;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 8px;
+  text-decoration: none;
 }
 
-/* Tablet — §6 Tablet */
-@media (max-width: 900px) {
-  .yd-home {
-    --yd-hero-gap: 56px;
-    --yd-gutter: 20px;
+.yd-home .yd-pager__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.yd-pager__link svg {
+  height: 16px;
+  width: 16px;
+}
+
+/* A lone "Older articles" link sits on the right, where it would be if a
+   "Newer" link were present. */
+.yd-pager__link--older:only-child {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Newsletter
+   -------------------------------------------------------------------------- */
+.yd-brief {
+  background: var(--yd-sage);
+  padding: 40px 0;
+}
+
+.yd-brief__inner {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  justify-content: space-between;
+}
+
+.yd-brief__title {
+  color: var(--yd-ink);
+  font-family: Newsreader, Georgia, serif;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.yd-brief__lede {
+  color: var(--yd-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  margin: 6px 0 0;
+}
+
+.yd-brief__form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  position: relative;
+}
+
+.yd-brief__input {
+  background: #ffffff;
+  border: 1px solid var(--yd-hairline);
+  border-radius: 10px;
+  color: var(--yd-ink);
+  font-family: inherit;
+  font-size: 15px;
+  height: 48px;
+  min-width: 260px;
+  padding: 0 14px;
+}
+
+.yd-brief__input[aria-invalid='true'] {
+  border-color: #b3261e;
+}
+
+.yd-brief__trap {
+  left: -5000px;
+  position: absolute;
+}
+
+.yd-btn {
+  align-items: center;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  gap: 8px;
+  height: 48px;
+  justify-content: center;
+  padding: 0 22px;
+  text-decoration: none;
+}
+
+.yd-btn--primary {
+  background: var(--yd-marigold);
+  color: var(--yd-ink);
+}
+
+.yd-btn--primary:hover {
+  background: var(--yd-marigold-deep);
+}
+
+.yd-brief__status {
+  flex-basis: 100%;
+  font-size: 14px;
+  margin: 0;
+  min-height: 1em;
+}
+
+.yd-brief__status[data-state='error'] {
+  color: #b3261e;
+}
+
+.yd-brief__status[data-state='success'] {
+  color: var(--yd-ink);
+}
+
+/* --------------------------------------------------------------------------
+   Footer
+   -------------------------------------------------------------------------- */
+.yd-footer {
+  border-top: 1px solid var(--yd-hairline);
+  padding: 24px 0;
+}
+
+.yd-footer__inner {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.yd-footer__line,
+.yd-footer__links {
+  color: var(--yd-muted);
+  font-size: 13px;
+  margin: 0;
+}
+
+.yd-home .yd-footer__links a {
+  color: var(--yd-muted);
+  margin-left: 16px;
+  text-decoration: none;
+}
+
+.yd-home .yd-footer__links a:first-child {
+  margin-left: 0;
+}
+
+.yd-home .yd-footer__links a:hover {
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------------------
+   Responsive
+   -------------------------------------------------------------------------- */
+@media (max-width: 760px) {
+  .yd-masthead__inner {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 14px;
   }
 
-  /* Desktop nav collapses into the hamburger rather than being squeezed. */
-  .yd-nav {
+  .yd-masthead__copy {
+    border-left: 0;
+    padding-left: 0;
+  }
+
+  .yd-masthead__title {
+    font-size: 26px;
+  }
+
+  .yd-item__inner {
+    gap: 14px;
+    padding: 18px 0;
+  }
+
+  .yd-item__thumb {
+    flex-basis: 96px;
+  }
+
+  .yd-item__title {
+    font-size: 18px;
+  }
+
+  .yd-item__dek {
     display: none;
   }
-  .yd-header__inner {
-    justify-content: space-between;
-    min-height: 76px;
-  }
-  .yd-header__actions {
-    margin-left: auto;
-  }
 
-  /* Mobile/tablet: copy first, image second (§6 Mobile). */
-  .yd-hero__inner {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0;
-  }
-  .yd-hero__copy {
-    max-width: none;
-    padding: 24px 0 32px;
-  }
-  .yd-hero__lede {
-    max-width: 42ch;
-  }
-  .yd-hero__media {
-    min-height: 0;
-    /* Bleed the image edge-to-edge on narrow screens. */
-    margin: 0 calc(var(--yd-gutter) * -1);
-  }
-  .yd-hero__figure {
-    position: relative;
-    inset: auto;
-    width: 100%;
-    /* Match the photo's own proportions so stacking it under the copy leaves
-       no blank band above and below. */
-    aspect-ratio: var(--yd-hero-ratio);
-  }
-  .yd-hero__figure img {
-    object-position: center;
-  }
-
-  /* Editorial cards: 2 + 1 rather than an illegible three-column squeeze. */
-  .yd-stories__grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .yd-stories__grid > :last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
-  .yd-stories__grid > :last-child:nth-child(odd) .yd-story__media {
-    aspect-ratio: 21 / 7;
-  }
-
-  .yd-grocery__visual {
-    grid-template-columns: minmax(0, 170px) minmax(0, 1fr);
-    gap: 16px;
-  }
-
-  .yd-footer__top {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 32px;
-  }
-  .yd-footer__list a {
-    min-height: 44px;
-  }
-  .yd-footer__about-col {
-    grid-column: 1 / -1;
-  }
-}
-
-/* Mobile — §6 Mobile */
-@media (max-width: 640px) {
-  .yd-home {
-    --yd-section-gap: 20px;
-    --yd-hero-gap: 40px;
-    --yd-gutter: 18px;
-  }
-
-  .yd-header__inner {
-    min-height: 68px;
-  }
-  .yd-header__cta {
-    /* Full label is too wide on a phone; the short label is swapped in below. */
-    padding: 12px 16px;
-    font-size: 14px;
-  }
-  .yd-header__cta .yd-header__cta-long {
-    display: none;
-  }
-  .yd-header__cta .yd-header__cta-short {
-    display: inline;
-  }
-
-  /* Mobile type sizes are defined intentionally, not scaled down (§6). */
-  .yd-hero__title {
-    font-size: clamp(34px, 9.4vw, 42px);
-    line-height: 1.08;
-    margin-bottom: 24px;
-  }
-  .yd-hero__lede {
-    font-size: 16px;
-    margin-bottom: 28px;
-  }
-  .yd-hero__actions {
+  .yd-brief__inner {
     flex-direction: column;
     align-items: stretch;
   }
-  .yd-hero__actions .yd-btn {
-    width: 100%;
-  }
 
-  .yd-stories__grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
-  }
-  .yd-stories__grid > :last-child:nth-child(odd) .yd-story__media {
-    aspect-ratio: 16 / 7;
-  }
-  .yd-story__title {
-    font-size: 20px;
-  }
-
-  .yd-community__panel,
-  .yd-grocery__panel {
-    padding: 28px 20px;
-    border-radius: 10px;
-  }
-  .yd-grocery__panel {
-    padding-bottom: 0;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
-  }
-  .yd-grocery__copy {
-    padding-bottom: 0;
-  }
-  .yd-community__cards {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 14px;
-  }
-  .yd-community__more {
-    justify-content: flex-start;
-  }
-
-  .yd-grocery__visual {
-    grid-template-columns: minmax(0, 172px) minmax(0, 1fr);
-    gap: 12px;
-  }
-
-  .yd-brief__panel {
-    padding: 28px 20px;
-    border-radius: 10px;
-  }
-  .yd-brief__copy {
-    gap: 16px;
-  }
-  .yd-brief__icon {
-    width: 44px;
-    height: 44px;
-  }
-  .yd-brief__icon svg {
-    width: 20px;
-    height: 20px;
-  }
   .yd-brief__form {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
+    flex-direction: column;
+    align-items: stretch;
   }
-  .yd-brief__submit {
+
+  .yd-brief__input {
+    min-width: 0;
     width: 100%;
   }
-
-  .yd-footer__top {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
-  }
-  .yd-footer__list a {
-    min-height: 44px;
-  }
-  .yd-drawer__label,
-  .yd-footer__colhead {
-    font-size: 12px;
-  }
-  .yd-footer__about {
-    max-width: none;
-  }
 }
-
-/* Very small phones */
-@media (max-width: 380px) {
-  .yd-header__brand svg,
-  .yd-header__brand img {
-    width: 96px;
-    height: 29px;
-  }
-  .yd-grocery__visual {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .yd-grocery__illus {
-    display: none;
-  }
-}
-
-
-/* --------------------------------------------------------------------------
-   12. Preferences
-   -------------------------------------------------------------------------- */
 
 @media (prefers-reduced-motion: reduce) {
-  .yd-home *,
-  .yd-home *::before,
-  .yd-home *::after {
-    animation-duration: 0.001ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
-    scroll-behavior: auto !important;
-  }
-}
-
-@media print {
-  .yd-header__actions,
-  .yd-drawer,
-  .yd-brief__form-wrap {
-    display: none !important;
+  .yd-home * {
+    transition: none !important;
   }
 }

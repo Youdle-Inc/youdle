@@ -32,6 +32,7 @@ SRC = HERE / "src"
 DEFAULT_BASE = REPO / "theme-2263602681587126671.xml"
 DEFAULT_OUT = REPO / "theme-youdle-homepage.xml"
 LOGO_SVG = REPO / "frontend" / "public" / "img" / "youdle-logo-brand.svg"
+NEWLINE = chr(10)
 
 
 # --------------------------------------------------------------------------
@@ -198,8 +199,8 @@ def json_ld(cfg: dict) -> tuple[str, str]:
         "@context": "https://schema.org",
         "@type": "WebSite",
         "@id": "https://news.youdle.io/#website",
-        "name": "Grocery Today by Youdle",
-        "url": urls["grocery_today"],
+        "name": cfg["site"]["title"],
+        "url": urls["news"],
         "description": cfg["site"]["definition"],
         "inLanguage": "en-US",
         "publisher": {"@id": "https://youdle.io/#organization"},
@@ -310,6 +311,22 @@ def build(base_path: Path, out_path: Path | None, overrides: dict | None = None)
     rendered = {name: render(text, ctx) for name, text in parts.items()}
 
     theme = base_path.read_text(encoding="utf-8")
+
+    # blogger/theme.original.xml predates the Youdle post chrome. Building from
+    # it would silently produce a theme that strips the newsletter signup and
+    # the back link from every article page.
+    for fragment, what in (
+        ("<b:includable id='youdleNewsletterSignup'>", "the post-page newsletter signup"),
+        ("youdle-back-nav", "the article back link"),
+    ):
+        if fragment not in theme:
+            raise SystemExit(
+                f"ERROR: {base_path.name} is missing {what}." + NEWLINE
+                + "       That is an older theme, not the one Blogger is serving."
+                + NEWLINE
+                + "       Re-download the live theme (Blogger -> Theme -> Backup)."
+            )
+
     if "youdleHomepage" in theme:
         raise SystemExit(
             "ERROR: the base theme already contains the homepage build.\n"
@@ -396,6 +413,12 @@ def build(base_path: Path, out_path: Path | None, overrides: dict | None = None)
     )
 
     validate(theme)
+    missing = [fragment for fragment in REQUIRED_FRAGMENTS if fragment not in theme]
+    if missing:
+        print("\nBUILD FAILED\n", file=sys.stderr)
+        for fragment in missing:
+            print(f"  - expected fragment missing from output: {fragment}", file=sys.stderr)
+        raise SystemExit(1)
     if out_path is not None:
         # newline="" keeps LF: write_text would translate to CRLF on Windows,
         # so the bytes on disk would differ from the string just validated.
@@ -411,8 +434,6 @@ def build(base_path: Path, out_path: Path | None, overrides: dict | None = None)
 ALLOWED_ENTITY = re.compile(r"&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);")
 CDATA = re.compile(r"<!\[CDATA\[.*?\]\]>", re.DOTALL)
 
-
-NEWLINE = chr(10)
 
 
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
@@ -434,6 +455,20 @@ def blank_comments(theme: str) -> str:
 
 
 VOID = ("br", "img", "input", "meta", "hr", "link", "source", "area", "col", "embed", "wbr")
+
+
+# Every one of these is a section the index cannot render without. They are
+# checked after a full build, not inside validate(), which also runs against
+# small synthetic documents in the test suite.
+REQUIRED_FRAGMENTS = (
+    "<b:includable id='youdleHomepage'>",
+    "name='yd-home'",
+    "class='yd-masthead'",
+    "class='yd-filters'",
+    "class='yd-list'",
+    "class='yd-footer'",
+    "id='the-youdle-brief'",
+)
 
 
 def validate(theme: str) -> None:
@@ -479,16 +514,6 @@ def validate(theme: str) -> None:
                 "'--' inside an XML comment"
             )
 
-    for required in (
-        "<b:includable id='youdleHomepage'>",
-        "name='yd-home'",
-        "class='yd-header'",
-        "class='yd-footer'",
-        "id='the-youdle-brief'",
-    ):
-        if required not in theme:
-            problems.append(f"expected fragment missing from output: {required}")
-
     if problems:
         print("\nBUILD FAILED\n", file=sys.stderr)
         for problem in problems[:40]:
@@ -518,17 +543,17 @@ def main() -> None:
     print(f"OK  {out}  ({size:,} bytes)")
     print("    XML is well-formed and entity-clean.")
 
+    # The index carries no theme-hosted photography: every image on the page is
+    # a post's own featured image, which Blogger resolves at render time. What
+    # is worth reporting instead is the category chips, since each one points at
+    # a raw Blogger label and a typo there yields a silently empty label page.
     cfg = json.loads((SRC / "config.json").read_text(encoding="utf-8"))
-    empty = [k for k, v in cfg["images"].items()
-             if not k.startswith("_") and not k.endswith("_alt") and not v]
-    empty += [f"community_posts.{k}" for k, v in cfg["community_posts"].items()
-              if not k.startswith("_") and not v.get("image")]
-    if empty:
-        print()
-        print(f"    NOTE: {len(empty)} image URL(s) are still empty, so the page will")
-        print("          render styled placeholders instead of photography:")
-        print("            " + ", ".join(empty))
-        print("          Set them in blogger/homepage/src/config.json and rebuild.")
+    chips = [v["blogger_label"] for k, v in cfg["categories"].items()
+             if not k.startswith("_")]
+    print()
+    print(f"    {len(chips)} category chip(s) -> labels: " + ", ".join(chips))
+    print("    Each must match a label on the blog exactly; Blogger label URLs")
+    print("    are case sensitive. See README 'Label hygiene'.")
 
     print()
     print("    Upload in Blogger: Theme -> ... -> Restore -> Upload")

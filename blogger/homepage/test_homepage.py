@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import html
 import json
 import os
 import re
@@ -38,7 +39,7 @@ import build_theme  # noqa: E402
 import preview  # noqa: E402
 
 REPO = HERE.parent.parent
-THEME_OUT = REPO / "theme-youdle-homepage.xml"
+THEME_OUT = REPO / "theme-youdle-homepage.xml"  # verified, never overwritten here
 
 BROWSERS = [
     os.environ.get("CHROME"),
@@ -48,29 +49,24 @@ BROWSERS = [
     "google-chrome", "chromium", "chromium-browser",
 ]
 
-# Copy the handoff fixes verbatim (section 4). Apostrophes are typographic.
-HANDOFF_COPY = [
-    "Real grocery info. Real shoppers. Real help.",
-    "See this before your next grocery run.",
-    "Recalls, price drops, new finds, and the grocery stories people are talking about.",
-    "See What\u2019s Happening",
-    "Join the Community",
-    "What everyone\u2019s talking about",
-    "Real shoppers. Real conversations.",
-    "See what shoppers are finding.",
-    "Deals, price changes, new products, and what\u2019s happening in stores.",
-    "Shop smarter",
-    "Your Grocery List, anywhere.",
-    "Build it. Share it. Take it with you.",
-    "Don\u2019t miss what matters.",
+# Every string the index is required to carry. Apostrophes are typographic.
+PAGE_COPY = [
+    "Youdle News",
+    "Grocery recalls, price moves and shopper finds \u2014 newest first.",
+    "All",
+    "Recalls",
+    "Grocery news",
+    "For grocers",
+    "Emergency prep",
+    "Prices & deals",
+    "Older articles",
     "Get The Youdle Brief.",
-    "The grocery stories worth knowing, delivered to your inbox.",
-    "Sign me up",
+    "Recalls, price moves and the week\u2019s grocery news, in one email.",
+    "Subscribe",
 ]
 
 ANALYTICS_EVENTS = [
-    "hero_news_click", "hero_community_click", "homepage_story_click",
-    "view_all_stories_click", "community_cta_click", "grocery_list_click",
+    "category_filter_click", "article_click", "pager_older_click",
     "newsletter_form_start", "newsletter_signup_success", "newsletter_signup_error",
 ]
 
@@ -112,6 +108,7 @@ def tooling_checks() -> None:
     # No stray control bytes in the sources: a literal 0x08 inside a regex
     # looks identical to \b in every editor and silently disables the guard.
     for name in ("build_theme.py", "preview.py", "bloggerlite.py", "README.md",
+                 "upload_assets.py",
                  "src/homepage.css", "src/homepage.js", "src/homepage.xml",
                  "src/config.json", "mock_posts.json"):
         text = (HERE / name).read_text(encoding="utf-8")
@@ -148,7 +145,9 @@ def tooling_checks() -> None:
 
 
 def static_checks() -> str:
-    theme = build_theme.build(preview.BASE_THEME, THEME_OUT)
+    # Build in memory: running the tests must not rewrite the committed
+    # artifact. Whether the file on disk is current is checked separately.
+    theme = build_theme.build(preview.BASE_THEME, None)
 
     try:
         xml.dom.minidom.parseString(theme.encode("utf-8"))
@@ -163,6 +162,11 @@ def static_checks() -> str:
         if not build_theme.ALLOWED_ENTITY.fullmatch(m.group(0))
     ]
     check("no illegal entities or bare ampersands", not bad, ", ".join(bad[:4]))
+
+    check("committed theme matches its sources",
+          THEME_OUT.exists() and THEME_OUT.read_text(encoding="utf-8") == theme,
+          "run build_theme.py -- the checked-in artifact is stale")
+    check("no Apps Script /exec endpoint in the theme", "AKfycb" not in theme)
 
     check("homepage includable present", "<b:includable id='youdleHomepage'>" in theme)
     check("stock post chrome untouched",
@@ -182,12 +186,21 @@ def static_checks() -> str:
     body = page.split("<body", 1)[1]
     check("exactly one <h1> in the document", body.count("<h1") == 1, f"found {body.count('<h1')}")
     check("no placeholder # links", 'href="#"' not in page)
-    check("has a banner landmark", 'class="yd-header" role="banner"' in page)
+    check("has a banner landmark", 'class="yd-masthead" role="banner"' in page)
     check("has a contentinfo landmark", 'class="yd-footer" role="contentinfo"' in page)
-    check("exactly three story cards",
-          page.count('<article class="yd-story">') == 3,
-          f'found {page.count("<article class=&quot;yd-story&quot;>")}')
-    check("fourth mock post excluded", "fourth-post" not in page)
+
+    # The index lists every post Blogger gave it. The old homepage sliced the
+    # feed to three cards; a news index that quietly drops articles is the bug
+    # this page exists to fix, so the count is asserted against the fixture.
+    mock_count = len(json.loads(
+        (HERE / "mock_posts.json").read_text(encoding="utf-8"))["posts"])
+    check("every post in the feed is listed",
+          page.count('<li class="yd-item">') == mock_count,
+          f'{page.count(chr(60) + "li class=" + chr(34) + "yd-item" + chr(34) + chr(62))} rows '
+          f'for {mock_count} posts')
+    check("the list is an ordered list", '<ol class="yd-list__items">' in page)
+    check("category chips present", page.count('class="yd-chip') >= 6)
+    check("pager renders when there is an older page", 'class="yd-pager__link' in page)
 
     # Strip markup first: the H1 is broken up by the accent-underline span, and
     # the newsletter headline by its two-line spans.
@@ -195,31 +208,49 @@ def static_checks() -> str:
     visible = re.sub(r"<style\b.*?</style>", " ", visible, flags=re.S)
     visible = re.sub(r"<[^>]+>", "", visible)
     visible = re.sub(r"\s+", " ", visible)
-    for text in HANDOFF_COPY:
-        check(f"handoff copy present: {text[:44]}", text in visible)
+    # Entities, so copy carrying an ampersand is compared as a reader sees it.
+    visible = html.unescape(visible)
+    for text in PAGE_COPY:
+        check(f"page copy present: {text[:44]}", text in visible)
 
     cfg = json.loads((HERE / "src" / "config.json").read_text(encoding="utf-8"))
     for key, url in cfg["urls"].items():
-        if key.startswith("_") or key in ("home", "grocery_today"):
+        if key.startswith("_") or key == "news":
             continue
         check(f"link map: {key}", url in page, url)
+
+    # Each chip points at a raw Blogger label; a typo yields a label page that
+    # is silently empty, which is indistinguishable from a quiet week.
+    for key, chip in cfg["categories"].items():
+        if key.startswith("_"):
+            continue
+        check(f"chip targets a label: {chip['label']}",
+              f'search/label/{chip["blogger_label"]}"' in page,
+              chip["blogger_label"])
 
     for event in ANALYTICS_EVENTS:
         check(f"analytics event wired: {event}", event in page)
 
-    # Accent Yellow is allowed in exactly one place.
     css = (HERE / "src" / "homepage.css").read_text(encoding="utf-8")
-    yellow = re.findall(r"#f2c100|--yd-yellow\)", css, re.I)
-    check("Accent Yellow used sparingly", len(yellow) <= 3, f"{len(yellow)} references")
-    check("Accent Yellow only on the hero stroke and focus ring",
-          "yd-underline__stroke" in css and css.count("var(--yd-yellow)") <= 2)
+
+    # '.yd-home a { color: inherit }' is (0,1,1) and silently outranks any
+    # component rule that colours an anchor. The active chip was invisible that
+    # way -- dark text on the dark pill -- so every such rule stays scoped.
+    anchor_rules = re.findall(
+        r"^(\.yd-(?:chip|item__chip|item__title a|pager__link|footer__links a)[^{,]*),?$",
+        css, re.M)
+    check("anchor-colouring rules outrank the link reset",
+          not anchor_rules,
+          ", ".join(r.strip() for r in anchor_rules[:3]))
 
     imgs = re.findall(r"<img\b[^>]*>", page)
     check("every image has alt text", all("alt=" in i for i in imgs), f"{len(imgs)} images")
     check("every image declares width and height",
           all("width=" in i and "height=" in i for i in imgs))
+    below_fold = imgs[2:]
     check("below-fold images lazy-load",
-          all("loading=\"lazy\"" in i for i in imgs if "fetchpriority" not in i))
+          all('loading="lazy"' in i for i in below_fold),
+          f"{len(below_fold)} below-fold images")
 
     ld = re.findall(r'<script type="application/ld\+json">(.*?)</script>', page, re.S)
     types = []
@@ -234,13 +265,12 @@ def static_checks() -> str:
     check("no SearchAction", "SearchAction" not in page)
 
     check("fonts load with display=swap", "display=swap" in page)
-    check("no image placeholders left when URLs are configured",
-          'class="yd-media-fallback"' not in page)
 
-    # And the graceful path when images are not hosted yet.
+    # The index hosts no photography of its own: every image is a post's
+    # featured image, so a post without one must still render a tidy row.
     no_images = preview.render("mock", "none")
-    check("renders placeholders, not broken images, with no image URLs",
-          'class="yd-media-fallback"' in no_images and 'src=""' not in no_images)
+    check("a post with no image renders a placeholder, not a broken image",
+          'class="yd-item__thumb-fallback"' in no_images and 'src=""' not in no_images)
 
     return page
 
@@ -262,26 +292,44 @@ BROWSER_JS = r"""
     events.push(e.detail.name + ":" + (e.detail.params.placement || ""));
   });
 
-  var toggle = document.querySelector("[data-yd-menu-toggle]");
-  var drawer = document.querySelector("[data-yd-menu]");
-  ok("menu starts collapsed", toggle.getAttribute("aria-expanded") === "false" && drawer.hidden);
-  ok("aria-controls resolves", document.getElementById(toggle.getAttribute("aria-controls")) === drawer);
-  toggle.click();
-  ok("menu opens", toggle.getAttribute("aria-expanded") === "true" && !drawer.hidden);
-  ok("focus moves into the menu", drawer.contains(document.activeElement));
-  var tr = toggle.getBoundingClientRect(), dr = drawer.getBoundingClientRect();
-  ok("menu is right-aligned to the button, not the viewport",
-     Math.abs(dr.right - tr.right) < 1.5,
-     "drawer right " + Math.round(dr.right) + " vs button right " + Math.round(tr.right));
-  ok("menu hangs directly below the button",
-     dr.top >= tr.bottom && dr.top - tr.bottom < 24,
-     Math.round(dr.top - tr.bottom) + "px below");
-  document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-  ok("escape closes the menu", toggle.getAttribute("aria-expanded") === "false" && drawer.hidden);
-  ok("focus returns to the toggle", document.activeElement === toggle);
-  toggle.click();
-  document.body.click();
-  ok("clicking outside closes the menu", toggle.getAttribute("aria-expanded") === "false");
+  var rows = [].slice.call(document.querySelectorAll(".yd-item"));
+  ok("the list renders rows", rows.length > 0, rows.length + " rows");
+
+  var tops = rows.map(function (r) { return Math.round(r.getBoundingClientRect().top); });
+  var ordered = tops.every(function (t, i) { return i === 0 || t >= tops[i - 1]; });
+  ok("rows stack in document order", ordered, tops.slice(0, 4).join(","));
+
+  var times = [].slice.call(document.querySelectorAll(".yd-item time[datetime]"))
+    .map(function (t) { return t.getAttribute("datetime"); });
+  var newestFirst = times.every(function (t, i) { return i === 0 || t <= times[i - 1]; });
+  ok("articles are listed newest first", newestFirst, times.slice(0, 3).join(" "));
+
+  var chips = [].slice.call(document.querySelectorAll(".yd-chip"));
+  ok("every chip is a real link", chips.every(function (c) {
+    var href = c.getAttribute("href") || "";
+    return href.length > 1 && href.indexOf("#") !== 0;
+  }));
+
+  var active = document.querySelector(".yd-chip--active");
+  var activeStyle = getComputedStyle(active);
+  function luminance(rgb) {
+    var m = rgb.match(/\d+/g) || [255, 255, 255];
+    return (0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255;
+  }
+  // Regression guard: '.yd-home a { color: inherit }' outranks a bare
+  // '.yd-chip--active', which rendered this chip as dark text on a dark pill.
+  ok("the active chip's label contrasts with its fill",
+     Math.abs(luminance(activeStyle.color) - luminance(activeStyle.backgroundColor)) > 0.4,
+     activeStyle.color + " on " + activeStyle.backgroundColor);
+
+  var pager = document.querySelector(".yd-pager__link--older");
+  ok("the older-articles link is present and right-aligned",
+     !!pager && pager.getBoundingClientRect().right > window.innerWidth / 2);
+
+  var firstLink = document.querySelector(".yd-item__title a");
+  firstLink.click();
+  ok("an article click reports its position",
+     events.join(",").indexOf("article_click:news_index") !== -1, events.join(","));
 
   var email = document.getElementById("yd-brief-email");
   var status = document.querySelector("[data-yd-newsletter-status]");
@@ -301,9 +349,9 @@ BROWSER_JS = r"""
   email.dispatchEvent(new Event("input", { bubbles: true }));
   ok("aria-invalid clears on edit", email.getAttribute("aria-invalid") === null);
 
-  events.length = 0;
-  document.querySelector('[data-yd-event="hero_news_click"]').click();
-  ok("hero CTA reports its placement", events.indexOf("hero_news_click:homepage_hero") !== -1);
+  ok("the masthead title is the document's only h1",
+     document.querySelectorAll("h1").length === 1 &&
+     document.querySelector("h1").classList.contains("yd-masthead__title"));
 
   var chrome = [".centered-top-container", ".hero-image", "#footer", ".sidebar-container"];
   var shown = chrome.filter(function (s) {
@@ -317,21 +365,30 @@ BROWSER_JS = r"""
      Math.abs(main.getBoundingClientRect().width - document.documentElement.clientWidth) < 2,
      main.getBoundingClientRect().width + " vs " + document.documentElement.clientWidth);
 
+  // Regression guard for CSS specificity: the stock theme styles buttons, and
+  // a bare .yd-btn--primary lost its fill to it once.
   ok("primary button keeps its fill",
-     getComputedStyle(document.querySelector(".yd-btn--primary")).backgroundColor === "rgb(23, 62, 47)",
+     getComputedStyle(document.querySelector(".yd-btn--primary")).backgroundColor === "rgb(245, 180, 60)",
      getComputedStyle(document.querySelector(".yd-btn--primary")).backgroundColor);
 
-  var h1 = document.querySelector(".yd-hero__title");
-  ok("H1 renders at display size, in the display face",
-     parseFloat(getComputedStyle(h1).fontSize) > 38 &&
-     getComputedStyle(h1).fontFamily.indexOf("Newsreader") === 0,
-     getComputedStyle(h1).fontSize + " " + getComputedStyle(h1).fontFamily);
+  var h1 = document.querySelector(".yd-masthead__title");
+  // A masthead, not a hero: the index leads with articles, so the title is
+  // sized to identify the page rather than to fill the screen. The guard is
+  // that it stays in the display face and stays larger than a headline in the
+  // list below it.
+  var leadTitle = document.querySelector(".yd-item__title");
+  ok("masthead title is in the display face, above the list's headlines",
+     getComputedStyle(h1).fontFamily.indexOf("Newsreader") === 0 &&
+     parseFloat(getComputedStyle(h1).fontSize) >
+       parseFloat(getComputedStyle(leadTitle).fontSize),
+     getComputedStyle(h1).fontSize + " vs " + getComputedStyle(leadTitle).fontSize +
+     " " + getComputedStyle(h1).fontFamily);
 
   ok("no horizontal overflow",
      document.documentElement.scrollWidth <= document.documentElement.clientWidth,
      document.documentElement.scrollWidth + " > " + document.documentElement.clientWidth);
 
-  var deks = [].slice.call(document.querySelectorAll(".yd-story__dek"));
+  var deks = [].slice.call(document.querySelectorAll(".yd-item__dek"));
   ok("leftover post chrome stripped from deks",
      deks.every(function (d) { return d.textContent.indexOf("Back to Youdle") === -1; }),
      deks.map(function (d) { return d.textContent.slice(0, 24); }).join(" / "));

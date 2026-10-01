@@ -356,6 +356,12 @@ def build_scope(posts: tuple) -> dict:
             "url": bl.Str(HOMEPAGE_URL),
         },
         "posts": list(posts),
+        # Blogger supplies these on a paginated index. The newest page has no
+        # newer page, which is the state the preview models: an empty string is
+        # falsy, so the pager renders the "Older articles" link alone and the
+        # :only-child rule that right-aligns it is exercised.
+        "newerPageUrl": bl.Str(""),
+        "olderPageUrl": bl.Str(HOMEPAGE_URL + "search?updated-max=2026-09-01T00:00:00-05:00"),
     }
 
 

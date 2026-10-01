@@ -1,13 +1,13 @@
 /* ==========================================================================
-   Youdle homepage — news.youdle.io
+   Youdle news index — news.youdle.io
    Dependency-free. Runs identically in the Blogger theme and in preview.py.
 
    Responsibilities
-     1. Secondary (hamburger) menu: open/close, focus + Escape handling
-     2. Analytics events from §8 of the handoff, with placement/source data
+     1. Analytics events, with placement/source data
+     2. Stripping the "Back to Youdle" chrome many post bodies open with, which
+        would otherwise lead every snippet in the list
      3. The Youdle Brief signup: inline success/error states via the Mailchimp
         JSONP endpoint, degrading to a plain form POST when JS is unavailable
-     4. Header "Subscribe" CTA scrolls to the signup band and focuses the field
 
    No essential content depends on this file; the page is fully readable and
    navigable with JavaScript disabled.
@@ -85,66 +85,13 @@
 
   var CHROME_PREFIX = /^\s*(?:←|<-)?\s*Back to (?:Youdle|News Blog)\s*/i;
 
-  Array.prototype.forEach.call(root.querySelectorAll(".yd-story__dek"), function (dek) {
+  Array.prototype.forEach.call(root.querySelectorAll(".yd-item__dek"), function (dek) {
     var text = dek.textContent;
     if (CHROME_PREFIX.test(text)) {
       dek.textContent = text.replace(CHROME_PREFIX, "");
     }
   });
 
-  /* ---------------------------------------------------------------------
-     Secondary menu
-     --------------------------------------------------------------------- */
-
-  var toggle = root.querySelector("[data-yd-menu-toggle]");
-  var drawer = root.querySelector("[data-yd-menu]");
-
-  if (toggle && drawer) {
-    var setMenu = function (open) {
-      toggle.setAttribute("aria-expanded", open ? "true" : "false");
-      drawer.hidden = !open;
-    };
-
-    setMenu(false);
-
-    toggle.addEventListener("click", function () {
-      var open = toggle.getAttribute("aria-expanded") === "true";
-      setMenu(!open);
-      if (!open) {
-        var first = drawer.querySelector("a");
-        if (first) {
-          first.focus();
-        }
-      }
-    });
-
-    document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && toggle.getAttribute("aria-expanded") === "true") {
-        setMenu(false);
-        toggle.focus();
-      }
-    });
-
-    document.addEventListener("click", function (event) {
-      if (toggle.getAttribute("aria-expanded") !== "true") {
-        return;
-      }
-      if (!drawer.contains(event.target) && !toggle.contains(event.target)) {
-        setMenu(false);
-      }
-    });
-
-    // Closing on focus leaving the menu keeps keyboard and pointer in sync.
-    drawer.addEventListener("focusout", function (event) {
-      if (
-        toggle.getAttribute("aria-expanded") === "true" &&
-        !drawer.contains(event.relatedTarget) &&
-        event.relatedTarget !== toggle
-      ) {
-        setMenu(false);
-      }
-    });
-  }
 
   /* ---------------------------------------------------------------------
      Header CTA -> signup band
@@ -152,29 +99,6 @@
 
   var emailField = root.querySelector("#yd-brief-email");
 
-  root.addEventListener("click", function (event) {
-    var jump = event.target.closest("[data-yd-scroll-to-signup]");
-    if (!jump || !emailField) {
-      return;
-    }
-    event.preventDefault();
-
-    var band = document.getElementById("the-youdle-brief");
-    if (band) {
-      var reduce =
-        window.matchMedia &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      band.scrollIntoView({
-        behavior: reduce ? "auto" : "smooth",
-        block: "center",
-      });
-    }
-
-    // Focus after the scroll is under way so the browser does not fight it.
-    window.setTimeout(function () {
-      emailField.focus({ preventScroll: true });
-    }, 350);
-  });
 
   /* ---------------------------------------------------------------------
      The Youdle Brief signup
