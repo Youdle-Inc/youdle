@@ -2901,10 +2901,31 @@ z-index:32
 }
 
 /* --------------------------------------------------------------------------
+   Two columns: the articles, and a sidebar holding the signup
+   -------------------------------------------------------------------------- */
+.yd-layout {
+  align-items: start;
+  display: grid;
+  gap: 40px;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  padding-bottom: 48px;
+}
+
+.yd-layout__main {
+  min-width: 0;
+}
+
+.yd-side__inner {
+  /* Clears the sticky chip row, which is 57px tall and sits at top: 0. */
+  position: sticky;
+  top: 73px;
+}
+
+/* --------------------------------------------------------------------------
    The list
    -------------------------------------------------------------------------- */
 .yd-list {
-  padding: 8px 0 40px;
+  padding: 8px 0 0;
 }
 
 .yd-list__items {
@@ -3062,25 +3083,18 @@ z-index:32
 }
 
 /* --------------------------------------------------------------------------
-   Newsletter
+   Newsletter card
    -------------------------------------------------------------------------- */
 .yd-brief {
   background: var(--yd-sage);
-  padding: 40px 0;
-}
-
-.yd-brief__inner {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  justify-content: space-between;
+  border-radius: 14px;
+  padding: 24px;
 }
 
 .yd-brief__title {
   color: var(--yd-ink);
   font-family: Newsreader, Georgia, serif;
-  font-size: 26px;
+  font-size: 22px;
   font-weight: 700;
   line-height: 1.2;
   margin: 0;
@@ -3088,16 +3102,16 @@ z-index:32
 
 .yd-brief__lede {
   color: var(--yd-muted);
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1.5;
-  margin: 6px 0 0;
+  margin: 8px 0 0;
 }
 
 .yd-brief__form {
-  align-items: center;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 10px;
+  margin-top: 16px;
   position: relative;
 }
 
@@ -3108,9 +3122,9 @@ z-index:32
   color: var(--yd-ink);
   font-family: inherit;
   font-size: 15px;
-  height: 48px;
-  min-width: 260px;
+  height: 46px;
   padding: 0 14px;
+  width: 100%;
 }
 
 .yd-brief__input[aria-invalid='true'] {
@@ -3132,10 +3146,11 @@ z-index:32
   font-size: 15px;
   font-weight: 600;
   gap: 8px;
-  height: 48px;
+  height: 46px;
   justify-content: center;
   padding: 0 22px;
   text-decoration: none;
+  width: 100%;
 }
 
 .yd-btn--primary {
@@ -3148,7 +3163,6 @@ z-index:32
 }
 
 .yd-brief__status {
-  flex-basis: 100%;
   font-size: 14px;
   margin: 0;
   min-height: 1em;
@@ -3202,6 +3216,19 @@ z-index:32
 /* --------------------------------------------------------------------------
    Responsive
    -------------------------------------------------------------------------- */
+/* One column below 900px: the signup stacks under the list, where it was
+   before, and stops being sticky so it cannot cover the articles. */
+@media (max-width: 900px) {
+  .yd-layout {
+    gap: 32px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .yd-side__inner {
+    position: static;
+  }
+}
+
 @media (max-width: 760px) {
   .yd-masthead__inner {
     align-items: flex-start;
@@ -3235,20 +3262,6 @@ z-index:32
     display: none;
   }
 
-  .yd-brief__inner {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .yd-brief__form {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .yd-brief__input {
-    min-width: 0;
-    width: 100%;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -3651,9 +3664,10 @@ z-index:32
     </div>
   </nav>
 
+  <div class='yd-container yd-layout'>
+    <div class='yd-layout__main'>
   <b:if cond='data:posts.any'>
     <section aria-labelledby='yd-list-heading' class='yd-list'>
-      <div class='yd-container'>
         <h2 class='yd-visually-hidden' id='yd-list-heading'>Articles</h2>
 
         <ol class='yd-list__items'>
@@ -3723,26 +3737,25 @@ z-index:32
           with it present.
         </b:comment>
         <b:include name='postPagination'/>
-      </div>
     </section>
   <b:else/>
     <section class='yd-list'>
-      <div class='yd-container'>
-        <p class='yd-empty'>No articles have been published yet.</p>
-      </div>
+      <p class='yd-empty'>No articles have been published yet.</p>
     </section>
   </b:if>
+    </div>
 
-  <b:comment>
-    The newsletter signup, kept from the previous page. Same Mailchimp list and
-    the same honeypot field name, so existing subscribers are unaffected.
-  </b:comment>
-  <section aria-labelledby='yd-brief-title' class='yd-brief' id='the-youdle-brief'>
-    <div class='yd-container yd-brief__inner'>
-      <div class='yd-brief__copy'>
+    <b:comment>
+      The newsletter signup, kept from the previous page. Same Mailchimp list
+      and the same honeypot field name, so existing subscribers are unaffected.
+      It sits in the sidebar rather than below the list, so it is on screen
+      while someone is still reading headlines; below 900px there is no second
+      column and it stacks under the list, where it was before.
+    </b:comment>
+    <aside aria-labelledby='yd-brief-title' class='yd-side'>
+      <div class='yd-side__inner yd-brief' id='the-youdle-brief'>
         <h2 class='yd-brief__title' id='yd-brief-title'>Get The Youdle Brief.</h2>
         <p class='yd-brief__lede'>Recalls, price moves and the week&#8217;s grocery news, in one email.</p>
-      </div>
       <form class='yd-brief__form' data-yd-newsletter='true' method='post' novalidate='novalidate' target='_blank' action='https://ProductSightings.us10.list-manage.com/subscribe/post?u=a8e33153b11c8b750221ce4aa&amp;id=77d558bfda&amp;f_id=005547e4f0'>
         <label class='yd-visually-hidden' for='yd-brief-email'>Email address</label>
         <input autocomplete='email' class='yd-brief__input' id='yd-brief-email' name='EMAIL' placeholder='you@example.com' required='required' type='email'/>
@@ -3753,8 +3766,9 @@ z-index:32
         <button class='yd-btn yd-btn--primary' data-yd-event='newsletter_submit' data-yd-newsletter-submit='true' data-yd-placement='news_index' type='submit'>Subscribe</button>
         <p aria-live='polite' class='yd-brief__status' data-yd-newsletter-status='true'/>
       </form>
-    </div>
-  </section>
+      </div>
+    </aside>
+  </div>
 </b:includable>
                 <b:includable id='aboutPostAuthor'>
   <div class='author-name'>

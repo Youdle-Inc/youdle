@@ -45,10 +45,11 @@ No dependencies beyond the Python standard library.
 ```
 masthead          Youdle wordmark, "Youdle News", one line of description
 chips             All · Recalls · Grocery news · For grocers · Emergency prep · Prices & deals
-list              every post Blogger put on this page, newest first:
+list              every post Blogger put on this page, newest first, in a
+                  720px column beside a 320px sidebar:
                     thumbnail · category · date · headline · snippet
-pager             Newer / Older articles, Blogger's own index paging
-newsletter        The Youdle Brief, same Mailchimp list as before
+pager             Newer / Older posts, Blogger's own index paging
+sidebar           The Youdle Brief signup, sticky, same Mailchimp list as before
 footer            one line: copyright, Youdle, Privacy, Terms
 ```
 
@@ -58,6 +59,10 @@ Three rules the list follows, each of which has a test:
   label, or with a label the chips do not name, still appears — it simply has
   no category shown. Six posts on the live blog have no label at all.
 - **Newest first**, by `data:post.date`, which is Blogger's own index order.
+- **The signup stays on screen.** It sits in a sticky sidebar beside the list
+  rather than below it, so it is visible while someone is still reading
+  headlines. Below 900px there is no second column and it stacks under the
+  list, where it was before.
 - **A post without a featured image** gets a styled placeholder tile, not a
   broken image. The index hosts no photography of its own; every image on it is
   a post's own.

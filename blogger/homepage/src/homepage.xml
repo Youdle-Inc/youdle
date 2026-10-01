@@ -51,9 +51,10 @@
     </div>
   </nav>
 
+  <div class='yd-container yd-layout'>
+    <div class='yd-layout__main'>
   <b:if cond='data:posts.any'>
     <section aria-labelledby='yd-list-heading' class='yd-list'>
-      <div class='yd-container'>
         <h2 class='yd-visually-hidden' id='yd-list-heading'>Articles</h2>
 
         <ol class='yd-list__items'>
@@ -123,26 +124,25 @@
           with it present.
         </b:comment>
         <b:include name='postPagination'/>
-      </div>
     </section>
   <b:else/>
     <section class='yd-list'>
-      <div class='yd-container'>
-        <p class='yd-empty'>No articles have been published yet.</p>
-      </div>
+      <p class='yd-empty'>No articles have been published yet.</p>
     </section>
   </b:if>
+    </div>
 
-  <b:comment>
-    The newsletter signup, kept from the previous page. Same Mailchimp list and
-    the same honeypot field name, so existing subscribers are unaffected.
-  </b:comment>
-  <section aria-labelledby='yd-brief-title' class='yd-brief' id='the-youdle-brief'>
-    <div class='yd-container yd-brief__inner'>
-      <div class='yd-brief__copy'>
+    <b:comment>
+      The newsletter signup, kept from the previous page. Same Mailchimp list
+      and the same honeypot field name, so existing subscribers are unaffected.
+      It sits in the sidebar rather than below the list, so it is on screen
+      while someone is still reading headlines; below 900px there is no second
+      column and it stacks under the list, where it was before.
+    </b:comment>
+    <aside aria-labelledby='yd-brief-title' class='yd-side'>
+      <div class='yd-side__inner yd-brief' id='the-youdle-brief'>
         <h2 class='yd-brief__title' id='yd-brief-title'>Get {{site.brief_name}}.</h2>
         <p class='yd-brief__lede'>Recalls, price moves and the week&#8217;s grocery news, in one email.</p>
-      </div>
       <form class='yd-brief__form' data-yd-newsletter='true' method='post' novalidate='novalidate' target='_blank' action='{{newsletter.action}}'>
         <label class='yd-visually-hidden' for='yd-brief-email'>Email address</label>
         <input autocomplete='email' class='yd-brief__input' id='yd-brief-email' name='EMAIL' placeholder='you@example.com' required='required' type='email'/>
@@ -153,8 +153,9 @@
         <button class='yd-btn yd-btn--primary' data-yd-event='newsletter_submit' data-yd-newsletter-submit='true' data-yd-placement='news_index' type='submit'>Subscribe</button>
         <p aria-live='polite' class='yd-brief__status' data-yd-newsletter-status='true'/>
       </form>
-    </div>
-  </section>
+      </div>
+    </aside>
+  </div>
 
 @@PART:footer@@
     <b:if cond='data:view.isHomepage'>
