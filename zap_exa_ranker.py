@@ -67,6 +67,77 @@ TRACKING_QUERY_KEYS = {
 
 # Domains for filtering
 RECALL_DOMAINS = ["fda.gov", "fsis.usda.gov"]
+
+# fda.gov is a whole agency: devices, drugs, veterinary medicine, vaccines and
+# tobacco share the domain with food. A domain lock cannot separate them, and
+# a title test cannot either -- "Class 1 Device Recall" satisfies any recall
+# keyword. One live run offered four records of the same spinal surgery tray
+# as "food safety alerts", so the product area is decided by path.
+NON_FOOD_RECALL_PATH_MARKERS = (
+    "/scripts/cdrh/",
+    "/medical-devices/",
+    "/animal-veterinary/",
+    "/drugs/",
+    "/vaccines-blood-biologics/",
+    "/tobacco-products/",
+    "/advisory-committees/",
+    "/regulatory-information/",
+    "/careers/",
+)
+
+FOOD_RECALL_PATH_MARKERS = (
+    "/safety/recalls-market-withdrawals-safety-alerts/",
+    "/food/",
+    "/recalls-alerts/",
+    "/recalls-and-public-health-alerts/",
+)
+
+# Section fronts and search pages. These carry no single recall, so a post
+# written from one describes whatever happened to be listed that day. The
+# published Sep 15 roundup cited the first of these as its source.
+RECALL_LISTING_PATHS = frozenset({
+    "/safety/recalls-market-withdrawals-safety-alerts",
+    "/food/outbreaks-foodborne-illness",
+    "/food/recalls-outbreaks-emergencies",
+    "/recalls",
+    "/recalls-alerts",
+    "/recalls-and-public-health-alerts",
+    "/es/recalls",
+})
+
+# Titles that name a non-food product even on a food-looking path, since the
+# FDA recalls section carries every product area it regulates.
+NON_FOOD_TITLE_MARKERS = (
+    "device recall",
+    "class 1 device",
+    "class 2 device",
+    "veterinary",
+)
+
+# A second route to "this is about food", so the path list above does not have
+# to enumerate every section an agency might publish a food recall under. A
+# missed food recall is a thinner roundup; a missed non-food one is a grocery
+# newsletter reporting on surgical equipment, so the paths stay narrow and
+# this stays specific.
+FOOD_TITLE_MARKERS = (
+    "food",
+    "salmonella",
+    "listeria",
+    "e. coli",
+    "e.coli",
+    "undeclared",
+    "allergen",
+    "foodborne",
+    "produce",
+    "meat",
+    "poultry",
+    "beef",
+    "chicken",
+    "pork",
+    "seafood",
+    "dairy",
+    "infant formula",
+)
 EXCLUDE_DOMAINS_FOR_SHOPPERS_SAFETY = ["fda.gov", "fsis.usda.gov", "usda.gov"]
 
 # US-based domains for shoppers content (major US grocery/food news sources).
@@ -414,17 +485,78 @@ def is_recall_or_food_safety_article(item):
     return any(keyword in combined for keyword in RECALL_SIGNAL_KEYWORDS)
 
 
+def _recall_url_parts(url):
+    """Return (path, query) lowercased, or None when the URL is unusable."""
+    try:
+        parts = urlsplit(str(url or ""))
+    except ValueError:
+        return None
+    path = (parts.path or "").lower().rstrip("/")
+    if not path:
+        return None
+    return path, parts.query
+
+
+def is_specific_recall_page(item):
+    """Reject section fronts, search results and faceted filter URLs."""
+    parts = _recall_url_parts(item.get("link"))
+    if parts is None:
+        return False
+    path, query = parts
+    # A single recall is never behind a query string; "?keywords=listeria" and
+    # "?f[0]=company%3A432" are a site search and a filter view.
+    if query:
+        return False
+    return path not in RECALL_LISTING_PATHS
+
+
+def is_food_recall_page(item):
+    """Require a food product area, by path first and then by title."""
+    parts = _recall_url_parts(item.get("link"))
+    if parts is None:
+        return False
+    path, _ = parts
+
+    title = html_to_text(item.get("title", "")).lower()
+
+    if any(marker in path + "/" for marker in NON_FOOD_RECALL_PATH_MARKERS):
+        return False
+    if any(marker in title for marker in NON_FOOD_TITLE_MARKERS):
+        return False
+
+    return (
+        any(marker in path + "/" for marker in FOOD_RECALL_PATH_MARKERS)
+        or any(marker in title for marker in FOOD_TITLE_MARKERS)
+    )
+
+
+def recall_signature(item):
+    """Collapse one recall that an agency filed as several records.
+
+    FDA's device database returned ids 219960-219963 for a single product;
+    counting those as four alerts would inflate a roundup of two real events.
+    """
+    title = html_to_text(item.get("title", "")).lower()
+    title = re.sub(r"[^a-z0-9\s]", " ", title)
+    title = re.sub(r"\b\d+\b", " ", title)
+    return re.sub(r"\s+", " ", title).strip()
+
+
 def is_valid_recall_source(item):
-    """Require an actual alert/recall page, not any page returned by a domain query."""
+    """Require a specific food recall page, not any page the domain returned."""
     if is_low_quality_article(item):
+        return False
+    if not is_specific_recall_page(item):
+        return False
+    if not is_food_recall_page(item):
         return False
 
     title = html_to_text(item.get("title", "")).lower()
-    url = str(item.get("link", "")).lower()
+    path = _recall_url_parts(item.get("link"))[0]
     return (
         any(keyword in title for keyword in RECALL_SIGNAL_KEYWORDS)
-        or "/recall" in url
-        or "/outbreak" in url
+        or "/recall" in path
+        or "/outbreak" in path
     )
 
 
@@ -784,7 +916,9 @@ def main(input_data):
     seen_recall = set()
     for item in recall_only_items:
         if within_days(item["pubDate"], recent_days):
-            key = (item["link"], item["title"].lower())
+            # Keyed on the normalized title alone: the same recall filed under
+            # several record ids has several URLs but one headline.
+            key = recall_signature(item) or item["link"]
             if key not in seen_recall:
                 seen_recall.add(key)
                 recall_items.append(item)

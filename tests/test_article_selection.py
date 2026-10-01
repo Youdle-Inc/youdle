@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from zap_exa_ranker import main as rank_articles
 
 
@@ -298,3 +300,71 @@ def test_ranked_pool_excludes_advertorials_from_curated_domains():
     links = [item["link"] for item in result["shoppers_items"]]
     assert len(links) == 1
     assert "press-release" not in links[0]
+
+
+# Real URLs the recall branch has returned, including ones it published from.
+REAL_RECALL_CANDIDATES = [
+    ("https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/"
+     "foods-alive-recalls-organic-moringa-leaf-powder-because-possible-health-risk",
+     "Foods Alive Recalls Organic Moringa Leaf Powder", True),
+    ("https://www.fda.gov/food/outbreaks-foodborne-illness/"
+     "outbreak-investigation-e-coli-o145h28-frozen-blueberries-july-2026",
+     "Outbreak Investigation of E. coli: Frozen Blueberries", True),
+    ("https://www.fsis.usda.gov/recalls-alerts/star-meat-delivery-inc--recalls-raw-pork-beef",
+     "Star Meat Delivery Inc. Recalls Raw Pork and Beef Products", True),
+    # Section front: published as the Sep 15 roundup's source.
+    ("https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts",
+     "Recalls, Market Withdrawals, & Safety Alerts", False),
+    ("https://www.fsis.usda.gov/recalls?keywords=listeria", "Recalls | FSIS", False),
+    ("https://www.fsis.usda.gov/es/node/1430?f%5B0%5D=company%3A432", "Retiros", False),
+    # A staff profile that became a published food-safety post's source link.
+    ("https://www.fsis.usda.gov/careers/who-works-us/csi-cynthia-morris-prepares-certainty-change",
+     "CSI Cynthia Morris Prepares for Certainty of Change", False),
+    ("https://www.fda.gov/scripts/cdrh/cfdocs/cfres/res.cfm?id=219963",
+     "Class 1 Device Recall  BDSpinal Tray", False),
+    ("https://www.fda.gov/animal-veterinary/cvm-updates/fda-issues-warning-letters-fungal",
+     "FDA Issues Warning Letters Following Fungal Contamination in a Veterinary Product", False),
+    ("https://www.fda.gov/food/hfp-constituent-updates/fda-reminds-food-facilities-renewal",
+     "FDA Reminds Food Facilities of Biennial Renewal Requirements", False),
+]
+
+
+@pytest.mark.parametrize("link,title,expected", REAL_RECALL_CANDIDATES)
+def test_recall_source_validation_against_real_pages(link, title, expected):
+    from zap_exa_ranker import is_valid_recall_source
+
+    assert is_valid_recall_source({"link": link, "title": title}) is expected
+
+
+def test_one_recall_filed_as_several_records_counts_once():
+    """FDA returned ids 219960-219963 for a single spinal tray recall."""
+    recent = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+    food_recall = _exa_result(
+        "Panorama Produce Recalls Mangoes Due To Possible Salmonella Contamination",
+        "https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/panorama-mangoes",
+        "The recalled mangoes may be contaminated.",
+        recent,
+    )
+    duplicates = [
+        _exa_result(
+            "Hill Country Foods Recalls Frozen Spinach, 4 Lots",
+            f"https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts/hill-country-{i}",
+            "An undeclared allergen recall filed under several record ids.",
+            recent,
+        )
+        for i in range(4)
+    ]
+
+    def fake_search(_client, query_config, _start, _end):
+        category = query_config["category"]
+        results = [food_recall] + duplicates if category == "RECALL" else []
+        return results, category, query_config.get("subcategory")
+
+    with patch("zap_exa_ranker.init_exa_client", return_value=object()), patch(
+        "zap_exa_ranker.execute_search", side_effect=fake_search
+    ):
+        result = rank_articles({"batch_size": 10, "search_days_back": 7})
+
+    titles = [item["title"] for item in result["recall_items"]]
+    assert len(titles) == 2, titles
+    assert sum("Frozen Spinach" in t for t in titles) == 1
