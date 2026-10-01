@@ -20,6 +20,12 @@ import re
 logger = logging.getLogger(__name__)
 
 DEFAULT_OPENAI_MODEL = "gpt-4o"
+
+# Naming the subject of an article's photograph is a one-line reading task over
+# text the pipeline already holds, so it runs on the cheapest current model
+# rather than the article model: about 420 tokens in and 25 out per post, which
+# is roughly four cents a year against $63 of images.
+IMAGE_SUBJECT_MODEL = os.getenv("IMAGE_SUBJECT_MODEL", "gpt-4o-mini").strip()
 OPENAI_MODEL_PATTERN = re.compile(r"^(gpt|o[0-9])[A-Za-z0-9._-]*$")
 
 # Total context window (input + output) per model, in tokens.

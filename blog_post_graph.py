@@ -27,7 +27,11 @@ from zap_exa_ranker import (
     main as search_articles_exa,
     truncate_source_text,
 )
-from langchain_blog_agent import BlogPostGenerator, create_openai_chat_model
+from langchain_blog_agent import (
+    BlogPostGenerator,
+    create_openai_chat_model,
+    describe_image_subject,
+)
 from ai_models import get_default_openai_model
 from image_generator import get_image_generator
 from supabase_storage import get_supabase_client, get_supabase_storage
@@ -710,7 +714,20 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
                 })
                 continue
 
-            image_result = image_generator.generate_image_for_article(article)
+            # The model that wrote the post names what its photograph should
+            # show. The keyword table underneath is still there for when this
+            # answers badly or not at all; it reads a fixed list and cannot
+            # know that "Cheez-It Protein" is a cracker.
+            subject = describe_image_subject(
+                article.get("title", ""),
+                article.get("content") or article.get("description") or "",
+            )
+            if subject:
+                logs.append(f"  • subject: {subject[:60]}")
+
+            image_result = image_generator.generate_image_for_article(
+                article, theme_override=subject
+            )
             image_result["post_id"] = post.get("post_id")
             image_result["is_recall"] = False
 

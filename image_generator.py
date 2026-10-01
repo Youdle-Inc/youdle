@@ -36,6 +36,9 @@ IMAGE_PROMPT_TEMPLATE = """Create a unique, eye-catching image for a grocery new
 
 Theme/Context: {theme}
 
+Render that subject with unbranded packaging and no logos or wordmarks, even if
+the line above names a brand.
+
 IMPORTANT — Make each image DISTINCT and specific to the article topic:
 - If the article is about coffee prices → show coffee beans, a coffee cup, or coffee bags
 - If it's about produce → show colorful fresh fruits and vegetables
@@ -220,13 +223,24 @@ class ImageGenerator:
                 "image_data": None
             }
 
-    def generate_image_for_article(self, article: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate an image for an article."""
-        # Issue #859 Fix: Extract meaningful theme from article content, not just category
+    def generate_image_for_article(
+        self,
+        article: Dict[str, Any],
+        theme_override: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Generate an image for an article.
+
+        ``theme_override`` is the subject named by the model that read the
+        article. The keyword table is the fallback for when that call fails or
+        answers with something unusable, and for any caller without one.
+        """
         title = article.get("title", "Article Image")
-        
-        # Create a more specific theme by analyzing the article content
-        theme = self._extract_article_theme(article)
+
+        theme = (theme_override or "").strip()
+        if theme:
+            theme = f"Focus on {theme}. Make it appetizing and clearly recognizable."
+        else:
+            theme = self._extract_article_theme(article)
         
         return self.generate_image(
             title=title,

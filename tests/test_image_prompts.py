@@ -117,3 +117,20 @@ def test_the_prompt_carries_the_variant_and_the_fixed_rules():
     assert "No humans" in prompt
     assert "No real brand names or logos" in prompt
     assert "{style_variant}" not in prompt, "placeholder left unsubstituted"
+
+
+def test_a_branded_subject_is_overridden_at_the_point_of_use():
+    """Asked for a generic product, the model still answered "a box of
+    Cheez-It Protein crackers". The instruction that follows the subject has to
+    neutralise it, because a branded pack on a publisher's own art is a problem
+    no keyword table would have created."""
+    generator = ImageGenerator.__new__(ImageGenerator)
+
+    prompt = generator._create_image_prompt(
+        "Mars Debuts Cheez-It Protein",
+        "Focus on a box of Cheez-It Protein crackers.",
+    )
+
+    theme_at = prompt.index("Theme/Context")
+    override_at = prompt.index("unbranded packaging")
+    assert override_at > theme_at, "the override has to come after the subject"
