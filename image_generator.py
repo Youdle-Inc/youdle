@@ -4,6 +4,8 @@
 
 import os
 import base64
+import hashlib
+import re
 from typing import Optional, Dict, Any, List
 
 try:
@@ -46,9 +48,11 @@ Style guidelines:
 - No humans; if present, only abstract silhouettes without facial features
 - No real brand names or logos; show generic packaging
 - English-only labels; simple words and US dollar prices
-- Clean, modern, well-lit photography style
-- The main subject should fill most of the frame (close-up or medium shot)
+- Clean, modern photography style
 - Use vibrant, appetizing colors appropriate to the subject
+
+Composition for this image: {style_variant}. Keep the main subject clearly the
+focus of the frame.
 
 The image should immediately convey what the article is about without reading the title."""
 
@@ -77,6 +81,40 @@ class ImageGenerator:
         self.client = genai_client.Client(api_key=self.api_key)
         self.model_name = "gemini-3-pro-image-preview"
 
+    # One fixed style block gave every image the same hero-object-on-a-board
+    # look, so a week of posts read as a set even where subjects differed.
+    # Each article draws a deterministic variant: the same article always
+    # renders the same way, neighbours in a batch do not.
+    SURFACES = (
+        "on a pale marble surface",
+        "on a weathered wooden board",
+        "on a matte charcoal backdrop",
+        "on a bright white seamless background",
+        "on a woven linen cloth",
+        "on a brushed steel counter",
+    )
+    LIGHTING = (
+        "soft diffused daylight",
+        "bright high-key lighting with crisp shadows",
+        "warm low-angle afternoon light",
+        "even overhead studio light",
+    )
+    COMPOSITIONS = (
+        "shot straight on at eye level",
+        "shot from directly overhead, flat-lay",
+        "a tight three-quarter close-up",
+        "a medium shot with shallow depth of field",
+    )
+
+    def _style_variant(self, title: str) -> str:
+        """Pick a composition, surface and light from the title, stably."""
+        digest = hashlib.sha1(title.encode("utf-8", "ignore")).digest()
+        return (
+            f"{self.COMPOSITIONS[digest[0] % len(self.COMPOSITIONS)]}, "
+            f"{self.SURFACES[digest[1] % len(self.SURFACES)]}, "
+            f"in {self.LIGHTING[digest[2] % len(self.LIGHTING)]}"
+        )
+
     def _create_image_prompt(
         self,
         title: str,
@@ -90,7 +128,8 @@ class ImageGenerator:
             effective_theme = f"Article topic: {title}. Focus the image on the specific subject matter."
         return IMAGE_PROMPT_TEMPLATE.format(
             title=title,
-            theme=effective_theme
+            theme=effective_theme,
+            style_variant=self._style_variant(title),
         )
 
     def generate_image(
@@ -230,6 +269,7 @@ class ImageGenerator:
             "organic": "fresh organic produce with natural lighting",
             
             # Meat & Dairy
+            "meat": "raw cuts of meat on butcher paper",
             "chicken": "raw chicken pieces or cooked chicken dishes",
             "beef": "raw beef cuts or grilled beef",
             "pork": "pork chops or bacon strips",
@@ -245,12 +285,21 @@ class ImageGenerator:
             "pasta": "uncooked pasta shapes or pasta dishes",
             "rice": "grains of rice or rice in bowls",
             "cereal": "cereal boxes or bowls of cereal with milk",
+            "cracker": "stacked crackers and a bowl of them",
+            "cookie": "stacked cookies with crumbs",
+            "doughnut": "glazed doughnuts on a rack",
+            "donut": "glazed doughnuts on a rack",
+            "chip": "a bowl of tortilla or potato chips",
+            "snack": "assorted packaged snacks, generic packaging",
+            "chocolate": "chocolate bars and broken pieces",
+            "candy": "colourful wrapped candy",
             "oil": "cooking oil bottles",
             "sugar": "white sugar or sugar cubes",
             "flour": "flour bags or flour being sifted",
             
             # Price/Economic themes
             "price": "shopping cart, price tags, or receipts",
+            "price": "price tags, a till receipt, or a shopping cart",
             "expensive": "price tags with high dollar amounts",
             "cheap": "discount tags or sale signs",
             "inflation": "rising price charts or expensive shopping cart",
@@ -281,19 +330,48 @@ class ImageGenerator:
             "surplus": "abundant food items or overflowing baskets"
         }
         
-        # Check title first (most specific), then content
-        text_to_check = f"{title} {content}"
-        
-        # Look for specific food/product keywords
-        for keyword, theme in food_keywords.items():
-            if keyword in text_to_check:
+        # Match on a word start, never mid-word, and read the headline before
+        # the body.
+        #
+        # Both of those were doing real damage. A plain substring test put
+        # "rice" inside "price", so ten of twenty-five grocery posts were
+        # illustrated with bowls of rice; "fish" inside "Goldfish" gave a
+        # cracker launch a salmon fillet; "tea" inside "instead" and "steak"
+        # served tea with an article about Beyond Steak. And because the whole
+        # body was searched, a 400-word piece always matched something early,
+        # so the subject followed this dictionary's order rather than the
+        # story.
+        #
+        # The boundary is start-only, so the stems in the table still work:
+        # "strawberr" has to match "strawberries".
+        def pattern_for(keyword):
+            escaped = re.escape(keyword)
+            if len(keyword) < 6:
+                # Whole word, optionally pluralised: "tea" must not match
+                # "team", nor "oil" "oilseed", nor "rice" "price".
+                return r"\b" + escaped + r"(?:s|es)?\b"
+            # Long enough to be safe as a prefix, which the stems rely on:
+            # "strawberr" has to reach "strawberries".
+            return r"\b" + escaped
+
+        def first_match(text, table):
+            if not text:
+                return None
+            for keyword, theme in table.items():
+                if re.search(pattern_for(keyword), text):
+                    return theme
+            return None
+
+        for source in (title, content):
+            theme = first_match(source, food_keywords)
+            if theme:
                 return f"Focus on {theme}. Make it appetizing and clearly recognizable."
-        
-        # Check for trend/economic keywords  
-        for keyword, theme in trend_keywords.items():
-            if keyword in text_to_check:
+
+            theme = first_match(source, trend_keywords)
+            if theme:
                 return f"Show {theme} in a grocery context."
-                
+
+
         # Category-based fallbacks with more specific guidance
         if category == "RECALL":
             return "Food safety warning imagery with the affected product type visible"
