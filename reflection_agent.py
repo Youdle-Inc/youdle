@@ -35,10 +35,6 @@ class ReflectionAgent:
             "pattern": r"<h2[^>]*>.+</h2>",
             "description": "Must have exactly one <h2> headline"
         },
-        "memphis_opener": {
-            "pattern": r"MEMPHIS,\s*Tenn\.\s*\(Youdle\)\s*[–-]",
-            "description": "First paragraph must start with 'MEMPHIS, Tenn. (Youdle) –'"
-        },
         "list_elements": {
             "pattern": r"<ul[^>]*>.*<li[^>]*>.*</li>.*</ul>",
             "description": "Must have <ul> with <li> elements",
@@ -53,15 +49,7 @@ class ReflectionAgent:
             "description": "Must include 'Read the full story' source link",
             "flags": re.IGNORECASE
         },
-        "community_link": {
-            "pattern": r'<a[^>]+href=["\']https?://(?:www\.)?youdle\.io/community["\'][^>]*>.*Community.*</a>',
-            "description": "Must include Youdle Community link",
-            "flags": re.IGNORECASE | re.DOTALL
-        },
-        "blog_link": {
-            "pattern": r'<a[^>]+href=["\']https?://getyoudle\.com/blog["\'][^>]*>',
-            "description": "Must include Youdle Blog link"
-        }
+
     }
     
     # Word count target (updated for 400-600 word requirement)
@@ -72,7 +60,7 @@ class ReflectionAgent:
     PRESERVE_WORDS = {
         'youdle', 'getyoudle', 'kroger', 'walmart', 'target', 'costco', 'aldi',
         'publix', 'safeway', 'albertsons', 'wegmans', 'heb', 'meijer', 'trader',
-        'instacart', 'doordash', 'grubhub', 'shipt', 'gopuff', 'memphis', 'tenn',
+        'shelfie', 'shelfies', 'cashback', 'instacart', 'doordash', 'grubhub', 'shipt', 'gopuff', 'memphis', 'tenn',
         'fda', 'usda', 'cdc', 'epa', 'snap', 'wic', 'gmo', 'upc', 'upcs',
         'cta', 'html', 'href', 'src', 'alt', 'img', 'div', 'prebiotic',
         'prebiotics', 'probiotic', 'probiotics', 'listeria', 'salmonella',
@@ -187,6 +175,10 @@ class ReflectionAgent:
         # Check for markdown artifacts
         if "```" in html_content:
             issues.append("Contains markdown code block markers")
+        if "getyoudle.com/blog" in html_content:
+            issues.append("Outdated blog URL")
+        if "MEMPHIS, Tenn." in html_content:
+            issues.append("Local dateline in national story")
         if "**" in html_content:
             issues.append("Contains markdown bold markers")
         
