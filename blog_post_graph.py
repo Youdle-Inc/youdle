@@ -492,8 +492,21 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         # Generate individual shoppers posts. Each article is isolated: one
         # article failing (a provider error, a bad response) must not discard
         # the posts already generated in this batch.
-        for article in shoppers_articles_to_process:
+        for headline_index, article in enumerate(shoppers_articles_to_process):
             context = shoppers_context
+            # Assign a different structural cue to each of six shopper stories.
+            # Model chooses a different factual shape if the source cannot
+            # support this one; never invent facts to match a pattern.
+            pattern_guidance = (
+                f"Weekly shopper headline slot {headline_index + 1}: "
+                f"{pattern_for_shopper(headline_index)} "
+                "Answer the held-back detail within the first two paragraphs. "
+                "Use a different factual shape if this one does not fit."
+            )
+            headline_additions = "\n".join(
+                part for part in (context.get("prompt_additions") or "", pattern_guidance)
+                if part
+            )
 
             try:
                 result = generator.generate_with_reflection(
