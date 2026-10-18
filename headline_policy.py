@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import html
 import re
-from collections.abc import Sequence
 
 HEADLINE_SHAPES: tuple[str, ...] = (
     "Lead with a common grocery item and a verified change; hold back the reason.",
