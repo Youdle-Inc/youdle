@@ -6,6 +6,7 @@ import re
 from typing import Dict, Any, List, Optional
 
 from html_safety import find_unsafe_html_issues
+from headline_policy import extract_headline, validate_headline
 
 try:
     from dotenv import load_dotenv
@@ -221,6 +222,11 @@ class ReflectionAgent:
             body_text = re.sub(r'<[^>]+>', ' ', content_without_h2).lower()
             if headline_text and len(headline_text) > 10 and headline_text in body_text:
                 issues.append("Headline text is repeated in the article body")
+
+        # Enforce the concrete parts of the shared headline rule without
+        # spending tokens on another model call. Truth/payoff are evaluated
+        # by the existing editorial reflection model.
+        issues.extend(validate_headline(extract_headline(html_content)))
 
         # Check for forbidden "subscribe" / "subscription" language
         if re.search(r'\bsubscri(be|ption|bing)\b', html_content, re.IGNORECASE):
