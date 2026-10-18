@@ -473,6 +473,14 @@ def is_sponsored_placement(item):
         path = urlsplit(str(item.get("link", ""))).path.lower()
     except ValueError:
         return False
+    title = html_to_text(item.get("title", "")).lower()
+    description = html_to_text(item.get("description", ""))[:240].lower()
+    if re.search(r"\b(sponsored|advertorial|paid content|partner content|promo codes|coupon codes)\b", title):
+        return True
+    if re.search(r"^\s*(sponsored|advertisement|paid partnership)\s*:", description):
+        return True
+    if re.search(r"(?:^|[-_/])(sponsored|advertorial|paid-content|partner-content)(?:[-_/]|$)", path):
+        return True
     return any(marker in path for marker in SPONSORED_PATH_MARKERS)
 
 
