@@ -174,3 +174,59 @@ def test_model_reflection_rejects_headline_without_early_payoff():
     result = generator.reflect_on_post("<div><h2>Example</h2></div>")
     assert result["is_valid"] is False
     assert any("first two paragraphs" in issue for issue in result["issues"])
+
+
+
+def test_model_reflection_rejects_missing_headline_payoff_keys():
+    from unittest.mock import MagicMock
+    from langchain_blog_agent import BlogPostGenerator
+
+    generator = object.__new__(BlogPostGenerator)
+    generator.reflection_chain = MagicMock()
+    generator.reflection_chain.invoke.return_value = (
+        '{"is_valid":true,"issues":[],"suggestions":[]}'
+    )
+
+    result = generator.reflect_on_post("<div><h2>Example</h2></div>")
+    assert result["is_valid"] is False
+    assert any("first two paragraphs" in issue for issue in result["issues"])
+
+
+def test_final_draft_flags_failed_payoff_review_even_if_structure_passes():
+    from blog_post_graph import assemble_html_node
+
+    state = {
+        "generated_posts": [{
+            "post_id": "held-back-detail",
+            "blog_post": (
+                '<div><img src="{IMAGE_HERE}" alt="article image"/>'
+                "<h2>Egg prices are rising. Here's what changed</h2>"
+                "<p>Price update without explaining the promised detail.</p>"
+                "<ul><li>Compare prices</li></ul></div>"
+            ),
+            "article": {
+                "title": "Source report on grocery prices",
+                "link": "https://example.com/report",
+            },
+            "category": "shoppers",
+            "reflection": {
+                "is_valid": False,
+                "headline_payoff_in_first_two_paragraphs": False,
+                "headline_truthful_and_compliant": True,
+            },
+        }],
+        "uploaded_urls": [{
+            "post_id": "held-back-detail",
+            "url": "https://i.ibb.co/test/eggs.jpg",
+        }],
+        "proofread_corrections": {},
+    }
+    with patch("blog_post_graph.ReflectionAgent") as validator:
+        validator.return_value.reflect.return_value = {"is_valid": True}
+        outcome = assemble_html_node(state)
+
+    assert len(outcome["final_posts"]) == 1
+    review = outcome["final_posts"][0]["final_validation"]
+    assert review["is_valid"] is False
+    assert any("payoff" in issue for issue in review["issues"])
+    assert any("editorial validation warning" in msg.lower() for msg in outcome["warnings"])
