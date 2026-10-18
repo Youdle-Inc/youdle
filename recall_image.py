@@ -16,8 +16,12 @@ def make_recall_image(article, width=720, height=405):
     arrangements. Images deliberately contain no false product depictions,
     text or logos.
     """
-    heading = str(article.get("title") or "Weekly food safety recall")
-    seed = hashlib.sha256(heading.encode("utf-8")).digest()
+    # Weekly headlines are often identical, so include the actual sources.
+    # A new set of recalls must never accidentally reuse last week\'s image.
+    identity = "\n".join(str(article.get(field) or "") for field in (
+        "title", "link", "content", "description"
+    ))
+    seed = hashlib.sha256(identity.encode("utf-8")).digest()
     palettes = [
         ((241, 247, 243), (30, 88, 64), (223, 163, 57)),
         ((250, 245, 234), (91, 66, 47), (186, 95, 49)),
