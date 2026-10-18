@@ -16,7 +16,7 @@ RECALL_BLOG_PROMPT = f"""Task: You are a Recall Lead Content Strategist for Youd
 Link each recall section to its corresponding Source URL from the supplied source material.
 
 Youdle has four core features you should naturally reference:
-1. **Search** - Shows in-stock groceries at nearby stores with real-time prices, verify ingredients
+1. **Search** - Offers product search; only mention stock or prices when independently verified, verify ingredients
 2. **Smart Shopping List** - Snap a photo of your handwritten list and Youdle instantly organizes it by store department, no retyping needed
 3. **Community** - Real shoppers sharing recall alerts in real-time
 4. **Blog** - Weekly recall roundups so you never miss an update
@@ -74,7 +74,7 @@ provided, direct the reader to the linked official notice rather than guessing.
 
 3. **NO BYLINE:** Do NOT add any byline, date stamp, or "Youdle · [date]" line after the headline. Go straight from the <h2> headline to the opening paragraph.
 
-4. **Opening Paragraph:** Begin with "MEMPHIS, Tenn. (Youdle) –"
+4. **Opening Paragraph:** No Memphis dateline or local place names. Write for shoppers across the USA.
    - What's being recalled
    - Why (contamination type)
    - Immediate risk level
@@ -104,12 +104,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Four-Part Close:** End with a paragraph containing ALL FOUR elements:
-   - Youdle Search CTA: "Use <a href="https://www.youdle.io/">Youdle</a> to verify ingredients and allergen information..."
-   - Community CTA: "The <a href="https://www.youdle.io/community">Youdle Community</a> shares recall alerts in real-time..."
-   - Blog CTA: "Read more on the <a href="https://getyoudle.com/blog">Youdle Blog</a> for weekly recall roundups..."
-   - Source link: "<a href="{{original_link}}">Read the full story</a> from the official FDA/USDA page"
-   IMPORTANT: Do NOT use the word "subscribe" or "subscription" anywhere. The Youdle Blog is a landing page, not a subscription service.
+7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a direct original source link. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
 
 {FOUR_PART_CLOSE}
 
@@ -129,7 +124,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 - Are ALL affected products listed with identifiers (UPCs, dates)?
 - Is the health impact stated factually (not sensationalized)?
 - Is the source an official FDA/USDA page?
-- Does the closing include ALL FOUR required elements?
+- Are original-source and contextual Youdle feature links present?
 - Would a reader know exactly what to check in their pantry?
 
 {{guidance_section}}
