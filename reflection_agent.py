@@ -41,7 +41,7 @@ class ReflectionAgent:
             "flags": re.DOTALL
         },
         "youdle_link": {
-            "pattern": r'<a[^>]+href=["\']https?://(?:www\.)?youdle\.io/?["\'][^>]*>',
+            "pattern": r'<a[^>]+href=["\']https?://(?:www\.)?youdle\.io(?:/[^"\']*)?["\'][^>]*>',
             "description": "Must include link to Youdle.io"
         },
         "source_link": {
