@@ -119,3 +119,58 @@ def test_reflection_includes_deterministic_headline_mistakes():
     issues = ReflectionAgent().check_common_mistakes(article)
     assert any("geographic reference" in issue for issue in issues)
     assert any("exclamation" in issue for issue in issues)
+
+
+def test_six_generated_shopper_prompts_receive_distinct_headline_shapes():
+    from blog_post_graph import generate_posts_node
+
+    state = {
+        "model": "test-model",
+        "shoppers_context": {"prompt_additions": "Use the official price report."},
+        "recall_context": {},
+        "articles": [
+            {
+                "title": f"Everyday grocery story {number}",
+                "content": "Verified consumer grocery source reporting.",
+                "link": f"https://example.com/story-{number}",
+                "category": "SHOPPERS",
+            }
+            for number in range(6)
+        ],
+    }
+
+    generated = {
+        "blog_post": '<div><img src="{IMAGE_HERE}" alt="article image"/>'
+                     "<h2>Food prices are changing. Here's what matters next</h2></div>",
+        "reflection": {"is_valid": True},
+        "attempts": 1,
+        "success": True,
+    }
+
+    with patch("blog_post_graph.BlogPostGenerator") as generator_class:
+        generator = generator_class.return_value
+        generator.generate_with_reflection.side_effect = lambda **kwargs: generated.copy()
+        result = generate_posts_node(state)
+        calls = generator.generate_with_reflection.call_args_list
+
+    assert len(result["generated_posts"]) == 6
+    assert len(calls) == 6
+    prompts = [call.kwargs["prompt_additions"] for call in calls]
+    assert len(set(prompts)) == 6
+    assert all("Use the official price report." in prompt for prompt in prompts)
+
+
+def test_model_reflection_rejects_headline_without_early_payoff():
+    from unittest.mock import MagicMock
+    from langchain_blog_agent import BlogPostGenerator
+
+    generator = object.__new__(BlogPostGenerator)
+    generator.reflection_chain = MagicMock()
+    generator.reflection_chain.invoke.return_value = (
+        '{"is_valid":true,"headline_payoff_in_first_two_paragraphs":false,'
+        '"headline_truthful_and_compliant":true,"issues":[],"suggestions":[]}'
+    )
+
+    result = generator.reflect_on_post("<div><h2>Example</h2></div>")
+    assert result["is_valid"] is False
+    assert any("first two paragraphs" in issue for issue in result["issues"])
