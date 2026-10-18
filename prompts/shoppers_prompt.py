@@ -47,7 +47,8 @@ Youdle has four core features you should naturally reference:
 
 2. **Headline:** One <h2> tag using Zeigarnik gap formula. Sentence case only.
    - IMPORTANT: The headline must be UNIQUE to this specific article's topic. Never reuse generic headlines like "This week in grocery news" or "Youdle Weekly."
-   - The headline should reference the specific subject matter (e.g. "Ground beef prices skyrocketing — here's what smart shoppers are doing").
+   - Reference the verified subject, with at most 13 words and a payoff in the first two paragraphs.
+   - Apply ALL headline rules and honor the story-specific pattern rotation guidance.
    - NEVER repeat the headline text anywhere else in the article body. The <h2> appears exactly once.
 
 3. **NO BYLINE:** Do NOT add any byline, date stamp, or "Youdle · [date]" line after the headline. Go straight from the <h2> headline to the opening paragraph.
@@ -58,7 +59,7 @@ Youdle has four core features you should naturally reference:
    - Credit the source
    - Create immediate relevance
 
-5. **Body Paragraphs:** 3-5 <p> paragraphs
+5. **Body Paragraphs:** 3-5 <p> paragraphs (the first or second must reveal the headline's held-back detail)
    - Each paragraph has a PURPOSE (not filler)
    - Use second-person "you" language
    - Include specific numbers when possible
@@ -83,10 +84,11 @@ Youdle has four core features you should naturally reference:
 **Integrity:** Do not cut off the article; ensure a complete narrative within 400-600 words
 
 **Quality Check Before Output:**
-- Does the headline create a Zeigarnik gap?
+- Does the headline satisfy every hard rule, and does paragraph one or two answer its precise promise?
 - Is every factual claim attributed to a credible source?
 - Are URLs embedded into words, not standalone?
 - Are original-source and contextual Youdle feature links present?
+- Is its pattern distinct from the other stories in this week's six-story group?
 - Would this article be useful even if Youdle wasn't mentioned?
 
 {{guidance_section}}
