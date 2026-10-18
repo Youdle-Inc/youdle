@@ -406,7 +406,9 @@ class BlogPostGenerator:
                     ("headline_truthful_and_compliant",
                      "Headline claim is unsupported or violates the editorial rule"),
                 ):
-                    if parsed.get(field) is False:
+                    if parsed.get(field) is not True:
+                        # Missing fields also require manual review. A partial
+                        # model response must not silently approve clickbait.
                         parsed["is_valid"] = False
                         issues = parsed.get("issues")
                         if not isinstance(issues, list):
