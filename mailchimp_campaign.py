@@ -4,7 +4,7 @@
 import os
 import json
 from datetime import datetime
-from html import escape, unescape, unescape
+from html import escape, unescape
 from typing import Dict, Any, List, Optional
 
 try:
@@ -475,22 +475,23 @@ class MailchimpCampaign:
         summary: str = "",
         image_url: str = ""
     ) -> str:
-        """Format a recall article as an HTML list item with optional summary."""
+        """Format a recall with its own optional ImgBB art and a Youdle link."""
+        url = self._native_news_url(url)
         title_escaped = escape(title)
-        url_escaped = escape(url)
-
-        # Truncate and escape summary (max 240 chars)
+        url_escaped = escape(url, quote=True)
+        image_html = self._article_image_html(image_url, title, url)
         summary_raw = (summary or "")[:240]
         summary_escaped = escape(unescape(summary_raw))
         summary_html = f'<div style="color:#555; font-weight:400; margin-top:4px;">{summary_escaped}</div>' if summary_escaped else ""
 
         return (
-            '<li style="margin:0 0 12px 0; line-height:1.5;">'
+            '<li style="margin:0 0 24px 0; line-height:1.5; list-style:none;">'
+            f'{image_html}'
             f'<a href="{url_escaped}" target="_blank" style="color:#B8860B; text-decoration:none; font-weight:600;">⚠️ {title_escaped}</a>'
             f'{summary_html}'
             '</li>'
         )
-    
+
     def create_newsletter_html(
         self,
         articles: List[Dict[str, Any]],
