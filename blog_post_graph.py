@@ -40,7 +40,8 @@ from reflection_agent import ReflectionAgent
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues, strip_code_fences
-from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
+from imgbb_upload import upload_image_to_imgbb
+from recall_image import make_recall_image
 
 
 # ============================================================================
@@ -710,15 +711,16 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
             article = post.get("article", {})
             category = post.get("category", "").upper()
 
-            # Skip RECALL articles - they use a default image instead of generated
+            # Recall images are generated locally at zero image-model cost.
+            # The honest editorial safety graphic is unique per headline.
             if category == "RECALL":
-                logs.append(f"  ⊘ Skipping image for RECALL: {article.get('title', 'Unknown')[:40]}...")
-                # Add placeholder entry so upload_images_node knows about this post
                 images.append({
                     "post_id": post.get("post_id"),
-                    "success": False,
-                    "is_recall": True
+                    "image_data": make_recall_image(article),
+                    "success": True,
+                    "is_recall": True,
                 })
+                logs.append(f"  Created original safety graphic: {article.get('title', '')[:40]}")
                 continue
 
             # The model that wrote the post names what its photograph should
@@ -766,7 +768,7 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
 def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
     """
     Node: Upload generated images to imgBB.
-    RECALL articles get a default image URL instead.
+    RECALL illustrations also use ImgBB, with no image model charge.
     """
     logs = [f"[{datetime.now().isoformat()}] Uploading images to imgBB..."]
 
@@ -780,16 +782,6 @@ def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
 
         for image in images:
             post_id = image.get("post_id", "unknown")
-
-            # RECALL articles use default image
-            if image.get("is_recall"):
-                uploaded_urls.append({
-                    "post_id": post_id,
-                    "url": DEFAULT_RECALL_IMAGE_URL,
-                    "success": True
-                })
-                logs.append(f"  ✓ Using default image for RECALL post {post_id}")
-                continue
 
             # Failed image generation - use placeholder
             if not image.get("success"):
