@@ -7,7 +7,7 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 1. HTML structure: Must start with <div> and end with </div>
 2. Image tag: The first element inside the outer <div> must be <img src="{{IMAGE_HERE}}" alt="article image"/>
 3. Headline: Must have exactly one <h2> tag (sentence case, not Title Case)
-4. First paragraph: Must begin with "MEMPHIS, Tenn. (Youdle)" followed by a dash (â€“ preferred; - accepted)
+4. First paragraph: Must open on the national shopper impact, without a Memphis dateline
 5. List: Must have a <ul> with <li> items
 
 ## Word Count Validation
@@ -42,12 +42,8 @@ Respond with a JSON object:
 {{
     "is_valid": true/false,
     "word_count": <actual word count>,
-    "has_four_part_close": {{
-        "youdle_search": true/false,
-        "youdle_community": true/false,
-        "youdle_blog": true/false,
-        "source_link": true/false
-    }},
+    "has_contextual_youdle_link": true/false,
+    "has_original_source_link": true/false,
     "spelling_errors": ["list of misspelled words with corrections, e.g. 'recieved → received'"],
     "grammar_errors": ["list of grammar issues with corrections"],
     "issues": ["list of specific issues found"],
