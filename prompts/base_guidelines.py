@@ -107,9 +107,11 @@ Include ONE useful Youdle feature link matched to the article:
 - Grocery search: https://www.youdle.io/
 - Community and shelfies: https://www.youdle.io/community
 - Grocery Brief: https://www.youdle.io/news
-Place a direct, embedded source link early and clearly credit the original at
-the end. Never append a repetitive four-link promotional paragraph. Do not
-claim live pricing, stock or alert features without confirmed evidence.
+Place a direct, embedded source link early. Include this final original-source
+attribution as an actual clickable anchor:
+<a href="{original_link}">Read the full story</a>
+Never append a repetitive four-link promotional paragraph. Do not claim
+live pricing, stock, photo scanning, or alert features without evidence.
 """
 
 WHAT_TO_EXCLUDE = """
