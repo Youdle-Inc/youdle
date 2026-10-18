@@ -398,6 +398,24 @@ class BlogPostGenerator:
         try:
             parsed = json.loads(cleaned_result)
             if isinstance(parsed, dict):
+                # The model must not silently pass a headline when its
+                # promised detail is absent from paragraphs one and two.
+                for field, problem in (
+                    ("headline_payoff_in_first_two_paragraphs",
+                     "Headline's promised detail is not answered in the first two paragraphs"),
+                    ("headline_truthful_and_compliant",
+                     "Headline claim is unsupported or violates the editorial rule"),
+                ):
+                    if parsed.get(field) is not True:
+                        # Missing fields also require manual review. A partial
+                        # model response must not silently approve clickbait.
+                        parsed["is_valid"] = False
+                        issues = parsed.get("issues")
+                        if not isinstance(issues, list):
+                            issues = []
+                            parsed["issues"] = issues
+                        if problem not in issues:
+                            issues.append(problem)
                 return parsed
         except (json.JSONDecodeError, TypeError):
             pass

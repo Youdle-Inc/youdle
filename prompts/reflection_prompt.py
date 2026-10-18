@@ -6,18 +6,30 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 ## Structure Validation
 1. HTML structure: Must start with <div> and end with </div>
 2. Image tag: The first element inside the outer <div> must be <img src="{{IMAGE_HERE}}" alt="article image"/>
-3. Headline: Must have exactly one <h2> tag (sentence case, not Title Case)
-4. First paragraph: Must begin with "MEMPHIS, Tenn. (Youdle)" followed by a dash (â€“ preferred; - accepted)
+3. Headline: Exactly one <h2> in sentence case with 13 words or fewer, no em/en dash, exclamation, all-caps words, region/place names or unsupported store names
+4. First paragraph: Must open on the national shopper impact, without a Memphis dateline
 5. List: Must have a <ul> with <li> items
+
+## Mandatory headline/promise review
+- The headline must name something familiar (cart, bill, fridge, pantry or a real product)
+- It must offer one supported change, risk or discovery and ONE specific curiosity gap
+- Read the FIRST TWO paragraphs and identify the actual answer to that gap
+- If there is NO explicit payoff in those paragraphs, mark is_valid false
+- If the source does not support the headline promise, mark is_valid false
+- No misleading dramatic double meanings, bait, scolding, invented urgency or unsupported promises
+- For a recall roundup, validate every named hazard and the food count against the article facts.
+- For other stories, assess variety and topic-appropriate patterns; do not copy stock examples
+- Require headline and lead to be nationally useful without geographic mentions
+- If invalid, identify what was falsely implied and suggest a new truthful headline. Do not invent supporting facts
 
 ## Word Count Validation
 6. Word count: Must be 400-600 words
 
-## Four-Part Close Validation (ALL FOUR required)
-7. Youdle Search CTA: Must include link to youdle.io with product/search mention
-8. Youdle Community CTA: Must include link to youdle.io/community
-9. Blog CTA: Must include link to getyoudle.com/blog (do NOT use the word "subscribe" or "subscription")
-10. Original source link: Must include "Read the full story" link to source
+## Link Validation
+7. Include an early embedded attribution link
+8. Include one relevant Youdle feature link
+9. Include a direct link to original source notice
+10. Do not use outdated getyoudle.com/blog or a four-link marketing close
 
 ## Quality Validation
 11. Attribution: Factual claims should be attributed to credible sources
@@ -42,12 +54,10 @@ Respond with a JSON object:
 {{
     "is_valid": true/false,
     "word_count": <actual word count>,
-    "has_four_part_close": {{
-        "youdle_search": true/false,
-        "youdle_community": true/false,
-        "youdle_blog": true/false,
-        "source_link": true/false
-    }},
+    "has_contextual_youdle_link": true/false,
+    "has_original_source_link": true/false,
+    "headline_payoff_in_first_two_paragraphs": true/false,
+    "headline_truthful_and_compliant": true/false,
     "spelling_errors": ["list of misspelled words with corrections, e.g. 'recieved → received'"],
     "grammar_errors": ["list of grammar issues with corrections"],
     "issues": ["list of specific issues found"],

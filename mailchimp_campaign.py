@@ -284,20 +284,17 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
                         </tr>
                       </table>
 
-                      <!-- Sponsors -->
+                      <!-- Youdle discovery -->
                       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; margin:0; padding:0;">
                         <tr>
                           <td align="center" valign="top" style="margin:0; padding:0;">
-                            <p style="margin:18px 0 12px; font-weight:bold; font-size:16px;">SPONSORS</p>
-                            <a href="http://youdle.io/" target="_blank" style="display:block; margin:0; padding:0;">
-                              <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjR5B9lMXv8puWdDrQFWmN2mqQyBefSvy2CAsZV4OIigpfXxKNjCK_Nplbbfg4FWx4pUYv7S2gXFarP8lWaSigTg2nRozbZ6u_eMhyphenhyphengPW32tCB0ApUwyWu1L_Xc18KppPVbY4_OKd-99HCFz-Zc82NwFQnJxA7BbAFsHdF6GeHsZYqixyUllrWVpcpkLT58/s700/(700%20x%20150%20px)%20Green%20Groceries%20Home%20Delivery%20App%20Instagram%20Post%20(1).png" alt="Youdle Sponsor" border="0" style="max-width:100%;">
-                            </a>
+                            <p style="margin:18px 0 12px; font-weight:bold; font-size:16px;">MORE FROM YOUDLE</p>
                             <!-- Button -->
                             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
                               <tr>
                                 <td align="center">
-                                  <a href="http://youdle.io/" target="_blank" style="background-color:#f93822; color:#ffffff; text-decoration:none; font-weight:bold; font-family:Helvetica, Arial, sans-serif; padding:12px 24px; border-radius:4px; display:inline-block;">
-                                    Let's Get Started
+                                  <a href="https://www.youdle.io/news" target="_blank" style="background-color:#f93822; color:#ffffff; text-decoration:none; font-weight:bold; font-family:Helvetica, Arial, sans-serif; padding:12px 24px; border-radius:4px; display:inline-block;">
+                                    Read more Grocery Brief stories
                                   </a>
                                 </td>
                               </tr>
@@ -412,16 +409,48 @@ class MailchimpCampaign:
             print(f"Error fetching Mailchimp audiences: {e}")
             return []
 
+    @staticmethod
+    def _native_news_url(url: str) -> str:
+        """Convert published Blogger story URLs to the matching Youdle page."""
+        from urllib.parse import urlsplit
+        parts = urlsplit(url or "")
+        if parts.hostname in ("news.youdle.io", "www.news.youdle.io"):
+            path = parts.path.strip("/")
+            if path.endswith(".html") and len(path.split("/")) >= 3:
+                return "https://www.youdle.io/news/" + path[:-5]
+        return url or "https://www.youdle.io/news"
+
+    @staticmethod
+    def _article_image_html(image_url: str, title: str, article_url: str) -> str:
+        """Render an optional unique ImgBB photograph without a generic fallback."""
+        from urllib.parse import urlsplit
+        url = (image_url or "").strip()
+        parts = urlsplit(url)
+        if parts.scheme != "https" or not parts.hostname or parts.hostname not in (
+            "i.ibb.co", "ibb.co", "blogger.googleusercontent.com"
+        ):
+            return ""
+        return (
+            f'<a href="{escape(article_url, quote=True)}" target="_blank" '
+            'style="display:block; margin:0 0 9px 0;">'
+            f'<img src="{escape(url, quote=True)}" alt="{escape(title, quote=True)}" '
+            'width="480" style="display:block; width:100%; max-width:480px; '
+            'height:auto; border-radius:8px;" /></a>'
+        )
+
     def _format_article_link(
         self,
         title: str,
         url: str,
         category: str = "",
-        summary: str = ""
+        summary: str = "",
+        image_url: str = ""
     ) -> str:
         """Format an article as an HTML list item with optional summary."""
         title_escaped = escape(title)
-        url_escaped = escape(url)
+        url = self._native_news_url(url)
+        url_escaped = escape(url, quote=True)
+        image_html = self._article_image_html(image_url, title, url)
 
         # Truncate and escape summary (max 240 chars)
         summary_raw = (summary or "")[:240]
@@ -429,7 +458,8 @@ class MailchimpCampaign:
         summary_html = f'<div style="color:#555; font-weight:400; margin-top:4px;">{summary_escaped}</div>' if summary_escaped else ""
 
         return (
-            '<li style="margin:0 0 12px 0; line-height:1.5;">'
+            '<li style="margin:0 0 24px 0; line-height:1.5; list-style:none;">'
+            f'{image_html}'
             f'<a href="{url_escaped}" target="_blank" style="color:#007C89; text-decoration:none; font-weight:600;">{title_escaped}</a>'
             f'{summary_html}'
             '</li>'
@@ -439,24 +469,26 @@ class MailchimpCampaign:
         self,
         title: str,
         url: str,
-        summary: str = ""
+        summary: str = "",
+        image_url: str = ""
     ) -> str:
-        """Format a recall article as an HTML list item with optional summary."""
+        """Format a recall with its own optional ImgBB art and a Youdle link."""
+        url = self._native_news_url(url)
         title_escaped = escape(title)
-        url_escaped = escape(url)
-
-        # Truncate and escape summary (max 240 chars)
+        url_escaped = escape(url, quote=True)
+        image_html = self._article_image_html(image_url, title, url)
         summary_raw = (summary or "")[:240]
         summary_escaped = escape(unescape(summary_raw))
         summary_html = f'<div style="color:#555; font-weight:400; margin-top:4px;">{summary_escaped}</div>' if summary_escaped else ""
 
         return (
-            '<li style="margin:0 0 12px 0; line-height:1.5;">'
+            '<li style="margin:0 0 24px 0; line-height:1.5; list-style:none;">'
+            f'{image_html}'
             f'<a href="{url_escaped}" target="_blank" style="color:#B8860B; text-decoration:none; font-weight:600;">⚠️ {title_escaped}</a>'
             f'{summary_html}'
             '</li>'
         )
-    
+
     def create_newsletter_html(
         self,
         articles: List[Dict[str, Any]],
@@ -480,7 +512,8 @@ class MailchimpCampaign:
                 title=a.get("title", "Article"),
                 url=a.get("url", a.get("link", "#")),
                 category=a.get("category", ""),
-                summary=a.get("summary", a.get("description", ""))
+                summary=a.get("summary", a.get("description", "")),
+                image_url=a.get("image_url", "")
             )
             for a in articles[:6]
         ])
@@ -491,7 +524,8 @@ class MailchimpCampaign:
                 self._format_recall_link(
                     title=a.get("title", "Recall Alert"),
                     url=a.get("url", a.get("link", "#")),
-                    summary=a.get("summary", a.get("description", ""))
+                    summary=a.get("summary", a.get("description", "")),
+                    image_url=a.get("image_url", "")
                 )
                 for a in recall_articles[:3]
             ])

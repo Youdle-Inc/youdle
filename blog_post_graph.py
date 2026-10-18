@@ -37,6 +37,7 @@ from image_generator import get_image_generator
 from supabase_storage import get_supabase_client, get_supabase_storage
 from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
+from headline_policy import extract_headline, pattern_for_shopper, validate_headline
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues, strip_code_fences
@@ -491,8 +492,21 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         # Generate individual shoppers posts. Each article is isolated: one
         # article failing (a provider error, a bad response) must not discard
         # the posts already generated in this batch.
-        for article in shoppers_articles_to_process:
+        for headline_index, article in enumerate(shoppers_articles_to_process):
             context = shoppers_context
+            # Assign a different structural cue to each of six shopper stories.
+            # Model chooses a different factual shape if the source cannot
+            # support this one; never invent facts to match a pattern.
+            pattern_guidance = (
+                f"Weekly shopper headline slot {headline_index + 1}: "
+                f"{pattern_for_shopper(headline_index)} "
+                "Answer the held-back detail within the first two paragraphs. "
+                "Use a different factual shape if this one does not fit."
+            )
+            headline_additions = "\n".join(
+                part for part in (context.get("prompt_additions") or "", pattern_guidance)
+                if part
+            )
 
             try:
                 result = generator.generate_with_reflection(
@@ -502,7 +516,7 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                     category="shoppers",
                     good_examples=context.get("good_examples"),
                     bad_examples=context.get("bad_examples"),
-                    prompt_additions=context.get("prompt_additions"),
+                    prompt_additions=headline_additions,
                     common_mistakes=context.get("common_mistakes"),
                     successful_patterns=context.get("successful_patterns"),
                     # One model call per article. The helper's own retry loop
@@ -898,6 +912,39 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
             continue
 
         final_validation = final_validator.reflect(blog_post)
+        # Deterministic HTML checks cannot judge the factual payoff.
+        # Preserve the actual semantic headline review from the model,
+        # and send any missing/failed promise to human approval instead.
+        model_review = post.get("reflection") or {}
+        if isinstance(model_review, dict) and model_review:
+            semantic_issues = []
+            if model_review.get("headline_payoff_in_first_two_paragraphs") is not True:
+                semantic_issues.append(
+                    "Headline payoff not verified in the first two paragraphs"
+                )
+            if model_review.get("headline_truthful_and_compliant") is not True:
+                semantic_issues.append(
+                    "Headline truthfulness and editorial compliance not verified"
+                )
+            if semantic_issues:
+                final_validation["is_valid"] = False
+                final_validation.setdefault("issues", []).extend(semantic_issues)
+                final_validation["summary"] = "; ".join(semantic_issues)
+
+        generated_title = extract_headline(blog_post)
+        # Keep the headline seen in the H2, dashboard, Blogger, article cards
+        # and Mailchimp consistent. Previously the source headline was saved,
+        # even when the article writer produced a better editorial H2.
+        headline_issues = validate_headline(
+            generated_title, source_title=article.get("title", "")
+        )
+        if headline_issues:
+            final_validation["is_valid"] = False
+            final_validation.setdefault("issues", []).extend(
+                issue for issue in headline_issues
+                if issue not in final_validation.get("issues", [])
+            )
+            final_validation["summary"] = "; ".join(headline_issues)
         if not final_validation.get("is_valid", False):
             title = article.get("title", "Unknown")
             summary = final_validation.get("summary", "Validation failed")
@@ -930,7 +977,7 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         final_post = {
             "post_id": post_id,
             "html": final_html,
-            "title": article.get("title", ""),
+            "title": generated_title or article.get("title", ""),
             "category": post.get("category", "shoppers"),
             "original_link": original_link,
             "image_url": image_url,

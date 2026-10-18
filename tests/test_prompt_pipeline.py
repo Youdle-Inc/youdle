@@ -576,11 +576,9 @@ def test_word_count_alone_marks_a_structurally_valid_post_invalid():
     short_but_structurally_valid = """<div>
 <img src="{IMAGE_HERE}" alt="article image"/>
 <h2>A grocery update worth checking</h2>
-<p>MEMPHIS, Tenn. (Youdle) - You can use these facts before shopping.</p>
+<p>You can use these facts before shopping.</p>
 <ul><li>Review the product details.</li></ul>
-<p>Use <a href="https://www.youdle.io/">Youdle</a>, check the
-<a href="https://www.youdle.io/community">Youdle Community</a>, read the
-<a href="https://getyoudle.com/blog">Youdle Blog</a>, and
+<p>Visit <a href="https://www.youdle.io/news">Grocery Brief</a> and
 <a href="https://example.com/source">Read the full story</a>.</p>
 </div>"""
     agent = ReflectionAgent()

@@ -75,51 +75,94 @@ Example: "Coffee prices jumped nearly 20% in December compared to a year earlier
 - Bad: "For more info, visit https://..."
 """
 
-HEADLINE_FORMULAS = """
-## Headline Requirements
+HEADLINE_CORE_RULES = """
+## Grocery Brief headline rules (required)
 
-**Format:** Always use sentence case (never Title Case)
+Readers are everyday grocery shoppers anywhere in America. Every headline
+must make a shopper curious about one REAL, verifiable fact, and the first
+or second paragraph must answer the specific question or held-back detail.
+If the article cannot support and promptly deliver that payoff, rewrite
+the HEADLINE instead of inventing a payoff.
 
-**Create a Zeigarnik Gap** - intentional incompleteness that makes reader want to read more:
+Hard format:
+- Sentence case. Capitalize the first word of each sentence and proper nouns only.
+- Under 14 words: 13 words maximum, including any recall hazard sentences.
+- No em dashes or en dashes. Use a period, comma, or colon instead.
+- No cities, states, regions, other place names, or geographic references.
+- No grocer or store names unless the actual news is about that company.
+- No exclamation points or all-caps words.
 
-**1. The "But" Gap (Contradiction)**
-"Grocery prices soar - but here's what smart shoppers are doing instead"
+Build from (1) a familiar product, fridge, bill, cart, or pantry, (2) a
+specific supported change, risk, or discovery, and (3) ONE withheld detail
+the first two paragraphs answer. Mention money, safety, time or family only
+when relevant. Never make up urgency or consequences to create a hook.
 
-**2. The "Here's What" Gap (Incomplete Promise)**
-"Most shoppers waste $500 a year on groceries - here's what they're missing"
+Banned bait: "you won't believe", "shocking", "this one trick", "doctors
+hate", and dramatic double meanings such as "walks out", "slams",
+"fired up", "shuts down", or "says goodbye" unless literally true.
+Never scold the reader. Stand beside families as they shop.
 
-**3. The "Why" Gap (Unexplained Action)**
-"Food brands are reformulating - and it changes everything about your shopping"
+Self-check every headline:
+1. Does it name something familiar?
+2. Is there ONE clear, truthful reason to click?
+3. Do the FIRST or SECOND paragraph disclose that promised detail?
+4. Does it matter in rural Montana AND New York, without saying either place?
+5. Is its structure different from the other stories this week?
+If any answer is no, revise BEFORE submitting the article.
+"""
 
-**Good headlines (create gaps):**
-- "Prebiotic sodas are taking over your grocery drink aisle"
-- "Coffee prices jumped 20% - but here's where you can still save"
-- "Food brands are cutting ingredients you didn't realize were there"
+HEADLINE_FORMULAS = HEADLINE_CORE_RULES + """
+## News and trends: rotate the factual pattern over six articles
 
-**Bad headlines (no gaps, too complete):**
-- "A Guide to Understanding Grocery Price Changes"
-- "Tips for Saving Money on Your Grocery Bill"
+Use these as PATTERNS, not copy. Choose one supported by the actual source.
+Never use the same structural pattern more than twice among the six weekly
+shoppers' stories; prefer a distinct pattern for every story.
+
+- Shortage: The pantry staple getting harder to find, and what to buy instead
+- Back in stock: The cereal shoppers hunted for is back on shelves
+- Prices: Beef prices are climbing again. Here's the cut holding steady
+- Store brands: The store brand you skip may share a factory with that favorite
+- Shelf life: Most families toss this food days before it goes bad
+- Healthy eating: That healthy granola has more sugar than a donut
+- Checkout changes: Stores are changing self-checkout. Here's what you'll notice first
+- Store layout: The priciest item sits at eye level on purpose
+- Supply chain: Why your grocery bill jumped, and when it might ease
+- Food trends: The grocery item suddenly showing up in carts everywhere
+- Grocery workers: Grocery workers share the one thing that makes shifts easier
+- Loyalty programs: The rewards perk most shoppers never use
+- Emergency prep: Before the next big storm, these items sell out first
+
+Never assume any example is true. Verify its premise and precise claim
+against the supplied reporting before drafting a headline. If your sources
+do not show the payoff, use another honest headline.
+"""
+
+RECALL_HEADLINE_RULES = HEADLINE_CORE_RULES + """
+## Recall roundup headline rule
+
+Use stacked REAL hazards, a verified count, and the action:
+[Hazard]. [Hazard]. [Number] foods to check [timeframe].
+Example structure: Listeria alert. Undeclared peanuts. Six foods to check
+in your fridge tonight.
+
+Each hazard must be supported by one of the supplied official notices;
+the count must match the distinct foods in this roundup. Never invent a
+second hazard if the notices describe only one. Use a shorter truthful
+variation for a single hazard. The first paragraph identifies the actual
+products, risks and immediate consumer action. Urgent but never alarmist.
 """
 
 FOUR_PART_CLOSE = """
-## Four-Part Close (Required)
-
-Every article MUST end with ALL FOUR elements woven naturally into a closing paragraph:
-
-1. **Youdle Search** - Finding/comparing products:
-   "Use <a href="https://www.youdle.io/">Youdle</a> to compare prices across nearby stores..."
-
-2. **Youdle Community** - What other shoppers are doing:
-   "Check the <a href="https://www.youdle.io/community">Youdle Community</a> for real shoppers sharing..."
-
-3. **Youdle Blog** - Stay informed:
-   "Read more on the <a href="https://getyoudle.com/blog">Youdle Blog</a> to stay on top of..."
-
-4. **Original Source** - Link to credible source:
-   "<a href="{original_link}">Read the full story</a>"
-
-**Example closing paragraph:**
-"Use Youdle to find which nearby stores carry these products and compare prices - they vary 50% between brands. Check the Youdle Community to see what other shoppers think before you commit. Read more on the Youdle Blog to stay on top of emerging trends before they hit mainstream shelves. Read the full story from the original source."
+## Natural contextual closing
+Include ONE useful Youdle feature link matched to the article:
+- Grocery search: https://www.youdle.io/
+- Community and shelfies: https://www.youdle.io/community
+- Grocery Brief: https://www.youdle.io/news
+Place a direct, embedded source link early. Include this final original-source
+attribution as an actual clickable anchor:
+<a href="{original_link}">Read the full story</a>
+Never append a repetitive four-link promotional paragraph. Do not claim
+live pricing, stock, photo scanning, or alert features without evidence.
 """
 
 WHAT_TO_EXCLUDE = """
