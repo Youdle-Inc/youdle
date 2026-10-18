@@ -289,15 +289,12 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
                         <tr>
                           <td align="center" valign="top" style="margin:0; padding:0;">
                             <p style="margin:18px 0 12px; font-weight:bold; font-size:16px;">MORE FROM YOUDLE</p>
-                            <a href="https://www.youdle.io/news" target="_blank" style="display:block; margin:0; padding:0;">
-                              <img src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjR5B9lMXv8puWdDrQFWmN2mqQyBefSvy2CAsZV4OIigpfXxKNjCK_Nplbbfg4FWx4pUYv7S2gXFarP8lWaSigTg2nRozbZ6u_eMhyphenhyphengPW32tCB0ApUwyWu1L_Xc18KppPVbY4_OKd-99HCFz-Zc82NwFQnJxA7BbAFsHdF6GeHsZYqixyUllrWVpcpkLT58/s700/(700%20x%20150%20px)%20Green%20Groceries%20Home%20Delivery%20App%20Instagram%20Post%20(1).png" alt="Youdle Sponsor" border="0" style="max-width:100%;">
-                            </a>
                             <!-- Button -->
                             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
                               <tr>
                                 <td align="center">
                                   <a href="https://www.youdle.io/news" target="_blank" style="background-color:#f93822; color:#ffffff; text-decoration:none; font-weight:bold; font-family:Helvetica, Arial, sans-serif; padding:12px 24px; border-radius:4px; display:inline-block;">
-                                    Let's Get Started
+                                    Read more Grocery Brief stories
                                   </a>
                                 </td>
                               </tr>
