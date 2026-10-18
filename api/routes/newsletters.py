@@ -526,23 +526,36 @@ def generate_newsletter_html(supabase, post_ids: List[str], subject: str = None)
     """
     from mailchimp_campaign import MailchimpCampaign
 
-    # Get posts from database
+    # Fetch article-specific images and body copy for informative summaries.
     posts_result = supabase.table("blog_posts").select(
-        "id, title, category, blogger_url"
+        "id, title, category, blogger_url, image_url, html_content"
     ).in_("id", post_ids).execute()
 
     posts = _ordered_rows_by_id(posts_result.data or [], post_ids)
 
     # Separate by category
+    from html import unescape
+    import re
     shoppers = []
     recalls = []
 
     for post in posts:
+        body = post.get("html_content") or ""
+        body = re.sub(r"<(script|style|h2|h3|img)\\b[^>]*>.*?</\\1>", " ", body, flags=re.I | re.S)
+        paragraphs = re.findall(r"<p\\b[^>]*>(.*?)</p>", body, flags=re.I | re.S)
+        summary = ""
+        for paragraph in paragraphs:
+            candidate = unescape(re.sub(r"<[^>]+>", " ", paragraph))
+            candidate = re.sub(r"\\s+", " ", candidate).strip()
+            if candidate and len(candidate) >= 50 and "MEMPHIS, Tenn." not in candidate[:25]:
+                summary = candidate[:235].rsplit(" ", 1)[0] + ("..." if len(candidate) > 235 else "")
+                break
         article = {
             "title": post.get("title", "Article"),
-            "url": post.get("blogger_url", "#"),
+            "url": post.get("blogger_url") or "https://www.youdle.io/news",
             "category": post.get("category", "SHOPPERS"),
-            "summary": post.get("summary", "")
+            "image_url": post.get("image_url") or "",
+            "summary": summary,
         }
 
         if post.get("category", "").upper() == "RECALL":
