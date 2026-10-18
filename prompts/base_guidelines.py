@@ -102,24 +102,14 @@ HEADLINE_FORMULAS = """
 """
 
 FOUR_PART_CLOSE = """
-## Four-Part Close (Required)
-
-Every article MUST end with ALL FOUR elements woven naturally into a closing paragraph:
-
-1. **Youdle Search** - Finding/comparing products:
-   "Use <a href="https://www.youdle.io/">Youdle</a> to compare prices across nearby stores..."
-
-2. **Youdle Community** - What other shoppers are doing:
-   "Check the <a href="https://www.youdle.io/community">Youdle Community</a> for real shoppers sharing..."
-
-3. **Youdle Blog** - Stay informed:
-   "Read more on the <a href="https://getyoudle.com/blog">Youdle Blog</a> to stay on top of..."
-
-4. **Original Source** - Link to credible source:
-   "<a href="{original_link}">Read the full story</a>"
-
-**Example closing paragraph:**
-"Use Youdle to find which nearby stores carry these products and compare prices - they vary 50% between brands. Check the Youdle Community to see what other shoppers think before you commit. Read more on the Youdle Blog to stay on top of emerging trends before they hit mainstream shelves. Read the full story from the original source."
+## Natural contextual closing
+Include ONE useful Youdle feature link matched to the article:
+- Grocery search: https://www.youdle.io/
+- Community and shelfies: https://www.youdle.io/community
+- Grocery Brief: https://www.youdle.io/news
+Place a direct, embedded source link early and clearly credit the original at
+the end. Never append a repetitive four-link promotional paragraph. Do not
+claim live pricing, stock or alert features without confirmed evidence.
 """
 
 WHAT_TO_EXCLUDE = """
