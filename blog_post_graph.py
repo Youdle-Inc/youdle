@@ -912,6 +912,25 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
             continue
 
         final_validation = final_validator.reflect(blog_post)
+        # Deterministic HTML checks cannot judge the factual payoff.
+        # Preserve the actual semantic headline review from the model,
+        # and send any missing/failed promise to human approval instead.
+        model_review = post.get("reflection") or {}
+        if isinstance(model_review, dict) and model_review:
+            semantic_issues = []
+            if model_review.get("headline_payoff_in_first_two_paragraphs") is not True:
+                semantic_issues.append(
+                    "Headline payoff not verified in the first two paragraphs"
+                )
+            if model_review.get("headline_truthful_and_compliant") is not True:
+                semantic_issues.append(
+                    "Headline truthfulness and editorial compliance not verified"
+                )
+            if semantic_issues:
+                final_validation["is_valid"] = False
+                final_validation.setdefault("issues", []).extend(semantic_issues)
+                final_validation["summary"] = "; ".join(semantic_issues)
+
         generated_title = extract_headline(blog_post)
         # Keep the headline seen in the H2, dashboard, Blogger, article cards
         # and Mailchimp consistent. Previously the source headline was saved,
