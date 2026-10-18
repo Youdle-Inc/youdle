@@ -541,13 +541,13 @@ def generate_newsletter_html(supabase, post_ids: List[str], subject: str = None)
 
     for post in posts:
         body = post.get("html_content") or ""
-        body = re.sub(r"<(script|style|h2|h3|img)\\b[^>]*>.*?</\\1>", " ", body, flags=re.I | re.S)
-        paragraphs = re.findall(r"<p\\b[^>]*>(.*?)</p>", body, flags=re.I | re.S)
+        body = re.sub(r"<(script|style|h2|h3)\b[^>]*>.*?</\1>", " ", body, flags=re.I | re.S)
+        paragraphs = re.findall(r"<p\b[^>]*>(.*?)</p>", body, flags=re.I | re.S)
         summary = ""
         for paragraph in paragraphs:
             candidate = unescape(re.sub(r"<[^>]+>", " ", paragraph))
-            candidate = re.sub(r"\\s+", " ", candidate).strip()
-            if candidate and len(candidate) >= 50 and "MEMPHIS, Tenn." not in candidate[:25]:
+            candidate = re.sub(r"\s+", " ", candidate).strip()
+            if candidate and len(candidate) >= 50 :
                 summary = candidate[:235].rsplit(" ", 1)[0] + ("..." if len(candidate) > 235 else "")
                 break
         article = {
