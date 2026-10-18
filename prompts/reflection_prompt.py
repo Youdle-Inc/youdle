@@ -13,11 +13,11 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 ## Word Count Validation
 6. Word count: Must be 400-600 words
 
-## Four-Part Close Validation (ALL FOUR required)
-7. Youdle Search CTA: Must include link to youdle.io with product/search mention
-8. Youdle Community CTA: Must include link to youdle.io/community
-9. Blog CTA: Must include link to getyoudle.com/blog (do NOT use the word "subscribe" or "subscription")
-10. Original source link: Must include "Read the full story" link to source
+## Link Validation
+7. Include an early embedded attribution link
+8. Include one relevant Youdle feature link
+9. Include a direct link to original source notice
+10. Do not use outdated getyoudle.com/blog or a four-link marketing close
 
 ## Quality Validation
 11. Attribution: Factual claims should be attributed to credible sources
