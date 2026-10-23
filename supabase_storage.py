@@ -95,29 +95,6 @@ class SupabaseStorage:
         
         self.client: Client = create_client(self.url, self.key)
         self.bucket = STORAGE_BUCKET
-        self._bucket_ready = False
-    
-    def _ensure_bucket_exists(self) -> bool:
-        """Ensure the storage bucket exists."""
-        if self._bucket_ready:
-            return True
-        try:
-            # List buckets to check if ours exists
-            buckets = self.client.storage.list_buckets()
-            bucket_names = [b.name for b in buckets]
-            
-            if self.bucket not in bucket_names:
-                # Create bucket
-                self.client.storage.create_bucket(
-                    self.bucket,
-                    options={"public": True}
-                )
-            self._bucket_ready = True
-            return True
-        except Exception as e:
-            print(f"Error ensuring bucket exists: {e}")
-            return False
-    
     def upload_image(
         self,
         image_data: str,
@@ -138,10 +115,10 @@ class SupabaseStorage:
             Dictionary with success status and public URL
         """
         try:
-            # Ensure bucket exists
-            if not self._ensure_bucket_exists():
-                raise RuntimeError(f"Storage bucket '{self.bucket}' is unavailable")
-            
+            # The bucket is provisioned in Supabase. Do not list or create it here:
+            # listing buckets needs elevated storage administration privileges,
+            # whereas uploading into an existing bucket only needs object INSERT.
+            # Let the upload call return the actual Storage API error if it fails.
             # Decode base64 data
             image_bytes = base64.b64decode(image_data)
             
