@@ -63,11 +63,11 @@ Youdle has four core features you should naturally reference:
    - Each paragraph has a PURPOSE (not filler)
    - Use second-person "you" language
    - Include specific numbers when possible
-   - Embed source URLs naturally into text
+   - Credit reporting publications by name without linking the news article
 
 6. **Product List:** Use <ul> with <li> tags for key details, product names, or tips
 
-7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a direct original source link. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
+7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a useful verified shopper-action link. Never link to the reporting article. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
 
 {FOUR_PART_CLOSE}
 
@@ -87,7 +87,7 @@ Youdle has four core features you should naturally reference:
 - Does the headline satisfy every hard rule, and does paragraph one or two answer its precise promise?
 - Is every factual claim attributed to a credible source?
 - Are URLs embedded into words, not standalone?
-- Are original-source and contextual Youdle feature links present?
+- Is a useful verified shopper-action link present, without a link to the reporting article?
 - Is its pattern distinct from the other stories in this week's six-story group?
 - Would this article be useful even if Youdle wasn't mentioned?
 
