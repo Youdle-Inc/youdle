@@ -98,12 +98,12 @@ class PromptRefiner:
         
         # Common patterns and their fixes
         patterns = {
-            "missing link": "Include all four required closing links: Youdle Search, Community, Blog, and the original source",
+            "missing link": "Provide a verified shopper action or exact official notice; name the reporting publication without linking its article",
             "wrong structure": "CRITICAL: Follow the exact HTML structure with <div>, <h2>, <p>, <ul>/<li>",
             "missing image": "Place <img src=\"{IMAGE_HERE}\" alt=\"article image\"/> as the first element inside the outer <div>",
             "word count": "Keep content within the required 400-600 word range",
             "memphis": "Begin first paragraph with: MEMPHIS, Tenn. (Youdle) –",
-            "community": "Include the Youdle Community link naturally within the required four-part closing paragraph",
+            "community": "Link to Youdle Community only when it provides a relevant shopper action",
             "list": "Include a <ul> list with <li> items for key details",
             "headline": "Use a single <h2> headline that is punchy and shopper-centric"
         }
