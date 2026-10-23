@@ -45,9 +45,9 @@ class ReflectionAgent:
             "pattern": r'<a[^>]+href=["\']https?://(?:www\.)?youdle\.io(?:/[^"\']*)?["\'][^>]*>',
             "description": "Must include link to Youdle.io"
         },
-        "source_link": {
-            "pattern": r'<a[^>]+href=["\'][^"\']+["\'][^>]*>Read the full story</a>',
-            "description": "Must include 'Read the full story' source link",
+        "shopper_action_link": {
+            "pattern": r'<a[^>]+href=["\']https?://[^"\']+["\'][^>]*>[^<]+</a>',
+            "description": "Must include a relevant shopper-action hyperlink",
             "flags": re.IGNORECASE
         },
 
@@ -173,6 +173,8 @@ class ReflectionAgent:
         """
         issues = []
         
+        if re.search(r'>\s*(?:Read the full story|Read original article|Read the original story)\s*</a>', html_content, re.IGNORECASE):
+            issues.append("Original reporting link used instead of a shopper-action link")
         # Check for markdown artifacts
         if "```" in html_content:
             issues.append("Contains markdown code block markers")
