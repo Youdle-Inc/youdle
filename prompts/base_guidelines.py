@@ -70,8 +70,8 @@ ATTRIBUTION_RULES = """
 
 Example: "Coffee prices jumped nearly 20% in December compared to a year earlier, according to reporting from ABC News."
 
-**URL embedding:** Never show standalone URLs. Embed into source name:
-- Good: "according to reporting from <a href=\"URL\">Taste of Home</a>"
+**URL handling:** Never show raw URLs. Credit outside news outlets by name; keep original report URLs internal.
+- Good: "according to reporting from Taste of Home"
 - Bad: "For more info, visit https://..."
 """
 
@@ -153,16 +153,19 @@ products, risks and immediate consumer action. Urgent but never alarmist.
 """
 
 FOUR_PART_CLOSE = """
-## Natural contextual closing
-Include ONE useful Youdle feature link matched to the article:
-- Grocery search: https://www.youdle.io/
-- Community and shelfies: https://www.youdle.io/community
-- Grocery Brief: https://www.youdle.io/news
-Place a direct, embedded source link early. Include this final original-source
-attribution as an actual clickable anchor:
-<a href="{original_link}">Read the full story</a>
-Never append a repetitive four-link promotional paragraph. Do not claim
-live pricing, stock, photo scanning, or alert features without evidence.
+## Useful links
+Link to relevant, working Youdle features: grocery search at
+https://www.youdle.io/, Shop My Budget at https://www.youdle.io/shop/budget,
+recipes at https://www.youdle.io/shop/recipe, grocery lists at
+https://www.youdle.io/grocery, Map My Grocery Run at
+https://www.youdle.io/map?mode=run, and Community at
+https://www.youdle.io/community.
+Also link a relevant, previously published Youdle story only when its exact
+URL has been independently provided and checked. Never invent article URLs.
+Credit reporting publications by name without hyperlinks to rewritten stories.
+Retain original news URLs in private source records, not reader-facing CTAs.
+For recalls, allow exact official agency notices if needed for safety.
+Never require 'Read the full story' or a marketing-link block.
 """
 
 WHAT_TO_EXCLUDE = """
