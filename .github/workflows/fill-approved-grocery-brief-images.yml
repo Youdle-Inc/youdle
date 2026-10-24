@@ -1,0 +1,40 @@
+name: Fill Approved Grocery Brief Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_six_drafts:
+        description: 'Generate Gemini images for the six approved missing-image drafts? (exact YES)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: grocerybrief-approved-image-repair
+  cancel-in-progress: false
+
+jobs:
+  fill-images:
+    if: ${{ github.event.inputs.confirm_six_drafts == 'YES' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout reviewed code
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install bounded image dependencies
+        run: python -m pip install 'google-genai>=1.0.0,<3' 'supabase>=2.0.0,<3' 'python-dotenv>=1.0.0,<2'
+      - name: Generate and save only approved missing-image drafts
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/fill_approved_grocery_brief_images.py
+          python scripts/fill_approved_grocery_brief_images.py --execute
