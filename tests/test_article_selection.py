@@ -368,3 +368,31 @@ def test_one_recall_filed_as_several_records_counts_once():
     titles = [item["title"] for item in result["recall_items"]]
     assert len(titles) == 2, titles
     assert sum("Frozen Spinach" in t for t in titles) == 1
+
+
+def test_balanced_selection_favors_distinct_shopper_needs():
+    from editorial_diversity import select_diverse_shopper_stories
+    rows = [
+        {"title": f"Grocery prices rise again {n}"} for n in range(6)
+    ] + [
+        {"title": "Easy weeknight dinner recipes"},
+        {"title": "Oreo launches two new cookie flavors"},
+        {"title": "Fiber and nutrition labels are changing"},
+        {"title": "Halloween shopping for family meals"},
+        {"title": "Ready-made prepared meals arrive"},
+        {"title": "Digital shelf labels reach stores"},
+    ]
+    selected = select_diverse_shopper_stories(rows, 6)
+    topics = {row["editorial_topic"] for row in selected}
+    assert len(selected) == 6
+    assert len(topics) == 6
+    assert "value" not in topics or sum(row["editorial_topic"] == "value" for row in selected) == 1
+
+
+def test_balanced_selection_does_not_pad_price_only_news():
+    from editorial_diversity import select_diverse_shopper_stories
+    selected = select_diverse_shopper_stories([
+        {"title": f"Grocery prices up again {i}"} for i in range(8)
+    ], 6)
+    assert len(selected) == 1
+    assert selected[0]["editorial_topic"] == "value"

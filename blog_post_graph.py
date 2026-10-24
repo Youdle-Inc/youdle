@@ -38,6 +38,7 @@ from supabase_storage import get_supabase_client, get_supabase_storage
 from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
 from headline_policy import extract_headline, pattern_for_shopper, validate_headline
+from editorial_diversity import select_diverse_shopper_stories
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues, strip_code_fences
@@ -355,11 +356,15 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
     ][:MAX_RECALL_ROUNDUP_SOURCES if batch_size > 0 else 0]
 
     max_shoppers = max(0, batch_size - 1) if recall_articles else batch_size
-    shoppers_articles = [
+    shoppers_pool = [
         item for item in items
         if item.get("category", "").upper() != "RECALL"
         and is_not_cached(item)
-    ][:max_shoppers]
+    ]
+    shoppers_articles = select_diverse_shopper_stories(shoppers_pool, max_shoppers)
+    topics_selected = [item["editorial_topic"] for item in shoppers_articles]
+    logs.append(f"Shopper editorial mix: {', '.join(topics_selected) or 'none'}")
+
 
     # batch_size counts output posts: each shopper article is one output and
     # all recall sources below become one roundup output.
@@ -373,6 +378,13 @@ def select_articles_node(state: BlogPostState) -> Dict[str, Any]:
         "articles": all_articles,
         "logs": logs
     }
+    # A cost-only candidate pool must not silently turn into a cost-only issue.
+    if len(shoppers_articles) < min(max_shoppers, len(shoppers_pool)):
+        node_update["warnings"] = [
+            "Insufficient range of grocery topics for the requested edition. "
+            "Fewer stories selected rather than repeating general price coverage."
+        ]
+
 
     # An empty selection ends the run with nothing to generate, so name the
     # reason here rather than leaving a bare "no usable posts" failure.
