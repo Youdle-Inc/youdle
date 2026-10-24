@@ -299,13 +299,13 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
             <textarea
               value={formData.html_content}
               onChange={(e) => setFormData({ ...formData, html_content: e.target.value })}
-              rows={16}
+              rows={24}
               disabled={isSaving}
-              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-xs font-mono focus:ring-2 focus:ring-accent-500 focus:border-transparent resize-none disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-xs font-mono focus:ring-2 focus:ring-accent-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed min-h-[520px]"
               placeholder="Enter HTML content..."
             />
           )}
-          <p className="mt-1 text-xs text-stone-500">
+          <p className="mt-1 text-xs text-stone-500">Visual mode keeps bold text, headings, links and separate paragraphs. Switch to HTML to inspect precise markup. </p><p className="mt-1 text-xs text-stone-500">
             {formData.html_content?.length || 0} characters
           </p>
         </div>
