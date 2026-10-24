@@ -580,7 +580,7 @@ def test_word_count_alone_marks_a_structurally_valid_post_invalid():
 <p>You can use these facts before shopping.</p>
 <ul><li>Review the product details.</li></ul>
 <p>Visit <a href="https://www.youdle.io/news">Grocery Brief</a> and
-<a href="https://example.com/source">Read the full story</a>.</p>
+<a href="https://www.youdle.io/">Search groceries on Youdle</a>.</p>
 </div>"""
     agent = ReflectionAgent()
     agent._spell = False
@@ -703,3 +703,39 @@ def test_original_story_cta_is_rejected_by_editorial_validation():
               '</div>')
     agent = ReflectionAgent()
     assert "Original reporting link used instead of a shopper-action link" in agent.check_common_mistakes(sample)
+
+
+
+def test_youdle_internal_linking_uses_only_published_relevant_posts():
+    from internal_links import (
+        choose_feature, select_related_articles, apply_internal_links,
+        extract_anchor_urls,
+    )
+    rows = [
+        {"title": "Why meat prices are rising", "status": "published",
+         "category": "SHOPPERS",
+         "blogger_url": "https://news.youdle.io/2026/10/meat-prices.html"},
+        {"title": "What to cook for dinner", "status": "draft",
+         "category": "SHOPPERS",
+         "blogger_url": "https://news.youdle.io/2026/10/dinner.html"},
+        {"title": "Unrelated entertainment article", "status": "published",
+         "category": "SHOPPERS",
+         "blogger_url": "https://news.youdle.io/2026/10/entertainment.html"},
+    ]
+    related = select_related_articles("Your meat bill and rising prices", rows)
+    assert len(related) == 1
+    assert "meat-prices.html" in related[0]["url"]
+
+    html = ('<div><img src="{IMAGE_HERE}" alt="article image"/>'
+            '<h2>Meat prices are changing</h2>'
+            '<p>Reuters reports new prices. '
+            '<a href="https://reuters.com/article">Read the full story</a></p>'
+            '</div>')
+    fixed, removed = apply_internal_links(
+        html, choose_feature("Your meat bill and rising prices"), related
+    )
+    assert removed == ["https://reuters.com/article"]
+    urls = extract_anchor_urls(fixed)
+    assert "https://www.youdle.io/shop/budget" in urls
+    assert related[0]["url"] in urls
+    assert all("youdle.io" in url for url in urls)
