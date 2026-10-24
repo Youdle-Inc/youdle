@@ -74,9 +74,11 @@ Example: "Coffee prices jumped nearly 20% in December compared to a year earlier
 - Name the reporting publication in plain text, without a hyperlink to its news article.
 - Keep the reporting article URL in the internal audit record for verification.
 - Do not insert the reporting URL into published HTML, even as "Read the full story."
-- Link readers instead to useful destinations: the exact official FDA/USDA/CDC
-  recall notice, an official study, a verified retailer offer, or a working
-  Youdle shopper tool. Primary evidence is distinct from a news summary.
+- Reader-facing links should point ONLY to useful, relevant Youdle features and
+  real previously published Youdle articles. Keep external reference URLs
+  in the private source record, not in the reader-facing article.
+- Name official FDA/USDA/CDC notices and relevant dates/identifiers in the
+  article so recall safety information remains traceable.
 - Never invent a destination URL, offer, price, stock status, or active feature.
 - Use descriptive anchor text; do not show raw URLs or generic "click here."
 """
@@ -159,25 +161,25 @@ products, risks and immediate consumer action. Urgent but never alarmist.
 """
 
 FOUR_PART_CLOSE = """
-## Useful, verified reader links
-Provide at least ONE useful, topic-specific clickable action in the body or close.
-The destination must be an actual usable page, not a generic promotion:
-- Search for groceries: https://www.youdle.io/ (label this "Search groceries"
-  or "Find a product," since search is on the Youdle home page).
-- Shopper community: https://www.youdle.io/community
-- Grocery Brief: https://www.youdle.io/news (only if inviting readers to browse
-  more grocery news; it does not by itself satisfy the shopper-action rule).
-- Official recalls: link each product to its exact FDA, USDA, or CDC notice.
-- Sales, coupons, studies, and store services: link only to a relevant official
-  destination explicitly verified in the supplied research, never a fabricated
-  deals page or a news-publication summary.
+## Internal Youdle links: help readers act and learn more
+Every article must contain one relevant, clickable Youdle feature:
+- Search for groceries: https://www.youdle.io/
+- Shop My Budget: https://www.youdle.io/shop/budget
+- Shop a Recipe: https://www.youdle.io/shop/recipe
+- My Grocery Lists: https://www.youdle.io/grocery
+- Map My Grocery Run: https://www.youdle.io/map?mode=run
+- Community: https://www.youdle.io/community
 
-Credit a reporting publication by NAME in plain text. Do not link its article.
-The supplied original source URL is for internal verification only.
-If no external action URL is verified, use a relevant, known working Youdle
-tool instead. Do not pretend a generic homepage is a product-specific result.
-No mandatory "Read the full story" CTA and no four-link promotional paragraph.
-Use one or two carefully selected links rather than filler links.
+Also add one or two relevant PAST Youdle article links ONLY when their exact,
+published URLs are supplied in the generation guidance. Never invent or
+guess an archive URL. Do not link a stale recall as current safety advice.
+If the past-article match is weak or none is available, omit that link.
+The feature link and any related posts should read as naturally useful
+cross-references, not advertisements or a standard promotional footer.
+No reader-facing news-publication, retailer, affiliate, or government URLs:
+credit external reporting, studies and recall agencies by NAME in prose.
+Keep the complete external URLs in the internal audit record for fact-checking.
+Avoid generic "Read more" links. Use specific, descriptive anchor text.
 """
 
 WHAT_TO_EXCLUDE = """
