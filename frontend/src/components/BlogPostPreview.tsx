@@ -221,14 +221,14 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
       </div>
 
       {/* Content */}
-      <div className="p-4 max-h-[70vh] overflow-y-auto sm:max-h-96">
+      <div className="p-4 max-h-[75vh] overflow-y-auto">
         {viewMode === 'preview' ? (
           <div
-            className="prose prose-sm max-w-none break-words [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
+            className="grocery-article-content max-w-none break-words [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
             dangerouslySetInnerHTML={{ __html: post.html_content }}
           />
         ) : (
-          <pre className="text-xs font-mono text-stone-700 whitespace-pre-wrap break-words bg-stone-50 rounded-lg p-4">
+          <pre className="text-xs font-mono text-stone-700 whitespace-pre-wrap break-words bg-stone-50 rounded-lg p-4 max-h-[75vh] overflow-auto">
             {post.html_content}
           </pre>
         )}
