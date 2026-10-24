@@ -184,8 +184,8 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
   )
 
   return (
-    <Modal isOpen={isOpen} onClose={handleCancel} title="Edit Post" footer={footerContent}>
-      <div className="p-4 space-y-4 sm:p-6">
+    <Modal isOpen={isOpen} onClose={handleCancel} title="Edit Post" footer={footerContent} wide>
+      <div className="grid gap-6 p-4 lg:grid-cols-2 sm:p-6"><div className="space-y-4">
         {/* Error Message */}
         {error && (
           <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 text-sm">
@@ -309,9 +309,17 @@ export function EditBlogPostModal({ isOpen, post, onClose, onSave }: EditBlogPos
             {formData.html_content?.length || 0} characters
           </p>
         </div>
+        </div>
+        <aside className="min-w-0 lg:sticky lg:top-0 lg:self-start" aria-label="Live article preview">
+          <div className="mb-2 text-sm font-semibold text-stone-800">Live reader preview</div>
+          <div className="max-h-[65vh] overflow-auto rounded-xl border border-stone-200 bg-white p-5 shadow-sm">
+            <div className="grocery-article-content" dangerouslySetInnerHTML={{ __html: formData.html_content || '<p>Article preview appears here as you edit.</p>' }} />
+          </div>
+          <p className="mt-2 text-xs text-stone-500">Updates as you type, without changing your existing font or brand styles.</p>
+        </aside>
       </div>
 
-      {/* Media Picker Modal */}
+      {/* Media Picker Modal */
       <MediaPickerModal
         isOpen={showMediaPicker}
         onClose={() => setShowMediaPicker(false)}
