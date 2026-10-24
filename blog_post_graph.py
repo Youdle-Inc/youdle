@@ -41,6 +41,7 @@ from headline_policy import extract_headline, pattern_for_shopper, validate_head
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues, strip_code_fences
+from internal_links import choose_feature, select_related_articles, prompt_link_guidance, apply_internal_links
 from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
 
 
@@ -480,6 +481,19 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
         
         generated_posts = []
         article_errors: List[str] = []
+        archive = []
+        try:
+            db = get_supabase_client()
+            result = (db.table("blog_posts")
+                      .select("title,blogger_url,status,category")
+                      .eq("status", "published")
+                      .not_.is_("blogger_url", "null")
+                      .order("blogger_published_at", desc=True)
+                      .limit(250).execute())
+            archive = result.data or []
+        except Exception as archive_error:
+            logs.append(f"Related-post archive unavailable: {archive_error}")
+
         
         # Separate recall and shoppers articles (Issue #860 - consolidate recalls into roundup)
         # Fixed: use consistent case checking with uppercase "RECALL" like in select_articles_node
@@ -503,9 +517,13 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                 "Answer the held-back detail within the first two paragraphs. "
                 "Use a different factual shape if this one does not fit."
             )
+            feature = choose_feature(article.get("title", ""), "shoppers")
+            related = select_related_articles(article.get("title", ""), archive)
             headline_additions = "\n".join(
-                part for part in (context.get("prompt_additions") or "", pattern_guidance)
-                if part
+                part for part in (
+                    context.get("prompt_additions") or "", pattern_guidance,
+                    prompt_link_guidance(feature, related),
+                ) if part
             )
 
             try:
@@ -533,6 +551,8 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                 continue
 
             result["article"] = article
+            result["internal_feature"] = feature
+            result["related_articles"] = related
             result["category"] = "shoppers"
             result["post_id"] = get_url_hash(article.get("link", ""))
             
@@ -568,7 +588,13 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
                     category="recall",
                     good_examples=recall_context.get("good_examples"),
                     bad_examples=recall_context.get("bad_examples"),
-                    prompt_additions=recall_context.get("prompt_additions"),
+                    prompt_additions="\n".join(filter(None, [
+                        recall_context.get("prompt_additions") or "",
+                        prompt_link_guidance(
+                            choose_feature(combined_title, "recall"),
+                            select_related_articles(combined_title, archive),
+                        ),
+                    ])),
                     common_mistakes=recall_context.get("common_mistakes"),
                     successful_patterns=recall_context.get("successful_patterns"),
                     max_retries=0,
@@ -582,6 +608,8 @@ def generate_posts_node(state: BlogPostState) -> Dict[str, Any]:
 
             if result is not None:
                 result["article"] = merged_article
+                result["internal_feature"] = choose_feature(combined_title, "recall")
+                result["related_articles"] = select_related_articles(combined_title, archive)
                 result["category"] = "recall"
                 result["post_id"] = get_url_hash(f"recall-roundup-{datetime.now().strftime('%Y-%W')}")
 
@@ -621,7 +649,7 @@ Do NOT change:
 - The HTML structure or tags
 - The meaning or tone of the content
 - Proper nouns, brand names, or URLs
-- The four-part close section links
+- The relevant Youdle feature and previously published related-article links
 
 Return ONLY the corrected HTML with no explanation. If there are no errors, return the original HTML unchanged."""
 
@@ -899,6 +927,14 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
             proofread_corrections.get(post_id, post.get("blog_post", ""))
         )
         article = post.get("article", {})
+        if post.get("internal_feature"):
+            blog_post, stripped_urls = apply_internal_links(
+                blog_post, post["internal_feature"], post.get("related_articles", [])
+            )
+            if stripped_urls:
+                logs.append(
+                    f"Removed {len(stripped_urls)} unapproved external or unverified links"
+                )
         original_link = article.get("link", "")
 
         unsafe_issues = find_unsafe_html_issues(blog_post)
