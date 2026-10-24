@@ -26,9 +26,9 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 6. Word count: Must be 400-600 words
 
 ## Link Validation
-7. Include an early embedded attribution link
+7. Attribute outside reporting publications by name, without linking to their summarized news articles
 8. Include one relevant Youdle feature link
-9. Include a direct link to original source notice
+9. Prefer relevant Youdle feature and published-article links; allow exact official agency recall notices when required for safety
 10. Do not use outdated getyoudle.com/blog or a four-link marketing close
 
 ## Quality Validation
