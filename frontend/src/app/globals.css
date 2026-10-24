@@ -208,3 +208,19 @@ body {
 
 
 
+
+/* Grocery Brief reading and editing, inheriting existing Inter typography. */
+.grocery-article-content { font-family: var(--font-inter), system-ui, sans-serif; font-size: 16px; line-height: 1.8; color: #24352c; }
+.grocery-article-content p { margin: 0 0 1.15rem; }
+.grocery-article-content h2 { font-size: 1.6rem; line-height: 1.3; font-weight: 750; margin: 1.4rem 0 .75rem; }
+.grocery-article-content h3 { font-size: 1.23rem; font-weight: 700; margin: 1.5rem 0 .75rem; }
+.grocery-article-content ul, .grocery-article-content ol { padding-left: 1.6rem; margin: .75rem 0 1.25rem; }
+.grocery-article-content ul { list-style: disc; }
+.grocery-article-content ol { list-style: decimal; }
+.grocery-article-content li { margin: .42rem 0; }
+.grocery-article-content strong { font-weight: 750; }
+.grocery-article-content a { color: #166534; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.grocery-article-content img { max-width: 100%; height: auto; border-radius: 10px; margin: .75rem 0 1rem; }
+.grocery-article-content blockquote { padding-left: 1rem; border-left: 3px solid #15803d; margin: 1rem 0; }
+.ProseMirror.grocery-article-content { min-height: 420px; padding: 1.1rem 1.3rem; }
+.ProseMirror.grocery-article-content > * + * { margin-top: 0; }

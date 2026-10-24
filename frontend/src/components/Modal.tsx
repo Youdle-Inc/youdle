@@ -10,9 +10,10 @@ interface ModalProps {
   title: string
   children: React.ReactNode
   footer?: React.ReactNode
+  wide?: boolean
 }
 
-export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) {
+export function Modal({ isOpen, onClose, title, children, footer, wide = false }: ModalProps) {
   // Close on ESC key
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -42,7 +43,7 @@ export function Modal({ isOpen, onClose, title, children, footer }: ModalProps) 
       aria-modal="true"
     >
       <div
-        className="relative flex h-[94dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl animate-in zoom-in-95 duration-200 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl"
+        className={`relative flex h-[94dvh] w-full flex-col overflow-hidden rounded-t-2xl bg-white shadow-2xl animate-in zoom-in-95 duration-200 sm:h-auto sm:max-h-[90vh] sm:rounded-2xl ${wide ? 'max-w-6xl' : 'max-w-2xl'}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

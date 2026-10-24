@@ -110,7 +110,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a direct original source link. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
+7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a relevant Youdle feature link. Exact official FDA/USDA notices remain permissible for consumer safety. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
 
 {FOUR_PART_CLOSE}
 
@@ -130,7 +130,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 - Are ALL affected products listed with identifiers (UPCs, dates)?
 - Is the health impact stated factually (not sensationalized)?
 - Is the source an official FDA/USDA page?
-- Are original-source and contextual Youdle feature links present?
+- Are relevant Youdle links and accurate official safety references present?
 - Does the headline use verified hazards and counts, under 14 words, with an immediate payoff?
 - Would a reader know exactly what to check in their pantry?
 
