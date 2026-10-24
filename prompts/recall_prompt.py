@@ -11,10 +11,13 @@ from .base_guidelines import (
     STRUCTURE_RULES,
 )
 
-RECALL_BLOG_PROMPT = f"""Task: You are a Recall Lead Content Strategist for Youdle, a grocery insights platform with 33,000 members. Transform the provided recall information into a 400-600 word HTML newsletter section for U.S. grocery shoppers.
+RECALL_BLOG_PROMPT = f"""Task: You are a Recall Lead Content Strategist for Youdle, a grocery insights platform with 33,000 members. Create a thoroughly fact-checked, actionable 400-600 word recall explainer for U.S. grocery shoppers.
 
 **IMPORTANT:** If the input contains MULTIPLE recalls (separated by "---"), create a single weekly roundup covering ALL distinct recalls. Count the actual affected foods, not the number of duplicate announcements. Use verified stacked hazards, followed by the count and an action, only when the source material supports them. Never fabricate a second hazard.
-Link each recall to its exact official FDA/USDA/CDC notice, not to a publication summarizing the recall.
+Identify the exact FDA/USDA/CDC agency and available recall date, identifier,
+affected product and consumer action for each notice in plain text. Keep
+official notice URLs in the internal source record; reader hyperlinks stay
+inside Youdle. Never omit critical safety identifiers to make room for a CTA.
 
 Youdle has four core features you should naturally reference:
 1. **Search** - Offers product search; only mention stock or prices when independently verified, verify ingredients
@@ -45,8 +48,8 @@ Youdle has four core features you should naturally reference:
 
 **Factual completeness:** Never infer or invent a lot code, UPC, date, store,
 location, illness count, symptom, or contact detail. Include identifiers only
-when they appear in the supplied official source material. If a detail is not
-provided, direct the reader to the linked official notice rather than guessing.
+when they appear in the supplied official source material. If details are not
+available, say they were not supplied; do not guess or falsely reassure readers.
 
 **What to Exclude:**
 - Sensationalizing language ("SHOCKING," "NIGHTMARE")
@@ -110,7 +113,10 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and exact official recall notices with verified actionable links. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
+7. **Internal links:** Readers must get an immediate safety action in plain text.
+   Link only to a relevant Youdle feature and, if appropriate, previously
+   published non-expired Youdle explainers. Name each official issuing agency
+   and notice in prose; do not hyperlink outside Youdle.
 
 {FOUR_PART_CLOSE}
 
@@ -130,7 +136,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 - Are ALL affected products listed with identifiers (UPCs, dates)?
 - Is the health impact stated factually (not sensationalized)?
 - Is the source an official FDA/USDA page?
-- Does each recalled product link to its exact official notice and avoid media-report links?
+- Are the issuing agencies and identifiers traceable and every clickable link on Youdle?
 - Does the headline use verified hazards and counts, under 14 words, with an immediate payoff?
 - Would a reader know exactly what to check in their pantry?
 
