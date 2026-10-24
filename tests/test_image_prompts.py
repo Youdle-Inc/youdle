@@ -145,3 +145,22 @@ def test_a_branded_subject_is_overridden_at_the_point_of_use():
     )
 
     assert prompt.index("unbranded packaging") > prompt.index("What to show")
+
+
+def test_newsletter_photo_prompt_avoids_a_repeated_navy_default():
+    generator = ImageGenerator.__new__(ImageGenerator)
+    prompt = generator._create_image_prompt(
+        "Grocery costs are changing", "grocery receipt and everyday staples",
+        ImageGenerator.look_for(0, "newsletter-week"),
+    )
+    assert "dark-blue studio background" in prompt
+    assert "Different articles should have" in prompt
+    assert "No fabricated brand" in prompt
+
+
+def test_six_looks_have_intentionally_different_surfaces():
+    treatments = " ".join(ImageGenerator.STYLE_LOOKS).lower()
+    for material in ("grocery aisle", "warm ivory", "honey", "light-grey",
+                     "sage", "terracotta"):
+        assert material in treatments
+    assert len(ImageGenerator.STYLE_LOOKS) == 6

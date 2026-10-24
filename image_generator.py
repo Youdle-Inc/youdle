@@ -50,6 +50,17 @@ Hard rules:
   receipt line. No paragraphs, no invented statistics.
 - One subject. A reader should know what the story is about at a glance.
 
+Editorial variety (essential for a newsletter issue):
+- Follow the specific treatment above, especially its location, camera angle,
+  lighting and background surface. Every story should read as its own photograph.
+- Dark navy, saturated blue backdrops and blue gradients are NOT the default
+  Youdle aesthetic. Do not put every product on a dark-blue studio background.
+- Prefer real, subject-appropriate environments and authentic surfaces over
+  repeated floating-object, navy-pedestal, or generic news-graphic compositions.
+- Keep true-to-life food and product colours. Different articles should have
+  visibly different overall palettes even as small thumbnails.
+- No fabricated brand identities, prices, product packaging, or safety notices.
+
 Leave room to be interesting: negative space, an off-centre crop, hard light or
 deep shadow are all welcome where they suit the subject. Do not default to a
 glossy catalogue shot.
@@ -94,25 +105,29 @@ class ImageGenerator:
     # would recognise, and the model that reads the article is asked to come up
     # with a specific image inside it.
     STYLE_LOOKS = (
-        "Documentary, shelf level. Shot in a real store aisle on an ordinary "
-        "day, available light, slight imperfection welcome. Nothing styled.",
+        "Documentary shelf-level. A real grocery aisle with white shelving, "
+        "everyday packaging and neutral store lighting; candid and imperfect. "
+        "The store itself provides the background, never a solid colour.",
 
-        "Studio product hero. Single subject on a seamless backdrop, one hard "
-        "key light, a defined shadow, generous empty space around it.",
+        "Bright studio hero. One clearly identifiable subject against matte "
+        "warm ivory or light sandstone, with a clean daylight shadow and "
+        "generous negative space. No dark blue backdrop.",
 
-        "Overhead flat-lay. Looking straight down, objects arranged "
-        "deliberately with a few supporting props, even light, tight crop.",
+        "Warm overhead flat-lay. Photograph straight down onto natural honey "
+        "wood or pale wheat-coloured linen. A few meaningful supporting items "
+        "only, sunlight and gentle texture rather than a coloured gradient.",
 
-        "Macro texture. Very close on the surface of the subject so the "
-        "material fills the frame, shallow focus, the object barely "
-        "identifiable at first glance.",
+        "Close-up texture. The key food, product or paper material fills most "
+        "of the frame, with naturally accurate colour, crisp foreground detail "
+        "and a soft light-grey or white background if any is visible.",
 
-        "Wide and quiet. The subject small in a large frame, a lot of empty "
-        "space, cool even light. Scale and absence do the work.",
+        "Wide real-life setting. A small subject in a believable grocery, pantry "
+        "or kitchen environment suited to the headline, airy off-white or pale "
+        "sage surroundings, and open window light. Quiet but not gloomy.",
 
-        "Graphic still life. Strong colour blocking, geometric arrangement, "
-        "high contrast, a price tag or receipt used as a compositional "
-        "element rather than a label.",
+        "Graphic editorial still life. Make bold but credible colour contrast "
+        "using terracotta, warm yellow and fresh produce greens on paper or "
+        "stone. Strong geometry and shadow, no navy blocks or neon-blue glow.",
     )
 
     @classmethod
