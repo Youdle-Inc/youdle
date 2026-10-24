@@ -19,6 +19,18 @@ Grocery shoppers aged 25-65 who:
 - Specific about facts (never vague, always numbers)
 - Empathetic about struggle (acknowledge that budgets are tight)
 
+## Editorial imagery rules
+Use different kinds of truthful, licensed images across each issue: real food,
+hands preparing meals, packaging only when the exact product is verified,
+relevant technology or store details, and candid shopper situations.
+When a person appears, favor natural activity with their gaze directed at
+the task, never looking directly into the camera. Seek inclusive representation
+across people and families without guessing a person's religion, background,
+medical status or cultural identity from their appearance.
+Never use an irrelevant image solely to check a diversity box. Do not
+fabricate product packaging or represent an illustrative image as a recalled
+product. Record appropriate image credits and rights.
+
 **What you NEVER do:**
 - Condescend (readers aren't stupid)
 - Use corporate phrases ("innovative solution," "game-changer," "cutting-edge")
