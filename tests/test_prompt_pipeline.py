@@ -151,7 +151,8 @@ def test_rendered_prompt_substitutes_source_url_and_preserves_image_placeholder(
     messages = _render_messages(prompt_template, original_link=source_url)
     rendered = messages[1].content
 
-    assert f'<a href="{source_url}">Read the full story</a>' in rendered
+    assert f'<a href="{source_url}">Read the full story</a>' not in rendered
+    assert "verified" in rendered.lower() or "official" in rendered.lower()
     assert f"<source_url>{source_url}</source_url>" in rendered
     assert "{original_link}" not in rendered
     assert '{IMAGE_HERE}' in rendered
@@ -444,7 +445,7 @@ def test_generated_html_safety_allows_normal_youdle_markup():
 <ul><li>Compare the details before shopping.</li></ul>
 <p>Check the <a href="https://www.youdle.io/community">Youdle Community</a>,
 read the <a href="https://getyoudle.com/blog">Youdle Blog</a>, and
-<a href="https://example.com/source">Read the full story</a>.</p>
+<a href="https://www.fda.gov/safety/recalls-market-withdrawals-safety-alerts">Check official recall notices</a>.</p>
 </div>"""
 
     assert find_unsafe_html_issues(normal_html) == []
@@ -579,7 +580,7 @@ def test_word_count_alone_marks_a_structurally_valid_post_invalid():
 <p>You can use these facts before shopping.</p>
 <ul><li>Review the product details.</li></ul>
 <p>Visit <a href="https://www.youdle.io/news">Grocery Brief</a> and
-<a href="https://example.com/source">Read the full story</a>.</p>
+<a href="https://www.youdle.io/">Search groceries on Youdle</a>.</p>
 </div>"""
     agent = ReflectionAgent()
     agent._spell = False
@@ -691,3 +692,50 @@ def test_full_recall_prompt_fits_the_default_model_context():
     # ~4 characters per token is the conventional English estimate.
     estimated_input_tokens = sum(len(m.content) for m in messages) / 4
     assert estimated_input_tokens + DEFAULT_MAX_TOKENS < MIN_CONTEXT_TOKENS
+
+
+def test_original_story_cta_is_rejected_by_editorial_validation():
+    sample = ('<div><img src="{IMAGE_HERE}" alt="article image"/>'
+              '<h2>Grocery bills keep changing</h2>'
+              '<p>According to Reuters, prices have shifted.</p>'
+              '<ul><li>Compare prices.</li></ul>'
+              '<p><a href="https://example.com/news-story">Read the full story</a></p>'
+              '</div>')
+    agent = ReflectionAgent()
+    assert "Original reporting link used instead of a shopper-action link" in agent.check_common_mistakes(sample)
+
+
+
+def test_youdle_internal_linking_uses_only_published_relevant_posts():
+    from internal_links import (
+        choose_feature, select_related_articles, apply_internal_links,
+        extract_anchor_urls,
+    )
+    rows = [
+        {"title": "Why meat prices are rising", "status": "published",
+         "category": "SHOPPERS",
+         "blogger_url": "https://news.youdle.io/2026/10/meat-prices.html"},
+        {"title": "What to cook for dinner", "status": "draft",
+         "category": "SHOPPERS",
+         "blogger_url": "https://news.youdle.io/2026/10/dinner.html"},
+        {"title": "Unrelated entertainment article", "status": "published",
+         "category": "SHOPPERS",
+         "blogger_url": "https://news.youdle.io/2026/10/entertainment.html"},
+    ]
+    related = select_related_articles("Your meat bill and rising prices", rows)
+    assert len(related) == 1
+    assert "meat-prices.html" in related[0]["url"]
+
+    html = ('<div><img src="{IMAGE_HERE}" alt="article image"/>'
+            '<h2>Meat prices are changing</h2>'
+            '<p>Reuters reports new prices. '
+            '<a href="https://reuters.com/article">Read the full story</a></p>'
+            '</div>')
+    fixed, removed = apply_internal_links(
+        html, choose_feature("Your meat bill and rising prices"), related
+    )
+    assert removed == ["https://reuters.com/article"]
+    urls = extract_anchor_urls(fixed)
+    assert "https://www.youdle.io/shop/budget" in urls
+    assert related[0]["url"] in urls
+    assert all("youdle.io" in url for url in urls)

@@ -26,10 +26,10 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 6. Word count: Must be 400-600 words
 
 ## Link Validation
-7. Include an early embedded attribution link
-8. Include one relevant Youdle feature link
-9. Include a direct link to original source notice
-10. Do not use outdated getyoudle.com/blog or a four-link marketing close
+7. Credit publications and official agencies by name in plain text, without hyperlinking offsite
+8. Require a relevant Youdle feature link, not just the blog index/home link
+9. Link prior Youdle posts only if the exact published URL was supplied in context and topic truly matches
+10. Reject ALL external hyperlinks, 'Read the full story' links, invented past article URLs, and unrelated link stuffing
 
 ## Quality Validation
 11. Attribution: Factual claims should be attributed to credible sources
@@ -55,7 +55,7 @@ Respond with a JSON object:
     "is_valid": true/false,
     "word_count": <actual word count>,
     "has_contextual_youdle_link": true/false,
-    "has_original_source_link": true/false,
+    "has_useful_action_link": true/false,
     "headline_payoff_in_first_two_paragraphs": true/false,
     "headline_truthful_and_compliant": true/false,
     "spelling_errors": ["list of misspelled words with corrections, e.g. 'recieved → received'"],

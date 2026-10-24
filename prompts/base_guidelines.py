@@ -70,9 +70,17 @@ ATTRIBUTION_RULES = """
 
 Example: "Coffee prices jumped nearly 20% in December compared to a year earlier, according to reporting from ABC News."
 
-**URL embedding:** Never show standalone URLs. Embed into source name:
-- Good: "according to reporting from <a href=\"URL\">Taste of Home</a>"
-- Bad: "For more info, visit https://..."
+**Publication credit and reader links:**
+- Name the reporting publication in plain text, without a hyperlink to its news article.
+- Keep the reporting article URL in the internal audit record for verification.
+- Do not insert the reporting URL into published HTML, even as "Read the full story."
+- Reader-facing links should point ONLY to useful, relevant Youdle features and
+  real previously published Youdle articles. Keep external reference URLs
+  in the private source record, not in the reader-facing article.
+- Name official FDA/USDA/CDC notices and relevant dates/identifiers in the
+  article so recall safety information remains traceable.
+- Never invent a destination URL, offer, price, stock status, or active feature.
+- Use descriptive anchor text; do not show raw URLs or generic "click here."
 """
 
 HEADLINE_CORE_RULES = """
@@ -153,16 +161,25 @@ products, risks and immediate consumer action. Urgent but never alarmist.
 """
 
 FOUR_PART_CLOSE = """
-## Natural contextual closing
-Include ONE useful Youdle feature link matched to the article:
-- Grocery search: https://www.youdle.io/
-- Community and shelfies: https://www.youdle.io/community
-- Grocery Brief: https://www.youdle.io/news
-Place a direct, embedded source link early. Include this final original-source
-attribution as an actual clickable anchor:
-<a href="{original_link}">Read the full story</a>
-Never append a repetitive four-link promotional paragraph. Do not claim
-live pricing, stock, photo scanning, or alert features without evidence.
+## Internal Youdle links: help readers act and learn more
+Every article must contain one relevant, clickable Youdle feature:
+- Search for groceries: https://www.youdle.io/
+- Shop My Budget: https://www.youdle.io/shop/budget
+- Shop a Recipe: https://www.youdle.io/shop/recipe
+- My Grocery Lists: https://www.youdle.io/grocery
+- Map My Grocery Run: https://www.youdle.io/map?mode=run
+- Community: https://www.youdle.io/community
+
+Also add one or two relevant PAST Youdle article links ONLY when their exact,
+published URLs are supplied in the generation guidance. Never invent or
+guess an archive URL. Do not link a stale recall as current safety advice.
+If the past-article match is weak or none is available, omit that link.
+The feature link and any related posts should read as naturally useful
+cross-references, not advertisements or a standard promotional footer.
+No reader-facing news-publication, retailer, affiliate, or government URLs:
+credit external reporting, studies and recall agencies by NAME in prose.
+Keep the complete external URLs in the internal audit record for fact-checking.
+Avoid generic "Read more" links. Use specific, descriptive anchor text.
 """
 
 WHAT_TO_EXCLUDE = """
@@ -177,7 +194,7 @@ WHAT_TO_EXCLUDE = """
 - Don't pretend systemic issues are individual failures
 
 **Vague Claims:**
-- "Studies show" without linking to the study
+- "Studies show" without naming the specific study or supplying verifiable evidence
 - "Many believe" instead of "data indicates"
 - "Growing trend" instead of "49% increase"
 
