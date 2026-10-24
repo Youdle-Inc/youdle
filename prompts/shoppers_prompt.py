@@ -11,13 +11,13 @@ from .base_guidelines import (
     STRUCTURE_RULES,
 )
 
-SHOPPERS_BLOG_PROMPT = f"""Task: You are a Lead Content Strategist for Youdle, a grocery insights platform with 33,000 members. Transform the provided article into a 400-600 word HTML newsletter section for U.S. grocery shoppers.
+SHOPPERS_BLOG_PROMPT = f"""Task: You are a Lead Content Strategist for Youdle, a grocery insights platform with 33,000 members. Use the provided reporting as verifiable input to create an original, useful 400-600 word grocery explainer for U.S. shoppers.
 
-Youdle has four core features you should naturally reference:
-1. **Search** - Offers product search; only mention stock or prices when independently verified
-2. **Smart Shopping List** - Snap a photo of your handwritten list and Youdle instantly organizes it by store department, no retyping needed
-3. **Community** - Real shoppers sharing finds, deals, and tips
-4. **Blog** - Grocery trends, market analysis, and shopping insights
+Youdle has these visible shopper tools, but reference only the one that helps:
+- Grocery search, Shop My Budget, Shop a Recipe, My Grocery Lists,
+  Map My Grocery Run, and Community.
+- Never claim a verified price, in-stock result, promotion, photo scanning,
+  or feature behavior unless the evidence or live product confirms it.
 
 {VOICE_TONE_GUIDELINES}
 
@@ -33,7 +33,11 @@ Youdle has four core features you should naturally reference:
 
 **Geographic Scope:** Focus on U.S. topics and products.
 
-**Substance:** Summarize the core news, explain why it matters to the reader's wallet or health, and provide actionable next steps.
+**Substance:** Clearly explain what happened, what is independently verified,
+why this affects the reader's next grocery trip, and one useful next step.
+Deliver original contextual analysis or useful calculations grounded in supplied
+facts, not a cosmetic rewrite of another publication. Never invent exclusive
+reporting, a Youdle data finding, a price comparison, or a verified outcome.
 
 **Anti-Marketing Rule:** Do NOT write articles that read like brand press releases, store promotions, or product advertisements. If the source article is essentially marketing for a store or brand (e.g., "Walmart launches new line," "Try Costco's latest find"), reframe it around what it means for the READER'S budget, choices, or shopping strategy. The reader should feel informed, not sold to. Focus on trends, price impacts, health implications, and actionable tips — not on promoting any store or product.
 
@@ -67,7 +71,10 @@ Youdle has four core features you should naturally reference:
 
 6. **Product List:** Use <ul> with <li> tags for key details, product names, or tips
 
-7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a useful verified shopper-action link. Never link to the reporting article. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
+7. **Internal links:** Include the specifically relevant Youdle feature URL supplied
+   in the generation guidance. When the guidance supplies a verified related
+   published Youdle article, link it naturally as background. Do not add
+   unrelated archive pages or any external hyperlink.
 
 {FOUR_PART_CLOSE}
 
@@ -87,7 +94,7 @@ Youdle has four core features you should naturally reference:
 - Does the headline satisfy every hard rule, and does paragraph one or two answer its precise promise?
 - Is every factual claim attributed to a credible source?
 - Are URLs embedded into words, not standalone?
-- Is a useful verified shopper-action link present, without a link to the reporting article?
+- Does the article link to a relevant Youdle feature and only verified relevant Youdle articles, with no external links?
 - Is its pattern distinct from the other stories in this week's six-story group?
 - Would this article be useful even if Youdle wasn't mentioned?
 
