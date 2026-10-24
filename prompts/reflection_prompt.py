@@ -26,10 +26,10 @@ REFLECTION_PROMPT = """Review this generated blog post and check for compliance 
 6. Word count: Must be 400-600 words
 
 ## Link Validation
-7. Credit publications by name in plain text; no news-article hyperlink
-8. Include at least one verified shopper-action or relevant official-information link
-9. For recalls, provide exact official FDA/USDA/CDC notices for each recall
-10. Reject 'Read the full story' links, source-report links, generic filler links, and outdated URLs
+7. Credit publications and official agencies by name in plain text, without hyperlinking offsite
+8. Require a relevant Youdle feature link, not just the blog index/home link
+9. Link prior Youdle posts only if the exact published URL was supplied in context and topic truly matches
+10. Reject ALL external hyperlinks, 'Read the full story' links, invented past article URLs, and unrelated link stuffing
 
 ## Quality Validation
 11. Attribution: Factual claims should be attributed to credible sources
