@@ -1,12 +1,12 @@
 import type { Metadata } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
+import { Montserrat, JetBrains_Mono } from 'next/font/google'
 import './globals.css'
 import { Providers } from './providers'
 import { Sidebar } from '@/components/Sidebar'
 
-const inter = Inter({ 
+const montserrat = Montserrat({ 
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-montserrat',
 })
 
 const jetbrainsMono = JetBrains_Mono({
@@ -25,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+    <html lang="en" className={`${montserrat.variable} ${jetbrainsMono.variable}`}>
       <body className="font-sans antialiased">
         <Providers>
           <div className="min-h-screen">
