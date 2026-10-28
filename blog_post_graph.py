@@ -41,7 +41,7 @@ from headline_policy import extract_headline, pattern_for_shopper, validate_head
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues, strip_code_fences
-from imgbb_upload import upload_image_to_imgbb, DEFAULT_RECALL_IMAGE_URL
+from imgbb_upload import DEFAULT_RECALL_IMAGE_URL
 
 
 # ============================================================================
@@ -778,73 +778,83 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
 
 
 def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
+    """Upload Gemini-generated article photographs to Youdle's public Supabase
+    blog-images bucket. A missing image must never be represented by a fake URL.
     """
-    Node: Upload generated images to imgBB.
-    RECALL articles get a default image URL instead.
-    """
-    logs = [f"[{datetime.now().isoformat()}] Uploading images to imgBB..."]
-
+    logs = [f"[{datetime.now().isoformat()}] Uploading Gemini images to Supabase media..."]
     images = state.get("images", [])
-
     if not images:
         return {"uploaded_urls": [], "logs": logs + ["No images to upload"]}
 
-    try:
-        uploaded_urls = []
+    uploaded_urls = []
+    upload_errors = []
+    storage = None
 
-        for image in images:
-            post_id = image.get("post_id", "unknown")
-
-            # RECALL articles use default image
-            if image.get("is_recall"):
-                uploaded_urls.append({
-                    "post_id": post_id,
-                    "url": DEFAULT_RECALL_IMAGE_URL,
-                    "success": True
-                })
-                logs.append(f"  ✓ Using default image for RECALL post {post_id}")
-                continue
-
-            # Failed image generation - use placeholder
-            if not image.get("success"):
-                uploaded_urls.append({
-                    "post_id": post_id,
-                    "url": "{IMAGE_HERE}",
-                    "success": False
-                })
-                logs.append(f"  ✗ No image data for {post_id}")
-                continue
-
-            # Upload to imgBB
-            upload_result = upload_image_to_imgbb(
-                image_data=image.get("image_data", ""),
-                name=post_id
-            )
-
+    for image in images:
+        post_id = image.get("post_id", "unknown")
+        if image.get("is_recall"):
+            # Recall roundups intentionally use a verified generic food-safety
+            # graphic; never fabricate photos of recalled products or labels.
             uploaded_urls.append({
-                "post_id": post_id,
-                "url": upload_result.get("url", "{IMAGE_HERE}"),
-                "success": upload_result.get("success", False)
+                "post_id": post_id, "url": DEFAULT_RECALL_IMAGE_URL, "success": True
             })
+            continue
 
-            status = "✓" if upload_result.get("success") else "✗"
-            logs.append(f"  {status} Uploaded {post_id} to imgBB")
+        if not image.get("success") or not image.get("image_data"):
+            uploaded_urls.append({"post_id": post_id, "url": "", "success": False})
+            upload_errors.append(f"Gemini did not return a photograph for {post_id}")
+            logs.append(f"  ✗ Gemini photo missing for {post_id}")
+            continue
 
-        success_count = sum(1 for u in uploaded_urls if u.get("success"))
-        logs.append(f"Uploaded {success_count}/{len(uploaded_urls)} images")
+        fmt = image.get("format")
+        content_type = {
+            "png": "image/png", "image/png": "image/png",
+            "jpeg": "image/jpeg", "jpg": "image/jpeg", "image/jpeg": "image/jpeg",
+            "webp": "image/webp", "image/webp": "image/webp",
+        }.get(fmt)
+        if not content_type:
+            uploaded_urls.append({"post_id": post_id, "url": "", "success": False})
+            upload_errors.append(f"Unsupported Gemini image type for {post_id}")
+            continue
 
-        return {
-            "uploaded_urls": uploaded_urls,
-            "logs": logs
-        }
+        try:
+            if storage is None:
+                storage = get_supabase_storage()
+            if storage is None:
+                raise RuntimeError("Supabase media storage is not configured")
+            ext = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}[content_type]
+            upload_result = storage.upload_image(
+                image_data=image["image_data"],
+                filename=f"gemini_{post_id}.{ext}",
+                folder="media",
+                content_type=content_type,
+            )
+            url = upload_result.get("url") if upload_result.get("success") else None
+            valid = (
+                isinstance(url, str)
+                and url.startswith("https://")
+                and "/storage/v1/object/public/blog-images/media/" in url
+            )
+            uploaded_urls.append({
+                "post_id": post_id, "url": url if valid else "", "success": bool(valid)
+            })
+            if valid:
+                logs.append(f"  ✓ Gemini photo saved in Youdle media for {post_id}")
+            else:
+                error = str(upload_result.get("error") or "Storage returned no public URL")
+                upload_errors.append(f"Supabase media upload failed for {post_id}: {error}")
+                logs.append(f"  ✗ Media upload failed for {post_id}")
+        except Exception as exc:
+            uploaded_urls.append({"post_id": post_id, "url": "", "success": False})
+            upload_errors.append(f"Supabase media upload failed for {post_id}: {exc}")
+            logs.append(f"  ✗ Media upload exception for {post_id}")
 
-    except Exception as e:
-        return {
-            "uploaded_urls": [],
-            "errors": [f"Upload error: {str(e)}"],
-            "logs": logs + [f"Upload exception: {str(e)}"]
-        }
-
+    success_count = sum(bool(entry["success"]) for entry in uploaded_urls)
+    logs.append(f"Saved {success_count}/{len(uploaded_urls)} images")
+    update = {"uploaded_urls": uploaded_urls, "logs": logs}
+    if upload_errors:
+        update["errors"] = upload_errors
+    return update
 
 def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
     """
@@ -956,12 +966,23 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
             )
 
         # Get image URL
-        image_url = url_lookup.get(post_id, "{IMAGE_HERE}")
+        image_url = url_lookup.get(post_id, "")
+        # Image creation and upload are part of editorial readiness. Saving a
+        # draft with {IMAGE_HERE} creates broken photos in the dashboard and
+        # can leak that placeholder into Blogger/newsletters. Skip this draft
+        # until Gemini and permanent storage both succeed.
+        if not isinstance(image_url, str) or not image_url.startswith("https://"):
+            title = article.get("title", "Unknown")
+            assembly_errors.append(
+                f"Skipped '{title}': Gemini photo missing or media upload failed"
+            )
+            logs.append(f"Skipped photo-less draft: {title[:65]}")
+            continue
 
-        # Replace placeholders
+        # Replace double-braced placeholders first, then single-braced ones.
         final_html = blog_post
-        final_html = final_html.replace("{IMAGE_HERE}", image_url)
         final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
+        final_html = final_html.replace("{IMAGE_HERE}", image_url)
         final_html = final_html.replace("{original_link}", original_link)
 
         final_unsafe_issues = find_unsafe_html_issues(final_html)

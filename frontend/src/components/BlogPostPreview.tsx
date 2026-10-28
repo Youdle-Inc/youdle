@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ExternalLink, Eye, Code, Copy, Check, Trash2, Edit2, Loader2, Globe } from 'lucide-react'
 import { cn, formatDate, getStatusColor, getCategoryColor, truncate, stripHtml } from '@/lib/utils'
+import { safeArticlePreviewHtml } from '@/lib/articleImages'
 import { EditBlogPostModal } from './EditBlogPostModal'
 import type { BlogPostUpdate } from '@/lib/api'
 
@@ -225,7 +226,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
         {viewMode === 'preview' ? (
           <div
             className="prose prose-sm max-w-none break-words [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
-            dangerouslySetInnerHTML={{ __html: post.html_content }}
+            dangerouslySetInnerHTML={{ __html: safeArticlePreviewHtml(post.html_content, post.image_url) }}
           />
         ) : (
           <pre className="text-xs font-mono text-stone-700 whitespace-pre-wrap break-words bg-stone-50 rounded-lg p-4">
