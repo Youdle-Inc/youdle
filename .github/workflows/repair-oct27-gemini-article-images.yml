@@ -1,0 +1,32 @@
+name: Repair Oct 27 Gemini Article Images
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Generate and upload Gemini images for exactly nine Oct 27 drafts? Type YES'
+        required: true
+        type: string
+concurrency:
+  group: repair-oct27-gemini-images
+  cancel-in-progress: false
+jobs:
+  repair:
+    if: ${{ github.event.inputs.confirm == 'YES' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install image and storage clients
+        run: python -m pip install 'google-genai>=1.0.0,<3' 'supabase>=2.0.0,<3' 'python-dotenv>=1.0.0,<2'
+      - name: Restore images for approved drafts only
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python scripts/repair_oct27_gemini_article_images.py
+          python scripts/repair_oct27_gemini_article_images.py --execute
