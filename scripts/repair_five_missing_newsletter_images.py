@@ -60,7 +60,7 @@ def run(execute: bool):
         raise RuntimeError("Supabase client not configured")
     ids = [row[0] for row in APPROVED]
     result = db.table("blog_posts").select(
-        "id,title,status,image_url,html_content,blogger_post_id"
+        "id,title,status,image_url,html_content,blogger_post_id,blogger_url,blogger_published_at"
     ).in_("id", ids).execute()
     found = {row["id"]: row for row in (result.data or [])}
     if len(found) != len(ids):
@@ -69,8 +69,10 @@ def run(execute: bool):
     eligible = []
     for post_id, theme, look, alt in APPROVED:
         post = found[post_id]
-        if post["status"] != "draft" or post.get("blogger_post_id"):
-            raise RuntimeError(f"Refusing image update to non-draft: {post_id}")
+        # Blogger draft IDs are assigned before publication. Do not mistake an
+        # unpublished Blogger draft for a live article. Reject publication markers.
+        if (post["status"] != "draft" or post.get("blogger_url") or post.get("blogger_published_at")):
+            raise RuntimeError(f"Refusing image update to published article: {post_id}")
         if post.get("image_url") and post.get("image_url") != "{IMAGE_HERE}":
             print(f"SKIP: image already exists for {post['title']}", flush=True)
             continue
