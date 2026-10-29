@@ -1,4 +1,4 @@
-"""Fill nine Oct 27 shopper drafts with GEMINI images and Supabase media.
+"""Fill nine Oct 27 shopper drafts with Gemini-generated images hosted on ImgBB.
 
 Strict scope: the nine Oct 27, 2026 articles that currently have no image. Does
 not search the web, rewrite stories, use Exa, publish to Blogger, or send mail.
@@ -13,6 +13,7 @@ from html import escape
 from uuid import uuid4
 
 from image_generator import ImageGenerator
+from imgbb_upload import upload_image_to_imgbb
 from supabase_storage import get_supabase_client, get_supabase_storage
 
 
@@ -136,35 +137,49 @@ def run(execute: bool):
 
         ext = "png" if mime == "image/png" else "jpg"
         filename = f"grocerybrief_{post_id[:8]}_{uuid4().hex[:8]}.{ext}"
-        upload = storage.upload_image(
+        # ImgBB hosts the image shown in the article and in Mailchimp.
+        # Do not store a placeholder or an unverified URL if upload fails.
+        hosted = upload_image_to_imgbb(
+            generated["image_data"],
+            name=f"youdle-grocerybrief-{post_id[:8]}",
+        )
+        public_image_url = hosted.get("url") if hosted.get("success") else ""
+        if not isinstance(public_image_url, str) or not public_image_url.startswith("https://i.ibb.co/"):
+            print(f"FAIL: ImgBB did not return an image URL for {title}", flush=True)
+            continue
+
+        # Preserve a separate copy of the image in the Youdle media library.
+        backup = storage.upload_image(
             image_data=generated["image_data"],
             filename=filename, folder="media", content_type=mime,
         )
-        if not upload.get("success"):
-            print(f"FAIL: permanent storage upload for {title}", flush=True)
-            continue
+        if not backup.get("success"):
+            print(f"WARN: Supabase media backup upload failed for {title}", flush=True)
 
-        # Put the image in the existing Dashboard Media Library as well as
-        # the article. A failure leaves the article a draft without an image.
-        media_row = {
-            "filename": filename,
-            "original_filename": f"Gemini - {title[:60]}.{ext}",
-            "file_path": upload["path"],
-            "public_url": upload["url"],
-            "mime_type": mime,
-            "file_size": len(raw),
-            "alt_text": alt,
-            "created_at": _utcnow(),
-            "updated_at": _utcnow(),
-        }
         try:
-            stored_media = db.table("media").insert(media_row).execute()
-            if not stored_media.data:
-                raise RuntimeError("No media row returned")
-            # Existing readers expect the article itself to show the hero
-            # image. This is not a source-photo attribution or a product claim.
+            if backup.get("success"):
+                media_row = {
+                    "filename": filename,
+                    "original_filename": f"Gemini - {title[:60]}.{ext}",
+                    "file_path": backup["path"],
+                    "public_url": backup["url"],
+                    "mime_type": mime,
+                    "file_size": len(raw),
+                    "alt_text": alt,
+                    "created_at": _utcnow(),
+                    "updated_at": _utcnow(),
+                }
+                try:
+                    stored_media = db.table("media").insert(media_row).execute()
+                    if not stored_media.data:
+                        raise RuntimeError("No media row returned")
+                except Exception as media_exc:
+                    print(f"WARN: Supabase media index failed for {title}: {type(media_exc).__name__}", flush=True)
+
+            # The hero image must be the same for the dashboard, saved HTML,
+            # Blogger articles, and the newsletter campaign.
             img = (
-                f'<img src="{escape(upload["url"], quote=True)}" '
+                f'<img src="{escape(public_image_url, quote=True)}" '
                 f'alt="{escape(alt, quote=True)}" '
                 'style="display:block;width:100%;height:auto;'
                 'max-height:520px;object-fit:cover;border-radius:10px;" '
@@ -172,7 +187,7 @@ def run(execute: bool):
             )
             html = post["html_content"]
             if '{IMAGE_HERE}' in html:
-                html = html.replace('{IMAGE_HERE}', escape(upload["url"], quote=True))
+                html = html.replace('{IMAGE_HERE}', escape(public_image_url, quote=True))
             elif html.startswith('<div class="youdle-brief-article">'):
                 html = html.replace(
                     '<div class="youdle-brief-article">',
@@ -182,7 +197,7 @@ def run(execute: bool):
                 html = img + html
             updated = (
                 db.table("blog_posts")
-                .update({"image_url": upload["url"], "html_content": html, "updated_at": _utcnow()})
+                .update({"image_url": public_image_url, "html_content": html, "updated_at": _utcnow()})
                 .eq("id", post_id)
                 .eq("status", "draft")
                 .eq("image_url", "{IMAGE_HERE}")
