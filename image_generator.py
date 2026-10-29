@@ -84,9 +84,18 @@ class ImageGenerator:
                 "Install it with `pip install google-genai`"
             )
 
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        # A dedicated newsletter-image key can point to Youdle's funded
+        # Gemini project without changing Gemini keys for search or other apps.
+        # The existing key remains a fallback until migration is complete.
+        self.api_key = (
+            api_key
+            or os.getenv("GEMINI_NEWSLETTER_IMAGE_API_KEY")
+            or os.getenv("GEMINI_API_KEY")
+        )
         if not self.api_key:
-            raise ValueError("GEMINI_API_KEY environment variable is not set")
+            raise ValueError(
+                "GEMINI_NEWSLETTER_IMAGE_API_KEY or GEMINI_API_KEY is not set"
+            )
 
         # Initialize the new client
         self.client = genai_client.Client(api_key=self.api_key)
