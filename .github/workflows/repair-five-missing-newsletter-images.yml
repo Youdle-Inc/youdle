@@ -1,5 +1,9 @@
 name: Repair Five Missing Newsletter Images
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/repair-five-missing-newsletter-images.yml'
   workflow_dispatch:
     inputs:
       confirm:
@@ -11,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   repair:
-    if: ${{ github.event.inputs.confirm == 'YES' }}
+    if: ${{ github.event_name == 'push' || github.event.inputs.confirm == 'YES' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
