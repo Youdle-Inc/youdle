@@ -29,5 +29,6 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: |
-          python scripts/repair_oct27_gemini_article_images.py
-          python scripts/repair_oct27_gemini_article_images.py --execute
+          # Module execution includes the repository root on Python's import path.
+          python -m scripts.repair_oct27_gemini_article_images
+          python -m scripts.repair_oct27_gemini_article_images --execute
