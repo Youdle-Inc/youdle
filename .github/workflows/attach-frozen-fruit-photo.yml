@@ -1,0 +1,31 @@
+name: Attach frozen-fruit draft photo
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/attach-frozen-fruit-photo.yml'
+permissions:
+  contents: read
+concurrency:
+  group: single-frozen-fruit-photo
+  cancel-in-progress: false
+jobs:
+  attach-photo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install image generation and storage dependencies
+        run: python -m pip install 'google-genai>=1.0.0,<3' 'supabase>=2.0.0,<3' 'python-dotenv>=1.0.0,<2' 'requests>=2.0,<3'
+      - name: Generate frozen-fruit photo and attach to draft
+        env:
+          GEMINI_NEWSLETTER_IMAGE_API_KEY: ${{ secrets.GEMINI_NEWSLETTER_IMAGE_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python -m scripts.attach_frozen_fruit_photo
