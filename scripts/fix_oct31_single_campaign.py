@@ -182,6 +182,11 @@ def main():
             "id": str(uuid4()), "newsletter_id": NID,
             "blog_post_id": FAST_CASUAL, "position": 6,
         }).execute()
+    # Assign temporary nonconflicting positions first; the database has a unique
+    # (newsletter_id, position) index and rejects direct swaps.
+    for i, post_id in enumerate(ids):
+        db.table("newsletter_posts").update({"position": i + 100}).eq(
+            "newsletter_id", NID).eq("blog_post_id", post_id).execute()
     for i, post_id in enumerate(ids):
         db.table("newsletter_posts").update({"position": i}).eq(
             "newsletter_id", NID).eq("blog_post_id", post_id).execute()
