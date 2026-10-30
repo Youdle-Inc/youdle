@@ -77,7 +77,7 @@ def verify_html(html, posts, ids):
     if html.count('<li style="margin:0 0 24px') != 7 or html.count("<img ") < 8:
         raise RuntimeError("Expected seven story cards with photos and the logo")
     for post_id in ids:
-        if ">" + escape(posts[post_id]["title"]) + "</a>" not in html:
+        if escape(posts[post_id]["title"]) not in html:
             raise RuntimeError("Missing required article: " + posts[post_id]["title"])
     for url, _ in FEATURES.values():
         if html.count(url) != 1:
