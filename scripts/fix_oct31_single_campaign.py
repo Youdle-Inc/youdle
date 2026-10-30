@@ -137,7 +137,7 @@ def main():
         campaign.get("recipients", {}).get("list_id") != mc.list_id or
         int(campaign.get("emails_sent") or 0)):
         raise RuntimeError("Existing Mailchimp campaign identity, audience or send count changed")
-    if campaign.get("status") not in ("save", "schedule"):
+    if campaign.get("status") not in ("save", "schedule", "paused"):
         raise RuntimeError("Mailchimp campaign not safe to edit: " + str(campaign.get("status")))
     current = mc.client.campaigns.content.get(CID).get("html", "")
     try:
@@ -150,7 +150,7 @@ def main():
             mc.client.campaigns.actions.unschedule(CID)
             print("Temporarily unscheduled existing campaign for edit.", flush=True)
         state = mc.client.campaigns.get(CID)
-        if state.get("status") != "save":
+        if state.get("status") not in ("save", "paused"):
             raise RuntimeError("Existing campaign did not become editable")
         mc.client.campaigns.content.update(CID, {"html": html})
         settings = state.get("settings", {})
