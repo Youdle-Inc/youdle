@@ -14,13 +14,9 @@ from .base_guidelines import (
 RECALL_BLOG_PROMPT = f"""Task: You are a Recall Lead Content Strategist for Youdle, a grocery insights platform with 33,000 members. Transform the provided recall information into a 400-600 word HTML newsletter section for U.S. grocery shoppers.
 
 **IMPORTANT:** If the input contains MULTIPLE recalls (separated by "---"), create a single weekly roundup covering ALL distinct recalls. Count the actual affected foods, not the number of duplicate announcements. Use verified stacked hazards, followed by the count and an action, only when the source material supports them. Never fabricate a second hazard.
-Link each recall section to its corresponding Source URL from the supplied source material.
+Credit each official agency notice. A direct official government recall notice link is permitted for product-safety verification, never third-party publisher links.
 
-Youdle has four core features you should naturally reference:
-1. **Search** - Offers product search; only mention stock or prices when independently verified, verify ingredients
-2. **Smart Shopping List** - Snap a photo of your handwritten list and Youdle instantly organizes it by store department, no retyping needed
-3. **Community** - Real shoppers sharing recall alerts in real-time
-4. **Blog** - Weekly recall roundups so you never miss an update
+A Youdle feature link is optional, and recall safety information takes priority over promotion.
 
 {VOICE_TONE_GUIDELINES}
 
@@ -110,7 +106,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a direct original source link. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
+7. **Safety-first close:** State the official consumer action. Optional contextual Youdle feature link only if genuinely helpful; no generic Grocery Brief CTA or publisher link.
 
 {FOUR_PART_CLOSE}
 
@@ -130,7 +126,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 - Are ALL affected products listed with identifiers (UPCs, dates)?
 - Is the health impact stated factually (not sensationalized)?
 - Is the source an official FDA/USDA page?
-- Are original-source and contextual Youdle feature links present?
+- Is safety information clear, and are links limited to useful Youdle features or official recall notices?
 - Does the headline use verified hazards and counts, under 14 words, with an immediate payoff?
 - Would a reader know exactly what to check in their pantry?
 
