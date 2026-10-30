@@ -51,7 +51,7 @@ def main():
     if not db:
         raise RuntimeError("Supabase is not configured")
     rec = db.table("newsletters").select("*").eq("id", NEWSLETTER_ID).single().execute().data
-    if (rec.get("status") != "scheduled" or rec.get("mailchimp_campaign_id") != CAMPAIGN_ID
+    if (rec.get("status") not in ("scheduled", "draft") or rec.get("mailchimp_campaign_id") != CAMPAIGN_ID
             or rec.get("sent_at") or utc(rec.get("scheduled_for")) != SCHEDULED_UTC):
         raise RuntimeError("Newsletter is no longer the one confirmed scheduled for Saturday")
     if datetime.now(timezone.utc) >= SCHEDULED_UTC:
@@ -122,7 +122,7 @@ def main():
             raise RuntimeError("Mailchimp did not return campaign to editable state")
         mc.client.campaigns.content.update(CAMPAIGN_ID, {"html": new_html})
         # The subject already says Youdle Grocery News; update the internal campaign title too.
-        mc.client.campaigns.update(CAMPAIGN_ID, {"settings": {"subject_line": SUBJECT, "title": TITLE}})
+        mc.client.campaigns.update(CAMPAIGN_ID, {"settings": {"subject_line": SUBJECT, "title": TITLE, "from_name": campaign.get("settings", {}).get("from_name") or "Youdle", "reply_to": campaign.get("settings", {}).get("reply_to") or "info@getyoudle.com"}})
         verified = mc.client.campaigns.content.get(CAMPAIGN_ID).get("html", "")
         assert_clean(verified, keep_titles)
         print("Existing Mailchimp campaign content and title replaced and checked.", flush=True)
