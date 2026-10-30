@@ -70,9 +70,7 @@ ATTRIBUTION_RULES = """
 
 Example: "Coffee prices jumped nearly 20% in December compared to a year earlier, according to reporting from ABC News."
 
-**URL embedding:** Never show standalone URLs. Embed into source name:
-- Good: "according to reporting from <a href=\"URL\">Taste of Home</a>"
-- Bad: "For more info, visit https://..."
+**Attribution links:** Credit the source publication by name in the narrative, not with a hyperlink to the source article. Keep the original URL only in editorial metadata. Official food-safety agency notices may be linked when essential to identify recalled products.
 """
 
 HEADLINE_CORE_RULES = """
@@ -153,16 +151,23 @@ products, risks and immediate consumer action. Urgent but never alarmist.
 """
 
 FOUR_PART_CLOSE = """
-## Natural contextual closing
-Include ONE useful Youdle feature link matched to the article:
+## The useful next step
+Every article must be informative on its own. Select ZERO or ONE Youdle link
+only where it genuinely advances what the reader wants to do next.
+A budget story may link to Shop My Budget, a cooking story to Shop a Recipe,
+a grocery trip story to Map My Grocery Run, and a discussion to Community.
+Use variety across the newsletter. No blanket news-page CTA or repeated ending.
+Verified Youdle feature destinations:
+- Shop My Budget: https://www.youdle.io/shop/budget
+- Shop a Recipe: https://www.youdle.io/shop/recipe
+- My Grocery List: https://www.youdle.io/grocery
+- Map My Grocery Run: https://www.youdle.io/map?mode=run
 - Grocery search: https://www.youdle.io/
-- Community and shelfies: https://www.youdle.io/community
-- Grocery Brief: https://www.youdle.io/news
-Place a direct, embedded source link early. Include this final original-source
-attribution as an actual clickable anchor:
-<a href="{original_link}">Read the full story</a>
-Never append a repetitive four-link promotional paragraph. Do not claim
-live pricing, stock, photo scanning, or alert features without evidence.
+- Specials: https://www.youdle.io/specials
+- Community: https://www.youdle.io/community
+Keep sources attributed in prose but do not link away to source articles.
+Food safety notices from official agencies may be linked when essential.
+Do not invent stock/price availability or feature capabilities.
 """
 
 WHAT_TO_EXCLUDE = """
