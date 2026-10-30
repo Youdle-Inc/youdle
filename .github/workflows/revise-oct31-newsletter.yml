@@ -29,4 +29,4 @@ jobs:
           MAILCHIMP_API_KEY: ${{ secrets.MAILCHIMP_API_KEY }}
           MAILCHIMP_LIST_ID: ${{ secrets.MAILCHIMP_LIST_ID }}
           MAILCHIMP_SERVER_PREFIX: ${{ secrets.MAILCHIMP_SERVER_PREFIX }}
-        run: python -m scripts.revise_oct31_scheduled_newsletter
+        run: python -m scripts.fix_oct31_single_campaign
