@@ -151,7 +151,8 @@ def test_rendered_prompt_substitutes_source_url_and_preserves_image_placeholder(
     messages = _render_messages(prompt_template, original_link=source_url)
     rendered = messages[1].content
 
-    assert f'<a href="{source_url}">Read the full story</a>' in rendered
+    assert f'<a href="{source_url}">Read the full story</a>' not in rendered
+    assert "Shop My Budget" in rendered
     assert f"<source_url>{source_url}</source_url>" in rendered
     assert "{original_link}" not in rendered
     assert '{IMAGE_HERE}' in rendered
