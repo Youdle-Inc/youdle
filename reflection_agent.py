@@ -41,15 +41,6 @@ class ReflectionAgent:
             "description": "Must have <ul> with <li> elements",
             "flags": re.DOTALL
         },
-        "youdle_link": {
-            "pattern": r'<a[^>]+href=["\']https?://(?:www\.)?youdle\.io(?:/[^"\']*)?["\'][^>]*>',
-            "description": "Must include link to Youdle.io"
-        },
-        "source_link": {
-            "pattern": r'<a[^>]+href=["\'][^"\']+["\'][^>]*>Read the full story</a>',
-            "description": "Must include 'Read the full story' source link",
-            "flags": re.IGNORECASE
-        },
 
     }
     
@@ -173,6 +164,9 @@ class ReflectionAgent:
         """
         issues = []
         
+        from post_link_policy import article_link_issues
+        issues.extend(article_link_issues(html_content, is_recall="<h3" in html_content))
+
         # Check for markdown artifacts
         if "```" in html_content:
             issues.append("Contains markdown code block markers")
