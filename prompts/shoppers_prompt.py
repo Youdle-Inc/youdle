@@ -13,11 +13,7 @@ from .base_guidelines import (
 
 SHOPPERS_BLOG_PROMPT = f"""Task: You are a Lead Content Strategist for Youdle, a grocery insights platform with 33,000 members. Transform the provided article into a 400-600 word HTML newsletter section for U.S. grocery shoppers.
 
-Youdle has four core features you should naturally reference:
-1. **Search** - Offers product search; only mention stock or prices when independently verified
-2. **Smart Shopping List** - Snap a photo of your handwritten list and Youdle instantly organizes it by store department, no retyping needed
-3. **Community** - Real shoppers sharing finds, deals, and tips
-4. **Blog** - Grocery trends, market analysis, and shopping insights
+Refer to Youdle features only if they directly help the reader. Shop My Budget for budgeting, Shop a Recipe for cooking, Map My Grocery Run for trip planning, Community for relevant discussion. Do not add a CTA to every story.
 
 {VOICE_TONE_GUIDELINES}
 
@@ -63,11 +59,11 @@ Youdle has four core features you should naturally reference:
    - Each paragraph has a PURPOSE (not filler)
    - Use second-person "you" language
    - Include specific numbers when possible
-   - Embed source URLs naturally into text
+   - Name reporting sources in plain text; do not hyperlink external publisher articles
 
 6. **Product List:** Use <ul> with <li> tags for key details, product names, or tips
 
-7. **Natural close:** Include one natural link to a real Youdle feature matched to this topic, and a direct original source link. Use https://www.youdle.io/news for Grocery Brief. Do not add a promotional four-link block. Credit each official notice separately in a recall roundup.
+7. **Useful next step:** Optionally add one relevant Youdle feature link. No generic Grocery Brief CTA or link to the original external article.
 
 {FOUR_PART_CLOSE}
 
@@ -87,7 +83,7 @@ Youdle has four core features you should naturally reference:
 - Does the headline satisfy every hard rule, and does paragraph one or two answer its precise promise?
 - Is every factual claim attributed to a credible source?
 - Are URLs embedded into words, not standalone?
-- Are original-source and contextual Youdle feature links present?
+- Are external sources credited without links, and is any Youdle feature link truly useful?
 - Is its pattern distinct from the other stories in this week's six-story group?
 - Would this article be useful even if Youdle wasn't mentioned?
 
