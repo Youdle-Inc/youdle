@@ -1,0 +1,32 @@
+name: Send one merged October 31 newsletter
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/schedule-one-oct31-newsletter.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: single-oct31-newsletter-mailchimp
+  cancel-in-progress: false
+jobs:
+  schedule-once:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Mailchimp and newsletter dependencies
+        run: python -m pip install 'supabase>=2,<3' 'mailchimp3>=3,<4' 'pytz>=2024' 'python-dotenv>=1,<2' 'pyspellchecker>=0.7' 'fastapi>=0.104' 'pydantic>=2'
+      - name: Verify, merge and schedule single October 31 newsletter
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MAILCHIMP_API_KEY: ${{ secrets.MAILCHIMP_API_KEY }}
+          MAILCHIMP_LIST_ID: ${{ secrets.MAILCHIMP_LIST_ID }}
+          MAILCHIMP_SERVER_PREFIX: ${{ secrets.MAILCHIMP_SERVER_PREFIX }}
+        run: python -m scripts.schedule_one_oct31_newsletter
