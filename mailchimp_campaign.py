@@ -267,6 +267,8 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
                                   <h2>{dynamic_headline}</h2>
                                   <p>Grocery retail trends, shopper insights, and inventory tips—built for shoppers, independent store owners and emergency managers.</p>
 
+                                  {recall_section}
+
                                   <!-- Article List -->
                                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
                                     <tr><td style="padding:18px;">
@@ -276,7 +278,6 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
                                     </td></tr>
                                   </table>
 
-                                  {recall_section}
                                 </td>
                               </tr>
                             </table>
@@ -515,7 +516,7 @@ class MailchimpCampaign:
                 summary=a.get("summary", a.get("description", "")),
                 image_url=a.get("image_url", "")
             )
-            for a in articles[:6]
+            for a in articles[:12]
         ])
 
         # Format recall section with summaries
