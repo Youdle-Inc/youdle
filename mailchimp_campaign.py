@@ -179,7 +179,7 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Grocery Retail Newsletter</title>
+  <title>Youdle Grocery News</title>
   <style type="text/css">
     body, #bodyTable, #bodyCell {{ margin:0; padding:0; width:100%; height:100%; }}
     table {{ border-collapse:collapse; mso-table-lspace:0pt; mso-table-rspace:0pt; }}
@@ -289,13 +289,13 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
                       <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse; margin:0; padding:0;">
                         <tr>
                           <td align="center" valign="top" style="margin:0; padding:0;">
-                            <p style="margin:18px 0 12px; font-weight:bold; font-size:16px;">MORE FROM YOUDLE</p>
+                            <p style="margin:18px 0 12px; font-weight:bold; font-size:16px;">MORE YOUDLE GROCERY NEWS</p>
                             <!-- Button -->
                             <table width="100%" cellpadding="0" cellspacing="0" style="margin-top:12px;">
                               <tr>
                                 <td align="center">
                                   <a href="https://www.youdle.io/news" target="_blank" style="background-color:#f93822; color:#ffffff; text-decoration:none; font-weight:bold; font-family:Helvetica, Arial, sans-serif; padding:12px 24px; border-radius:4px; display:inline-block;">
-                                    Read more Grocery Brief stories
+                                    Read more Youdle Grocery News
                                   </a>
                                 </td>
                               </tr>
@@ -545,7 +545,7 @@ class MailchimpCampaign:
                     dynamic_headline = top_story
             else:
                 date_str = datetime.now().strftime("%B %d, %Y")
-                dynamic_headline = f"Grocery News - {date_str}"
+                dynamic_headline = f"Youdle Grocery News - {date_str}"
         
         # Create newsletter
         return NEWSLETTER_TEMPLATE.format(
