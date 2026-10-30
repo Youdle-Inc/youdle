@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/schedule-one-oct31-newsletter.yml'
+      - 'scripts/schedule_one_oct31_newsletter.py'
   workflow_dispatch:
 permissions:
   contents: read
