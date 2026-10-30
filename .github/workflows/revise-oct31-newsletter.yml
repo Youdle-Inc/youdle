@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/revise-oct31-newsletter.yml'
       - 'scripts/revise_oct31_scheduled_newsletter.py'
+      - 'scripts/fix_oct31_single_campaign.py'
 permissions:
   contents: read
 concurrency:
