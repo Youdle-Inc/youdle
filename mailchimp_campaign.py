@@ -269,6 +269,9 @@ NEWSLETTER_TEMPLATE = """<!doctype html>
 
                                   {recall_section}
 
+                                  <!-- Grocery news section (outside recall block) -->
+                                  {grocery_stories_heading}
+
                                   <!-- Article List -->
                                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
                                     <tr><td style="padding:18px;">
@@ -345,7 +348,7 @@ RECALL_SECTION_TEMPLATE = """
                                   <!-- Weekly Recall Roundup -->
                                   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
                                     <tr><td style="padding:18px;">
-                                      <h2 style="margin:0 0 12px 0; font-size:20px; color:#1B1B1B; font-weight:700;">Weekly Recall Roundup</h2>
+                                      <h2 style="margin:0 0 12px 0; font-size:20px; color:#1B1B1B; font-weight:700;">Food Recall Alerts</h2>
                                       <ul style="padding-left:18px; margin:0;">
                                         {recall_links}
                                       </ul>
@@ -547,10 +550,20 @@ class MailchimpCampaign:
                 date_str = datetime.now().strftime("%B %d, %Y")
                 dynamic_headline = f"Youdle Grocery News - {date_str}"
         
+        # Distinguish shopper stories from the preceding recall roundup.
+        # Avoid an empty heading in recall-only issues.
+        grocery_stories_heading = (
+            '<h2 style="margin:22px 18px 0; padding-top:16px; '
+            'border-top:1px solid #e8e8e8; font-size:20px; '
+            'color:#1B1B1B; font-weight:700;">Top Grocery Stories</h2>'
+            if articles else ""
+        )
+
         # Create newsletter
         return NEWSLETTER_TEMPLATE.format(
             article_links=article_links,
             recall_section=recall_section,
+            grocery_stories_heading=grocery_stories_heading,
             dynamic_headline=dynamic_headline,
             year=datetime.now().year
         )
