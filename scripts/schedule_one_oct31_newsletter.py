@@ -1,6 +1,7 @@
 """One-time, idempotent Saturday consolidation. No immediate sending."""
 from datetime import datetime, timezone
 from uuid import uuid4
+from html import escape
 from supabase_storage import get_supabase_client
 from mailchimp_campaign import MailchimpCampaign
 from api.routes.newsletters import generate_newsletter_html
@@ -51,7 +52,7 @@ def main():
     if "{IMAGE_HERE}" in html or html.count("<img ")<9:
         raise RuntimeError("Newsletter HTML image validation failed")
     for p in ordered:
-        if p["title"] not in html:
+        if escape(p["title"]) not in html:
             raise RuntimeError(f"Missing headline in email: {p['title']}")
     print("Verified one edition with 8 unique articles and recall first.",flush=True)
     # Consolidate existing two drafts BEFORE creating a Mailchimp campaign.
