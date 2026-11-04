@@ -579,8 +579,7 @@ def test_word_count_alone_marks_a_structurally_valid_post_invalid():
 <h2>A grocery update worth checking</h2>
 <p>You can use these facts before shopping.</p>
 <ul><li>Review the product details.</li></ul>
-<p>Visit <a href="https://www.youdle.io/news">Grocery Brief</a> and
-<a href="https://example.com/source">Read the full story</a>.</p>
+<p>Compare your grocery list with prices before shopping.</p>
 </div>"""
     agent = ReflectionAgent()
     agent._spell = False
