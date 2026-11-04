@@ -38,9 +38,9 @@ def ensure_recall_hub_link(html: str, *, is_recall: bool = False) -> str:
     if not is_recall or not html:
         return html
     # Avoid duplicate links if a generated article or review already included it.
-    if re.search(r'https://(?:www\\.)?grocerysos\\.com/recalls(?:[\\/"?&#<\\s]|$)', html, re.I):
+    if re.search(r'https://(?:www\.)?grocerysos\.com/recalls(?:[\/"?&#<\s]|$)', html, re.I):
         return html
-    last_div = list(re.finditer(r'</div\\s*>', html, re.I))
+    last_div = list(re.finditer(r'</div\s*>', html, re.I))
     if last_div:
         idx = last_div[-1].start()
         return html[:idx] + RECALL_HUB_FOOTER + '\n' + html[idx:]
