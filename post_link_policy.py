@@ -6,6 +6,7 @@ verified Youdle feature destinations can be used selectively (zero or one).
 Official food-safety notices may remain linked when needed for recall safety.
 """
 from html.parser import HTMLParser
+import re
 from urllib.parse import urlsplit
 
 FEATURE_URLS = frozenset({
@@ -18,6 +19,33 @@ FEATURE_URLS = frozenset({
     "https://www.youdle.io/specials",
 })
 SAFETY_AGENCIES = ("fda.gov", "usda.gov", "cdc.gov", "foodsafety.gov")
+GROCERYSOS_RECALLS_URL = "https://grocerysos.com/recalls"
+
+# All agent-generated recall articles link shoppers back to the current
+# GrocerySOS recall list, in addition to any original government notices.
+# This is applied deterministically before drafts are persisted or published.
+RECALL_HUB_FOOTER = (
+    '<p class="grocerysos-recalls-link">'
+    '<strong>Check new and ongoing grocery recalls:</strong> '
+    '<a href="' + GROCERYSOS_RECALLS_URL + '">'
+    'View all GrocerySOS food recalls</a>.'
+    '</p>'
+)
+
+
+def ensure_recall_hub_link(html: str, *, is_recall: bool = False) -> str:
+    """Append an idempotent, prominent current-recalls link to agent recall HTML."""
+    if not is_recall or not html:
+        return html
+    # Avoid duplicate links if a generated article or review already included it.
+    if re.search(r'https://(?:www\.)?grocerysos\.com/recalls(?:[\/"?&#<\s]|$)', html, re.I):
+        return html
+    last_div = list(re.finditer(r'</div\s*>', html, re.I))
+    if last_div:
+        idx = last_div[-1].start()
+        return html[:idx] + RECALL_HUB_FOOTER + '\n' + html[idx:]
+    return html + '\n' + RECALL_HUB_FOOTER
+
 
 
 def _hostname_is(hostname: str, base: str) -> bool:
@@ -72,6 +100,9 @@ def article_link_issues(html: str, *, is_recall: bool = False) -> list[str]:
                 issues.append("Article links to a generic or unverified Youdle destination")
             else:
                 feature_links += 1
+        elif is_recall and host in ("grocerysos.com", "www.grocerysos.com") and parsed.path.rstrip("/") == "/recalls":
+            # Required destination for all agent-generated recall roundups.
+            pass
         elif is_recall and any(_hostname_is(host, base) for base in SAFETY_AGENCIES):
             # Official government recall notices are useful for identifying
             # affected products and verifying any lot numbers or health actions.

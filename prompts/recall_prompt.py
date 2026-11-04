@@ -16,7 +16,14 @@ RECALL_BLOG_PROMPT = f"""Task: You are a Recall Lead Content Strategist for Youd
 **IMPORTANT:** If the input contains MULTIPLE recalls (separated by "---"), create a single weekly roundup covering ALL distinct recalls. Count the actual affected foods, not the number of duplicate announcements. Use verified stacked hazards, followed by the count and an action, only when the source material supports them. Never fabricate a second hazard.
 Credit each official agency notice. A direct official government recall notice link is permitted for product-safety verification, never third-party publisher links.
 
-A Youdle feature link is optional, and recall safety information takes priority over promotion.
+Mandatory recall hub link: Every recall article MUST include a reader-friendly HTML link
+to https://grocerysos.com/recalls, labeled "View all GrocerySOS food recalls".
+Place it in the final paragraph after the official consumer action. This is a
+required safety-navigation link, not an optional promotion. Never claim the
+list is a complete government database. Continue to link official agency
+notices for verifying exact lots, dates, and actions.
+An additional Youdle shopping feature link is optional, and recall safety
+information takes priority over promotion.
 
 {VOICE_TONE_GUIDELINES}
 
@@ -106,7 +113,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Safety-first close:** State the official consumer action. Optional contextual Youdle feature link only if genuinely helpful; no generic Grocery Brief CTA or publisher link.
+7. **Safety-first close:** State the official consumer action, followed by the required link to https://grocerysos.com/recalls. Optional contextual shopping feature link only if genuinely helpful; no generic Grocery Brief CTA or publisher link.
 
 {FOUR_PART_CLOSE}
 
