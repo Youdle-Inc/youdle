@@ -62,6 +62,7 @@ function getSyncStatus(post: BlogPost): { status: 'synced' | 'issue' | 'not_publ
 
 export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPublish, onUnpublish, className }: BlogPostPreviewProps) {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview')
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [isEditModalOpen, setIsEditModalOpen] = useState(false)
   const [isPublishing, setIsPublishing] = useState(false)
@@ -153,7 +154,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
       <div className="flex flex-col gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-1">
           <button
-            onClick={() => setViewMode('preview')}
+            onClick={() => { setViewMode('preview'); setIsPreviewOpen(true) }}
             className={cn(
               'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
               viewMode === 'preview'
@@ -326,6 +327,24 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
                 Delete
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+
+      {/* Full-screen, mobile-friendly draft preview. */}
+      {isPreviewOpen && (
+        <div role="dialog" aria-modal="true" aria-label="Article preview" className="fixed inset-0 z-50 flex flex-col bg-white">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
+            <span className="min-w-0 truncate text-sm font-semibold text-stone-900">Article Preview · Draft only</span>
+            <button type="button" onClick={() => setIsPreviewOpen(false)} className="shrink-0 rounded-lg bg-stone-100 px-4 py-2 text-sm font-medium text-stone-900">Close</button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8">
+            <article className="mx-auto w-full max-w-3xl">
+              <h1 className="mb-6 text-2xl font-bold leading-tight text-stone-900 sm:text-3xl">{post.title}</h1>
+              <div className="prose prose-stone max-w-none break-words [&_img]:h-auto [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
+                dangerouslySetInnerHTML={{ __html: safeArticlePreviewHtml(post.html_content, post.image_url) }} />
+            </article>
           </div>
         </div>
       )}
