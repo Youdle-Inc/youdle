@@ -342,7 +342,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8">
             <article className="mx-auto w-full max-w-3xl">
               <h1 className="mb-6 text-2xl font-bold leading-tight text-stone-900 sm:text-3xl">{post.title}</h1>
-              <div className="prose prose-stone max-w-none break-words [&_img]:h-auto [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
+              <div className="prose prose-stone max-w-none break-words [&_strong]:font-bold [&_b]:font-bold [&_a]:text-blue-700 [&_a]:underline [&_a]:underline-offset-2 [&_a]:break-words [&_a:hover]:text-blue-900 [&_h2]:font-bold [&_h3]:font-semibold [&_img]:h-auto [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
                 dangerouslySetInnerHTML={{ __html: safeArticlePreviewHtml(post.html_content, post.image_url) }} />
             </article>
           </div>
