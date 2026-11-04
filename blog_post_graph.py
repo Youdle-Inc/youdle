@@ -41,6 +41,7 @@ from headline_policy import extract_headline, pattern_for_shopper, validate_head
 from prompt_refiner import PromptRefiner
 from learning_memory import LearningMemory
 from html_safety import find_unsafe_html_issues, strip_code_fences
+from post_link_policy import ensure_recall_hub_link
 from imgbb_upload import DEFAULT_RECALL_IMAGE_URL
 
 
@@ -984,6 +985,10 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
         final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
         final_html = final_html.replace("{IMAGE_HERE}", image_url)
         final_html = final_html.replace("{original_link}", original_link)
+        # Always include the GrocerySOS current-recalls hub in saved and
+        # published RECALL articles. This cannot be omitted by AI generation.
+        is_recall = str(post.get("category", "")).upper() == "RECALL"
+        final_html = ensure_recall_hub_link(final_html, is_recall=is_recall)
 
         final_unsafe_issues = find_unsafe_html_issues(final_html)
         if final_unsafe_issues:
