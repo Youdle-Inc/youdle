@@ -130,7 +130,7 @@ def main():
     if fresh.get("status") != "schedule":
         raise RuntimeError("Mailchimp did not confirm schedule")
     verify_body(mail.client.campaigns.content.get(cid).get("html", ""))
-    print("MAILCHIMP SCHEDULED: " + cid + " for Thursday November 6, 9 AM Central", flush=True)
+    print("MAILCHIMP SCHEDULED: " + cid + " for Friday November 6, 9 AM Central", flush=True)
 
     links = db.table("newsletter_posts").select("id,blog_post_id,position").eq(
         "newsletter_id", PRIMARY).execute().data or []
