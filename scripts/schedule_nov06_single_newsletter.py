@@ -5,6 +5,7 @@ campaign. Never send immediately or create a second newsletter.
 """
 from datetime import datetime, timezone
 from uuid import uuid4
+import re
 
 from supabase_storage import get_supabase_client
 from mailchimp_campaign import MailchimpCampaign
@@ -31,7 +32,7 @@ def verify_body(body):
     for expected in ("Food Recall Alerts", "Top Grocery Stories", "Salmonella", "Aldi"):
         if expected not in body:
             raise RuntimeError("Email missing " + expected)
-    if body.count('<li style="margin:0 0 24px') != 7 or body.count("<img ") < 8:
+    if body.count('<li style="margin:0 0 24px') != 7 or body.count("<img ") < 7:
         raise RuntimeError("Email must contain seven story cards with photos")
     if "{IMAGE_HERE}" in body:
         raise RuntimeError("Email contains obsolete content")
@@ -89,6 +90,14 @@ def main():
     body = body.replace("MORE YOUDLE GROCERY NEWS", "MORE GROCERYSOS GROCERY NEWS")
     body = body.replace("Read more Youdle Grocery News", "Read more GrocerySOS Grocery News")
     body = body.replace("Youdle Grocery News", "GrocerySOS Grocery News")
+    body = body.replace("Copyright © 2026 Youdle", "Copyright © 2026 GrocerySOS")
+    body = body.replace("https://www.youdle.io/news", "https://grocerysos.com")
+    body = re.sub(
+        r'<img[^>]*alt="Youdle Logo"[^>]*>',
+        '<span style="font-family:Montserrat,Arial,sans-serif;font-weight:bold;'
+        'font-size:28px;color:#124F48;">GrocerySOS</span>',
+        body,
+    )
     verify_body(body)
     mail = MailchimpCampaign()
     if not mail.client or not mail.list_id:
