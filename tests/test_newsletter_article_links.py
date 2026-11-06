@@ -2,7 +2,7 @@
 from mailchimp_campaign import MailchimpCampaign
 
 
-def test_newsletter_preserves_distinct_saved_images_and_native_article_urls():
+def test_newsletter_preserves_distinct_saved_images_and_published_article_urls():
     mailer = object.__new__(MailchimpCampaign)
     html = mailer.create_newsletter_html(
         [
@@ -21,8 +21,8 @@ def test_newsletter_preserves_distinct_saved_images_and_native_article_urls():
         ],
         [],
     )
-    assert "https://www.youdle.io/news/2026/10/beef-prices" in html
-    assert "https://www.youdle.io/news/2026/10/cart-costs" in html
+    assert "https://news.youdle.io/2026/10/beef-prices.html" in html
+    assert "https://news.youdle.io/2026/10/cart-costs.html" in html
     assert html.count("https://i.ibb.co/test1/beef.jpg") == 1
     assert html.count("https://i.ibb.co/test2/cart.jpg") == 1
     assert "Practical details about the grocery prices" in html
@@ -51,9 +51,24 @@ def test_original_recall_photo_remains_unchanged():
         image_url=url,
     )
     assert url in html
-    assert "https://www.youdle.io/news/2026/10/alert" in html
+    assert "https://news.youdle.io/2026/10/alert.html" in html
 
 
 def test_unsafe_image_urls_never_render():
     assert MailchimpCampaign._article_image_html("javascript:alert(1)", "Bad", "https://www.youdle.io/news") == ""
     assert MailchimpCampaign._article_image_html("https://untrusted.invalid/evil.jpg", "Bad", "https://www.youdle.io/news") == ""
+
+
+def test_public_grocerysos_supabase_article_image_renders():
+    url = (
+        "https://wziocgpteiozbtgeoplj.supabase.co"
+        "/storage/v1/object/public/blog-images/media/test-photo.jpg"
+    )
+    html = MailchimpCampaign._article_image_html(url, "Aldi savings", "https://news.youdle.io/2026/11/test.html")
+    assert url in html
+    assert 'alt="Aldi savings"' in html
+
+
+def test_private_supabase_storage_image_does_not_render():
+    url = "https://wziocgpteiozbtgeoplj.supabase.co/storage/v1/object/private/private-photo.jpg"
+    assert MailchimpCampaign._article_image_html(url, "Private", "https://news.youdle.io/2026/11/test.html") == ""
