@@ -415,23 +415,22 @@ class MailchimpCampaign:
 
     @staticmethod
     def _native_news_url(url: str) -> str:
-        """Convert published Blogger story URLs to the matching Youdle page."""
-        from urllib.parse import urlsplit
-        parts = urlsplit(url or "")
-        if parts.hostname in ("news.youdle.io", "www.news.youdle.io"):
-            path = parts.path.strip("/")
-            if path.endswith(".html") and len(path.split("/")) >= 3:
-                return "https://www.youdle.io/news/" + path[:-5]
-        return url or "https://www.youdle.io/news"
+        """Use the actual published article link; do not invent a legacy route."""
+        return url or "https://grocerysos.com"
 
     @staticmethod
     def _article_image_html(image_url: str, title: str, article_url: str) -> str:
-        """Render an optional unique ImgBB photograph without a generic fallback."""
+        """Render the article-specific hosted image; never substitute another photo."""
         from urllib.parse import urlsplit
         url = (image_url or "").strip()
         parts = urlsplit(url)
-        if parts.scheme != "https" or not parts.hostname or parts.hostname not in (
-            "i.ibb.co", "ibb.co", "blogger.googleusercontent.com"
+        public_grocerysos_image = (
+            parts.hostname == "wziocgpteiozbtgeoplj.supabase.co"
+            and parts.path.startswith("/storage/v1/object/public/blog-images/")
+        )
+        if parts.scheme != "https" or not parts.hostname or not (
+            parts.hostname in ("i.ibb.co", "ibb.co", "blogger.googleusercontent.com")
+            or public_grocerysos_image
         ):
             return ""
         return (
