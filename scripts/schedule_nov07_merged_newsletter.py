@@ -1,4 +1,4 @@
-"""Schedule the already-merged, single November 7 GrocerySOS catch-up edition.
+"""Schedule the already-merged, single November 7 Youdle catch-up edition.
 
 This script never creates a second newsletter or sends immediately.
 Intended one-time delivery: Saturday, Nov 7 2026, 09:00 CST (15:00 UTC).
@@ -14,7 +14,7 @@ NEWSLETTER_ID = "1b3d132a-6095-4666-897b-3a260cd72654"
 TARGET = datetime(2026, 11, 7, 15, 0, tzinfo=timezone.utc)
 SUBJECT = "Salmonella and thallium: 4 foods to check"
 PREVIEW = "Plus Aldi's $6 finds, holiday-shopping savings and Thanksgiving meal ideas."
-TITLE = "GrocerySOS Grocery News - November 7, 2026"
+TITLE = "Youdle Grocery News - November 7, 2026"
 
 
 def main():
@@ -90,17 +90,41 @@ def main():
     cid = newsletter.get("mailchimp_campaign_id")
     if cid:
         campaign = mail.client.campaigns.get(cid)
-        if campaign.get("status") in ("schedule", "scheduled"):
-            print("Already scheduled in Mailchimp; no second campaign: " + cid, flush=True)
-            return
-        if campaign.get("status") != "save":
+        state = campaign.get("status")
+        if state in ("schedule", "scheduled"):
+            # This campaign was scheduled with the unlaunched GrocerySOS name.
+            # Safely unschedule the SAME campaign, change only its branding,
+            # and restore the same Saturday 9 AM CST send time.
+            settings = campaign.get("settings") or {}
+            remote_html = mail.client.campaigns.content.get(cid).get("html", "")
+            branding_ok = (
+                settings.get("from_name") == "Youdle"
+                and settings.get("title") == TITLE
+                and settings.get("subject_line") == SUBJECT
+                and "GrocerySOS" not in remote_html
+                and "grocerysos.com" not in remote_html
+                and "Youdle Logo" in remote_html
+            )
+            if branding_ok:
+                print("Mailchimp already scheduled with Youdle branding: " + cid, flush=True)
+                return
+
+            if datetime.now(timezone.utc) >= TARGET:
+                raise RuntimeError("Scheduled send has started; cannot safely modify it")
+            print("Unscheduling same campaign temporarily for Youdle prelaunch branding", flush=True)
+            mail.client.campaigns.actions.unschedule(cid)
+            unscheduled = mail.client.campaigns.get(cid)
+            if unscheduled.get("status") != "save":
+                raise RuntimeError("Mailchimp did not confirm unschedule, stopping without creating another campaign")
+            print("Campaign unscheduled for safe content edit", flush=True)
+        elif state != "save":
             raise RuntimeError("Existing Mailchimp campaign is not a safe unsent draft")
     else:
         if newsletter["status"] != "draft":
             raise RuntimeError("A scheduled newsletter must already have a campaign ID")
         result = mail.create_campaign(
             subject=SUBJECT, html_content=body,
-            from_name="GrocerySOS", reply_to="info@getyoudle.com"
+            from_name="Youdle", reply_to="info@getyoudle.com"
         )
         if not result.get("success"):
             raise RuntimeError("Creating Mailchimp campaign failed: " + str(result.get("error")))
@@ -123,11 +147,22 @@ def main():
     mail.client.campaigns.update(cid, {"settings": {
         "subject_line": SUBJECT,
         "preview_text": PREVIEW,
-        "from_name": "GrocerySOS",
+        "from_name": "Youdle",
         "reply_to": "info@getyoudle.com",
         "title": TITLE,
     }})
+    if "GrocerySOS" in body or "grocerysos.com" in body:
+        raise RuntimeError("Prelaunch newsletter still exposes GrocerySOS")
     mail.client.campaigns.content.update(cid, {"html": body})
+
+    verified_campaign = mail.client.campaigns.get(cid)
+    verified_content = mail.client.campaigns.content.get(cid).get("html", "")
+    if verified_campaign.get("settings", {}).get("from_name") != "Youdle":
+        raise RuntimeError("Mailchimp sender name did not change to Youdle")
+    if "GrocerySOS" in verified_content or "grocerysos.com" in verified_content:
+        raise RuntimeError("Mailchimp email still contains unreleased GrocerySOS brand")
+    if "Youdle Logo" not in verified_content or "Food Safety Alerts" not in verified_content:
+        raise RuntimeError("Mailchimp content did not retain expected Youdle logo and food-safety section")
 
     result = mail.schedule_campaign(cid, TARGET)
     if not result.get("success"):
@@ -154,7 +189,7 @@ def main():
     if not update.data:
         raise RuntimeError("Mailchimp scheduled, but newsletter dashboard needs synchronization")
 
-    print("Confirmed: ONE GrocerySOS newsletter, scheduled for Saturday Nov 7, 09:00 CST", flush=True)
+    print("Confirmed: ONE Youdle newsletter, scheduled for Saturday Nov 7, 09:00 CST", flush=True)
 
 
 if __name__ == "__main__":
