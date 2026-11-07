@@ -233,8 +233,8 @@ def render_grocerysos_newsletter_html(
     <p style="font:600 15px/1.45 Montserrat,Arial,sans-serif;color:{INK};
               margin:13px 0 0;">{headline}</p>
   </td></tr>
-  {recall_section}
   {story_section}
+  {recall_section}
   <tr><td align="center" style="padding:24px 20px 30px;">
     <a href="{SITE}" target="_blank"
        style="display:inline-block;background:{GREEN};border:3px solid {GOLD};
