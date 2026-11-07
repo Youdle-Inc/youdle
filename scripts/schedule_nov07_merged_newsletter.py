@@ -114,11 +114,13 @@ def main():
             print("Unscheduling same campaign temporarily for Youdle prelaunch branding", flush=True)
             mail.client.campaigns.actions.unschedule(cid)
             unscheduled = mail.client.campaigns.get(cid)
-            if unscheduled.get("status") != "save":
-                raise RuntimeError("Mailchimp did not confirm unschedule, stopping without creating another campaign")
+            state_after_unschedule = unscheduled.get("status")
+            print("Campaign status after unschedule: " + str(state_after_unschedule), flush=True)
+            if state_after_unschedule not in ("save", "paused"):
+                raise RuntimeError("Unexpected Mailchimp state after unschedule: " + str(state_after_unschedule))
             print("Campaign unscheduled for safe content edit", flush=True)
-        elif state != "save":
-            raise RuntimeError("Existing Mailchimp campaign is not a safe unsent draft")
+        elif state not in ("save", "paused"):
+            raise RuntimeError("Existing Mailchimp campaign is not a safe unsent draft: " + str(state))
     else:
         if newsletter["status"] != "draft":
             raise RuntimeError("A scheduled newsletter must already have a campaign ID")
