@@ -1672,7 +1672,7 @@ async def check_auto_create_newsletter():
         html_content = generate_newsletter_html(supabase, post_ids, subject)
         now = datetime.now(timezone.utc).isoformat()
         newsletter_id = str(uuid4())
-        title = f"GrocerySOS Grocery News - {week_start.date().isoformat()}"
+        title = f"Youdle Grocery News - {week_start.date().isoformat()}"
 
         # Unique index (one Central-time week per newsletter) protects against
         # simultaneous publish callbacks: only one insert may succeed.
