@@ -155,19 +155,8 @@ def render_grocerysos_newsletter_html(
     now = datetime.now(ZoneInfo("America/Chicago"))
     week_label = escape(now.strftime("%B %d, %Y").replace(" 0", " "))
     headline = escape(dynamic_headline or "Your weekly grocery news")
-    recalls_html = "".join(_recall(article) for article in recalls)
-    story_grid = _stories(articles) if articles else ""
-    recall_section = (
-        f'''
-        <tr><td style="padding:0 16px 9px;">
-          <div style="background:{RED};color:white;border-radius:9px;
-                      text-align:center;padding:13px 14px;font:800 20px/1.25 Montserrat,Arial,sans-serif;">
-            &#9888;&nbsp; Food Recall Alerts
-          </div>
-        </td></tr>
-        {recalls_html}
-        ''' if recalls else ""
-    )
+    # Keep recalls inside the same story grid, always after grocery stories.
+    story_grid = _stories(articles + recalls) if articles or recalls else ""
     story_section = (
         f'''
         <tr><td style="padding:12px 16px 9px;">
@@ -178,7 +167,7 @@ def render_grocerysos_newsletter_html(
           </div>
         </td></tr>
         <tr><td style="padding:0 14px 8px;">{story_grid}</td></tr>
-        ''' if articles else ""
+        ''' if articles or recalls else ""
     )
     return f"""<!doctype html>
 <html lang="en">
@@ -234,7 +223,6 @@ def render_grocerysos_newsletter_html(
               margin:13px 0 0;">{headline}</p>
   </td></tr>
   {story_section}
-  {recall_section}
   <tr><td align="center" style="padding:24px 20px 30px;">
     <a href="{SITE}" target="_blank"
        style="display:inline-block;background:{GREEN};border:3px solid {GOLD};
