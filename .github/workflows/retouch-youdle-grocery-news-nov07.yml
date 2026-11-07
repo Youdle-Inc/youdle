@@ -1,0 +1,159 @@
+name: Retouch Youdle Grocery News November 7
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/retouch-youdle-grocery-news-nov07.yml'
+permissions:
+  contents: read
+concurrency:
+  group: youdle-grocery-news-nov07-retouch
+  cancel-in-progress: false
+jobs:
+  retouch-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install newsletter dependencies
+        run: python -m pip install 'supabase>=2,<3' 'mailchimp3>=3,<4' 'pytz>=2024' 'python-dotenv>=1,<2' 'pyspellchecker>=0.7' 'fastapi>=0.104' 'pydantic>=2'
+      - name: Update only Youdle newsletter name and spacing, preserve seven stories
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          MAILCHIMP_API_KEY: ${{ secrets.MAILCHIMP_API_KEY }}
+          MAILCHIMP_LIST_ID: ${{ secrets.MAILCHIMP_LIST_ID }}
+          MAILCHIMP_SERVER_PREFIX: ${{ secrets.MAILCHIMP_SERVER_PREFIX }}
+        run: |
+          python - <<'PY'
+          import re
+          from datetime import datetime, timezone
+          from mailchimp_campaign import MailchimpCampaign
+          from supabase_storage import get_supabase_client
+          
+          NID = "1b3d132a-6095-4666-897b-3a260cd72654"
+          CID = "9a0996117e"
+          TARGET = datetime(2026, 11, 7, 15, 0, tzinfo=timezone.utc)
+          SUBJECT = "Salmonella and thallium: 4 foods to check"
+          
+          def change(html):
+              pairs = (
+                  ("Grocery Brief", "Grocery News"),
+                  ("#templateHeader { background-color:#ffffff; padding:54px 0; }", "#templateHeader { background-color:#ffffff; padding:26px 0; }"),
+                  ("#templateBody   { background-color:#ffffff; padding:27px 0 63px; }", "#templateBody   { background-color:#ffffff; padding:20px 0 32px; }"),
+                  ("#templateFooter { background-color:#333333; padding:45px 0 63px; }", "#templateFooter { background-color:#333333; padding:26px 0 32px; }"),
+                  ("font-family:Helvetica, Arial, sans-serif;", "font-family:Montserrat, Arial, sans-serif;"),
+                  ("font-family:Helvetica;", "font-family:Montserrat, Arial, sans-serif;"),
+              )
+              for old, new in pairs:
+                  html = html.replace(old, new)
+              return html
+          
+          def photo_urls(html):
+              return re.findall(r'<img\s+src="([^"]+)"', html)
+          
+          def check_content(original, changed, posts):
+              if not original or not changed:
+                  raise RuntimeError("Newsletter body missing")
+              for phrase in ("Youdle Logo", "Food Safety Alerts", "Top Grocery Stories", "MORE FROM YOUDLE"):
+                  if phrase not in original or phrase not in changed:
+                      raise RuntimeError("Existing Youdle element missing: " + phrase)
+              if original.count("<li style=\"margin:0 0 24px") != 7:
+                  raise RuntimeError("Unexpected story count in existing newsletter HTML")
+              if changed.count("<li style=\"margin:0 0 24px") != 7:
+                  raise RuntimeError("Story count changed")
+              if photo_urls(original) != photo_urls(changed):
+                  raise RuntimeError("The original images or Youdle logo changed")
+              for post in posts:
+                  if post["status"] != "published" or not post.get("blogger_url") or not post.get("image_url"):
+                      raise RuntimeError("Newsletter story is not published or lacks a photo")
+                  if post["blogger_url"] not in changed or post["image_url"] not in photo_urls(changed):
+                      raise RuntimeError("A published story link or photo is missing")
+              if "Grocery Brief" in changed:
+                  raise RuntimeError("Old section label remains")
+              if "Grocery News" not in changed:
+                  raise RuntimeError("Grocery News label missing")
+          
+          def main():
+              if datetime.now(timezone.utc) >= TARGET:
+                  raise RuntimeError("Past scheduled Saturday 9 AM send. Never send late.")
+              db = get_supabase_client()
+              if db is None:
+                  raise RuntimeError("No database access")
+              rows = db.table("newsletters").select("*").eq("id", NID).execute().data or []
+              if len(rows) != 1:
+                  raise RuntimeError("Newsletter not found")
+              n = rows[0]
+              if n.get("mailchimp_campaign_id") != CID or n.get("status") != "scheduled" or n.get("sent_at") or n.get("subject") != SUBJECT:
+                  raise RuntimeError("Original newsletter state has changed")
+              when = datetime.fromisoformat(n["scheduled_for"].replace("Z", "+00:00"))
+              if when != TARGET:
+                  raise RuntimeError("Original send time has changed")
+              links = db.table("newsletter_posts").select("blog_post_id,position").eq("newsletter_id", NID).order("position").execute().data or []
+              ids = [str(x["blog_post_id"]) for x in links]
+              if len(ids) != 7 or len(set(ids)) != 7:
+                  raise RuntimeError("Expected exactly seven original articles")
+              found = db.table("blog_posts").select("id,category,status,blogger_url,image_url").in_("id",ids).execute().data or []
+              by_id = {str(p["id"]): p for p in found}
+              posts = [by_id[i] for i in ids]
+              if [p["category"] for p in posts] != ["RECALL"] + ["SHOPPERS"] * 6:
+                  raise RuntimeError("Original article category/order changed")
+          
+              mail = MailchimpCampaign()
+              if not mail.client:
+                  raise RuntimeError("Mailchimp unavailable")
+              campaign = mail.client.campaigns.get(CID)
+              state = campaign.get("status")
+              if state not in ("schedule", "scheduled", "save", "paused"):
+                  raise RuntimeError("Campaign already sent or cannot be safely edited: " + str(state))
+              settings = campaign.get("settings") or {}
+              if settings.get("from_name") != "Youdle" or settings.get("subject_line") != SUBJECT:
+                  raise RuntimeError("Youdle sender or subject has unexpectedly changed")
+              original = mail.client.campaigns.content.get(CID).get("html") or ""
+              changed = change(original)
+              check_content(original, changed, posts)
+              if original == changed and state in ("schedule", "scheduled"):
+                  print("Already updated; Mailchimp schedule unchanged",flush=True)
+              else:
+                  if state in ("schedule", "scheduled"):
+                      mail.client.campaigns.actions.unschedule(CID)
+                      state = mail.client.campaigns.get(CID).get("status")
+                      if state not in ("save", "paused"):
+                          raise RuntimeError("Unexpected Mailchimp status after unscheduling: " + str(state))
+                  try:
+                      if original != changed:
+                          mail.client.campaigns.content.update(CID,{"html":changed})
+                      actual = mail.client.campaigns.content.get(CID).get("html") or ""
+                      check_content(original,actual,posts)
+                      sched = mail.schedule_campaign(CID,TARGET)
+                      if not sched.get("success"):
+                          raise RuntimeError("Rescheduling failed: " + str(sched.get("error")))
+                  except Exception:
+                      if datetime.now(timezone.utc) < TARGET:
+                          try:
+                              mail.client.campaigns.content.update(CID,{"html":original})
+                              restored = mail.schedule_campaign(CID,TARGET)
+                              print("Rollback schedule result: " + str(restored.get("success")),flush=True)
+                          except Exception as e:
+                              print("CRITICAL: rollback unsuccessful: " + type(e).__name__,flush=True)
+                      raise
+              verified = mail.client.campaigns.get(CID)
+              if verified.get("status") not in ("schedule","scheduled") or verified.get("settings",{}).get("from_name")!="Youdle":
+                  raise RuntimeError("Youdle newsletter schedule/sender not verified")
+              final = mail.client.campaigns.content.get(CID).get("html") or ""
+              check_content(original,final,posts)
+              if n.get("html_content") != final:
+                  saved = db.table("newsletters").update({"html_content":final,"updated_at":datetime.now(timezone.utc).isoformat()}).eq("id",NID).eq("mailchimp_campaign_id",CID).execute().data or []
+                  if len(saved) != 1:
+                      raise RuntimeError("Mailchimp updated but Supabase HTML did not synchronize")
+              print("SUCCESS: YOUDLE Grocery News newsletter, 7 original stories and photos preserved",flush=True)
+              print("SUCCESS: Grocery Brief renamed; existing Youdle logo and sender retained; spacing reduced",flush=True)
+              print("SUCCESS: Original November 7 9:00 AM CST schedule still confirmed",flush=True)
+          
+          if __name__ == "__main__":
+              main()
+          PY
