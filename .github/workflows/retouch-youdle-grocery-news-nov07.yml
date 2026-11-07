@@ -55,6 +55,10 @@ jobs:
                   raise RuntimeError("Approved design, logo or required Mailchimp footer is missing")
               if any(x in body for x in ("Food Safety Alerts","GrocerySOS","grocerysos.com","mailto:info@getyoudle.com")):
                   raise RuntimeError("Unapproved recall section or branding")
+              if body.count('Read article <span style="color:#28543d;')!=7 or body.count('ALL STORIES <span style="color:#28543d;')!=1:
+                  raise RuntimeError("Refined green text arrows not present in all links")
+              if "Read article &#8599;" in body or "ALL STORIES &#8594;" in body:
+                  raise RuntimeError("Old arrows remain in newsletter")
               if len(images(body))!=8 or Counter(images(body))!=Counter(images(original)):
                   raise RuntimeError("Original logo/photo URLs not preserved")
               for p in posts:
