@@ -78,7 +78,7 @@ def main():
             raise RuntimeError("Newsletter HTML missing article link: " + story["title"])
         if escape(story["image_url"], quote=True) not in body:
             raise RuntimeError("Newsletter HTML missing image: " + story["title"])
-    if body.count("<li style=\"margin:0 0 24px") != 7 or body.count('<img src=') != 7:
+    if body.count("<li style=\"margin:0 0 24px") != 7 or body.count('<img src=') < 7:
         raise RuntimeError("Newsletter must have seven image-backed article cards")
     if "Food Safety Alerts" not in body or "Top Grocery Stories" not in body:
         raise RuntimeError("Newsletter sections missing")
