@@ -20,7 +20,7 @@ jobs:
           python-version: '3.11'
       - name: Install newsletter dependencies
         run: python -m pip install 'supabase>=2,<3' 'mailchimp3>=3,<4' 'pytz>=2024' 'python-dotenv>=1,<2' 'pyspellchecker>=0.7' 'fastapi>=0.104' 'pydantic>=2'
-      - name: Place original recall as seventh story in same Youdle email
+      - name: Apply approved photo-rich layout to same scheduled Youdle campaign
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -30,167 +30,112 @@ jobs:
           MAILCHIMP_SERVER_PREFIX: ${{ secrets.MAILCHIMP_SERVER_PREFIX }}
         run: |
           python - <<'PY'
+          from pathlib import Path
+          from datetime import datetime,timezone
+          from collections import Counter
           import re
-          from datetime import datetime, timezone
-          from mailchimp_campaign import MailchimpCampaign
           from supabase_storage import get_supabase_client
-          
-          NID = "1b3d132a-6095-4666-897b-3a260cd72654"
-          CID = "9a0996117e"
-          TARGET = datetime(2026, 11, 7, 15, 0, tzinfo=timezone.utc)
-          SUBJECT = "Salmonella and thallium: 4 foods to check"
-          
-          def change(html):
-              """Move ONLY the original recall story to the end of the existing list."""
-              marker = "<!-- Food Safety Alerts -->"
-              if marker not in html:
-                  return html  # Already combined: the checks below verify final position.
+          from mailchimp_campaign import MailchimpCampaign
 
-              begin = html.index(marker)
-              heading = re.search(
-                  r'<h2\b[^>]*>\s*Top Grocery Stories\s*</h2>\s*<!-- Article List -->',
-                  html[begin:], flags=re.I
-              )
-              if heading is None:
-                  raise RuntimeError("Grocery story section not located; refusing edit")
-              heading_start = begin + heading.start()
-              separate_section = html[begin:heading_start]
-              card_re = r'<li style="margin:0 0 24px 0;line-height:1\.5;list-style:none;">.*?</li>'
-              recall_cards = re.findall(card_re, separate_section, flags=re.S)
-              if len(recall_cards) != 1:
-                  raise RuntimeError("Expected one recall card in original section")
-              # The recall is an ordinary story, including matching headline color.
-              recall_card = recall_cards[0].replace("color:#B8860B", "color:#007C89")
+          CID="9a0996117e"
+          NID="1b3d132a-6095-4666-897b-3a260cd72654"
+          TARGET=datetime(2026,11,7,15,0,tzinfo=timezone.utc)
+          SUBJECT="Salmonella and thallium: 4 foods to check"
+          DESIGN=Path("newsletter_templates/2026-11-07_youdle_grocery_news_approved.html")
 
-              combined = html[:begin] + html[heading_start:]
-              marker_pos = combined.index("<!-- Article List -->")
-              list_start = combined.find('<ul style="padding-left:18px;margin:0;">', marker_pos)
-              if list_start < 0:
-                  raise RuntimeError("Existing grocery list not found")
-              list_end = combined.find("</ul>", list_start)
-              if list_end < 0:
-                  raise RuntimeError("Existing grocery list not closed")
-              grocery_cards = re.findall(card_re, combined[list_start:list_end], flags=re.S)
-              if len(grocery_cards) != 6:
-                  raise RuntimeError("Expected six untouched shopper cards")
-              return combined[:list_end] + "\n" + recall_card + combined[list_end:]
+          def as_utc(value):
+              dt=datetime.fromisoformat(str(value).replace("Z","+00:00"))
+              return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
 
-          def photo_urls(html):
-              return re.findall(r'<img\s+src="([^"]+)"', html)
+          def images(body):
+              return re.findall(r'<img\b[^>]*\bsrc="([^"]+)"',body,re.I)
 
-          def check_content(original, changed, posts):
-              from collections import Counter
-              if not original or not changed:
-                  raise RuntimeError("Newsletter HTML missing")
-              for phrase in ("Youdle Logo", "Top Grocery Stories"):
-                  if phrase not in original or phrase not in changed:
-                      raise RuntimeError("Existing element missing: " + phrase)
-              if "Food Safety Alerts" in changed:
-                  raise RuntimeError("The separate recall section was not removed")
-              if "GrocerySOS" in changed or "grocerysos.com" in changed:
-                  raise RuntimeError("The unreleased brand appeared unexpectedly")
-              card_re = r'<li style="margin:0 0 24px 0;line-height:1\.5;list-style:none;">.*?</li>'
-              prior_cards = re.findall(card_re, original, flags=re.S)
-              final_cards = re.findall(card_re, changed, flags=re.S)
-              if len(prior_cards) != 7 or len(final_cards) != 7:
-                  raise RuntimeError("Exactly seven original story cards required")
-              if Counter(photo_urls(original)) != Counter(photo_urls(changed)):
-                  raise RuntimeError("Original logo or article photos were changed")
-              if len(posts) != 7 or [p["category"] for p in posts] != ["RECALL"] + ["SHOPPERS"] * 6:
-                  raise RuntimeError("Original article selection changed")
-              for post in posts:
-                  if post["status"] != "published" or not post.get("blogger_url") or not post.get("image_url"):
-                      raise RuntimeError("Published story URL or photo unavailable")
-                  if post["blogger_url"] not in changed or post["image_url"] not in photo_urls(changed):
-                      raise RuntimeError("A published story URL or photo was removed")
-              for i, shopper in enumerate(posts[1:]):
-                  if shopper["blogger_url"] not in final_cards[i]:
-                      raise RuntimeError("One of the six grocery stories moved or changed")
-              recall = posts[0]
-              if recall["blogger_url"] not in final_cards[-1] or recall["image_url"] not in final_cards[-1]:
-                  raise RuntimeError("Recall is not the seventh card in the same list")
-              if "color:#B8860B" in final_cards[-1]:
-                  raise RuntimeError("Recall card styling is still different")
+          def inspect(body,original,posts):
+              if not all(x in body for x in ("Youdle Logo","Top Grocery Stories","The grocery stories that matter.","*|UNSUB|*","*|LIST:ADDRESSLINE|*")):
+                  raise RuntimeError("Approved design, logo or required Mailchimp footer is missing")
+              if any(x in body for x in ("Food Safety Alerts","GrocerySOS","grocerysos.com")):
+                  raise RuntimeError("Unapproved recall section or branding")
+              if len(images(body))!=8 or Counter(images(body))!=Counter(images(original)):
+                  raise RuntimeError("Original logo/photo URLs not preserved")
+              for p in posts:
+                  if p["status"]!="published" or not p.get("blogger_url") or not p.get("image_url"):
+                      raise RuntimeError("Published article or photo unavailable")
+                  if p["blogger_url"] not in body or p["image_url"] not in images(body):
+                      raise RuntimeError("Existing article link/photo missing")
+              order=posts[1:]+posts[:1]
+              offsets=[body.index(p["blogger_url"]) for p in order]
+              if len(set(offsets))!=7 or offsets!=sorted(offsets):
+                  raise RuntimeError("Recall must appear seventh, in same story section")
 
           def main():
-              if datetime.now(timezone.utc) >= TARGET:
-                  raise RuntimeError("Past scheduled Saturday 9 AM send. Never send late.")
-              db = get_supabase_client()
-              if db is None:
-                  raise RuntimeError("No database access")
-              rows = db.table("newsletters").select("*").eq("id", NID).execute().data or []
-              if len(rows) != 1:
-                  raise RuntimeError("Newsletter not found")
-              n = rows[0]
-              if n.get("mailchimp_campaign_id") != CID or n.get("status") != "scheduled" or n.get("sent_at") or n.get("subject") != SUBJECT:
-                  raise RuntimeError("Original newsletter state has changed")
-              when = datetime.fromisoformat(n["scheduled_for"].replace("Z", "+00:00"))
-              if when != TARGET:
-                  raise RuntimeError("Original send time has changed")
-              links = db.table("newsletter_posts").select("blog_post_id,position").eq("newsletter_id", NID).order("position").execute().data or []
-              ids = [str(x["blog_post_id"]) for x in links]
-              if len(ids) != 7 or len(set(ids)) != 7:
-                  raise RuntimeError("Expected exactly seven original articles")
-              found = db.table("blog_posts").select("id,category,status,blogger_url,image_url").in_("id",ids).execute().data or []
-              by_id = {str(p["id"]): p for p in found}
-              posts = [by_id[i] for i in ids]
-              if [p["category"] for p in posts] != ["RECALL"] + ["SHOPPERS"] * 6:
-                  raise RuntimeError("Original article category/order changed")
-          
-              mail = MailchimpCampaign()
-              if not mail.client:
-                  raise RuntimeError("Mailchimp unavailable")
-              campaign = mail.client.campaigns.get(CID)
-              state = campaign.get("status")
-              if state not in ("schedule", "scheduled", "save", "paused"):
-                  raise RuntimeError("Campaign already sent or cannot be safely edited: " + str(state))
-              settings = campaign.get("settings") or {}
-              if settings.get("from_name") != "Youdle" or settings.get("subject_line") != SUBJECT:
-                  raise RuntimeError("Youdle sender or subject has unexpectedly changed")
-              original = mail.client.campaigns.content.get(CID).get("html") or ""
-              changed = change(original)
-              check_content(original, changed, posts)
-              if original == changed and state in ("schedule", "scheduled"):
-                  print("Already updated; Mailchimp schedule unchanged",flush=True)
-              else:
-                  if state in ("schedule", "scheduled"):
-                      mail.client.campaigns.actions.unschedule(CID)
-                      state = mail.client.campaigns.get(CID).get("status")
-                      if state not in ("save", "paused"):
-                          raise RuntimeError("Unexpected Mailchimp status after unscheduling: " + str(state))
+              if datetime.now(timezone.utc)>=TARGET: raise RuntimeError("The one-time send has already started; refusing changes")
+              db=get_supabase_client()
+              if db is None: raise RuntimeError("Database connection unavailable")
+              rows=db.table("newsletters").select("*").eq("id",NID).execute().data or []
+              if len(rows)!=1: raise RuntimeError("Original newsletter missing")
+              issue=rows[0]
+              if (issue["status"]!="scheduled" or issue.get("sent_at") or issue.get("mailchimp_campaign_id")!=CID
+                 or issue["subject"]!=SUBJECT or as_utc(issue["scheduled_for"])!=TARGET):
+                  raise RuntimeError("Original scheduled newsletter record has changed")
+              joins=(db.table("newsletter_posts").select("blog_post_id,position").eq("newsletter_id",NID)
+                     .order("position").execute().data or [])
+              ids=[str(x["blog_post_id"]) for x in joins]
+              if len(ids)!=7 or len(set(ids))!=7: raise RuntimeError("Expected exactly seven original articles")
+              found=db.table("blog_posts").select("id,category,status,blogger_url,image_url").in_("id",ids).execute().data or []
+              index={str(x["id"]):x for x in found}
+              if len(index)!=7 or any(x not in index for x in ids): raise RuntimeError("Published stories missing")
+              posts=[index[x] for x in ids]
+              if [x["category"] for x in posts]!=["RECALL"]+["SHOPPERS"]*6:
+                  raise RuntimeError("Original six shoppers and one recall changed")
+              mail=MailchimpCampaign()
+              if not mail.client: raise RuntimeError("Mailchimp connection unavailable")
+              before=mail.client.campaigns.get(CID)
+              if before["status"] not in ("schedule","scheduled") or as_utc(before.get("send_time"))!=TARGET:
+                  raise RuntimeError("Mailchimp is not scheduled for Sat Nov 7 9 AM Central")
+              if before.get("settings",{}).get("from_name")!="Youdle" or before.get("settings",{}).get("subject_line")!=SUBJECT:
+                  raise RuntimeError("Youdle sender or newsletter subject has changed")
+              if mail.list_id and before.get("recipients",{}).get("list_id")!=mail.list_id:
+                  raise RuntimeError("Target audience changed")
+              original=mail.client.campaigns.content.get(CID).get("html") or ""
+              approved=DESIGN.read_text(encoding="utf-8")
+              inspect(approved,original,posts)
+              already=False
+              try:
+                  inspect(original,original,posts)
+                  already=True
+              except RuntimeError: pass
+              if not already:
+                  mail.client.campaigns.actions.unschedule(CID)
+                  if mail.client.campaigns.get(CID)["status"] not in ("save","paused"):
+                      raise RuntimeError("Mailchimp did not enter editable state")
                   try:
-                      if original != changed:
-                          mail.client.campaigns.content.update(CID,{"html":changed})
-                      actual = mail.client.campaigns.content.get(CID).get("html") or ""
-                      check_content(original,actual,posts)
-                      sched = mail.schedule_campaign(CID,TARGET)
-                      if not sched.get("success"):
-                          raise RuntimeError("Rescheduling failed: " + str(sched.get("error")))
+                      mail.client.campaigns.content.update(CID,{"html":approved})
+                      inspect(mail.client.campaigns.content.get(CID).get("html") or "",original,posts)
+                      restored=mail.schedule_campaign(CID,TARGET)
+                      if not restored.get("success"): raise RuntimeError("Reschedule failed: "+str(restored.get("error")))
                   except Exception:
-                      if datetime.now(timezone.utc) < TARGET:
-                          try:
-                              mail.client.campaigns.content.update(CID,{"html":original})
-                              restored = mail.schedule_campaign(CID,TARGET)
-                              print("Rollback schedule result: " + str(restored.get("success")),flush=True)
-                          except Exception as e:
-                              print("CRITICAL: rollback unsuccessful: " + type(e).__name__,flush=True)
+                      try:
+                          mail.client.campaigns.content.update(CID,{"html":original})
+                          restore=mail.schedule_campaign(CID,TARGET)
+                          print("ROLLBACK: original restored and rescheduled: "+str(restore.get("success")),flush=True)
+                      except Exception as error:
+                          print("CRITICAL: manual campaign schedule recovery required: "+type(error).__name__,flush=True)
                       raise
-              verified = mail.client.campaigns.get(CID)
-              if verified.get("status") not in ("schedule","scheduled") or verified.get("settings",{}).get("from_name")!="Youdle":
-                  raise RuntimeError("Youdle newsletter schedule/sender not verified")
-              remote_time = verified.get("send_time")
-              if not remote_time or datetime.fromisoformat(str(remote_time).replace("Z","+00:00")).astimezone(timezone.utc) != TARGET:
-                  raise RuntimeError("Original 9 AM Central send time not confirmed")
-              final = mail.client.campaigns.content.get(CID).get("html") or ""
-              check_content(original,final,posts)
-              if n.get("html_content") != final:
-                  saved = db.table("newsletters").update({"html_content":final,"updated_at":datetime.now(timezone.utc).isoformat()}).eq("id",NID).eq("mailchimp_campaign_id",CID).execute().data or []
-                  if len(saved) != 1:
-                      raise RuntimeError("Mailchimp updated but Supabase HTML did not synchronize")
-              print("SUCCESS: ONE Youdle newsletter, same seven original stories and all eight images",flush=True)
-              print("SUCCESS: Recall is card #7 in Top Grocery Stories, no separate section",flush=True)
-              print("SUCCESS: Original November 7 9:00 AM CST send schedule retained",flush=True)
-          
-          if __name__ == "__main__":
+              after=mail.client.campaigns.get(CID)
+              live=mail.client.campaigns.content.get(CID).get("html") or ""
+              inspect(live,original,posts)
+              if after["status"] not in ("schedule","scheduled") or as_utc(after["send_time"])!=TARGET:
+                  raise RuntimeError("Mailchimp did not verify the original Saturday 9 AM schedule")
+              if after.get("settings",{}).get("from_name")!="Youdle" or after.get("settings",{}).get("subject_line")!=SUBJECT:
+                  raise RuntimeError("Sender or subject changed unexpectedly")
+              if live!=issue["html_content"]:
+                  saved=(db.table("newsletters").update({"html_content":live,"updated_at":datetime.now(timezone.utc).isoformat()})
+                         .eq("id",NID).eq("mailchimp_campaign_id",CID).eq("status","scheduled").execute().data or [])
+                  if len(saved)!=1: raise RuntimeError("Mailchimp updated, Supabase sync failed")
+              print("SUCCESS: Existing Mailchimp campaign 9a0996117e has approved photo-rich Youdle design",flush=True)
+              print("SUCCESS: Six shopper stories and recall as #7; 7 live links, original 8 images",flush=True)
+              print("SUCCESS: One-time Saturday Nov 7, 9 AM Central schedule maintained, recurring day unchanged",flush=True)
+
+          if __name__=="__main__":
               main()
           PY
