@@ -68,31 +68,41 @@ jobs:
                   raise RuntimeError("Recall must appear seventh, in same story section")
 
           def verify_only_one_edition(mail, expected):
-              """Fail safely if another Mailchimp email is scheduled to this audience today."""
+              """Read ALL Mailchimp campaign summaries, then verify any scheduled ones by ID."""
               expected_list=(expected.get("recipients") or {}).get("list_id")
               if not expected_list:
-                  raise RuntimeError("Mailchimp audience missing; cannot verify duplicates")
+                  raise RuntimeError("Mailchimp campaign audience missing")
               candidates=[]
               offset=0
+              total_seen=0
               while True:
-                  listing=mail.client.campaigns.all(params={"status":"schedule","count":100,"offset":offset})
+                  listing=mail.client.campaigns.all(params={"count":100,"offset":offset})
                   campaigns=listing.get("campaigns") or []
                   for item in campaigns:
-                      if (item.get("recipients") or {}).get("list_id") != expected_list:
+                      if item.get("status") not in ("schedule","scheduled"):
                           continue
-                      scheduled_time=item.get("send_time")
-                      if not scheduled_time:
+                      cid=str(item.get("id") or "")
+                      if not cid:
+                          raise RuntimeError("Mailchimp returned a scheduled campaign without an ID")
+                      # The summary response does not always include send_time or list_id.
+                      detail=mail.client.campaigns.get(cid)
+                      if detail.get("status") not in ("schedule","scheduled"):
                           continue
-                      when=as_utc(scheduled_time)
-                      # Saturday November 7 is the one-time send; don't change the normal weekday.
-                      if when.date()==TARGET.date():
-                          candidates.append(str(item.get("id")))
+                      if (detail.get("recipients") or {}).get("list_id") != expected_list:
+                          continue
+                      send=detail.get("send_time")
+                      if not send:
+                          raise RuntimeError("Scheduled Mailchimp campaign missing time: "+cid)
+                      if as_utc(send).date()==TARGET.date():
+                          candidates.append(cid)
+                  total_seen+=len(campaigns)
                   offset+=len(campaigns)
                   if not campaigns or offset>=int(listing.get("total_items") or 0):
                       break
-              if candidates!=[CID]:
-                  raise RuntimeError("Duplicate or missing scheduled Mailchimp newsletter(s) for November 7: "+str(candidates))
-              print("SUCCESS: Mailchimp lists exactly ONE scheduled newsletter for Nov 7 audience: "+CID,flush=True)
+              print("MAILCHIMP PREFLIGHT: checked "+str(total_seen)+" campaign summaries; scheduled Nov 7 to target audience: "+str(candidates),flush=True)
+              if candidates != [CID]:
+                  raise RuntimeError("Not exactly one Mailchimp campaign scheduled for this audience today: "+str(candidates))
+              print("SUCCESS: exactly one November 7 Mailchimp campaign scheduled for the intended audience",flush=True)
 
           def main():
               if datetime.now(timezone.utc)>=TARGET: raise RuntimeError("The one-time send has already started; refusing changes")
