@@ -416,7 +416,7 @@ class MailchimpCampaign:
     @staticmethod
     def _native_news_url(url: str) -> str:
         """Use the actual published article link; do not invent a legacy route."""
-        return url or "https://grocerysos.com"
+        return url or "https://www.youdle.io/news"
 
     @staticmethod
     def _article_image_html(image_url: str, title: str, article_url: str) -> str:
