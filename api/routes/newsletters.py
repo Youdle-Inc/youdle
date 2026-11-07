@@ -1612,68 +1612,100 @@ async def sync_newsletter_stats(newsletter_id: str):
 
 async def check_auto_create_newsletter():
     """
-    Check if we should auto-create a newsletter.
-    Called after publishing a post to Blogger.
-    Creates a draft newsletter if 3+ published posts from the last 3 days are available.
+    Create at most ONE weekly edition, only after 6 SHOPPERS + 1 RECALL
+    have been published with live article links and photos.
+
+    A database-level unique index also rejects concurrent duplicates.
+    Never start a second draft merely because three more posts appeared.
     """
     try:
+        from check_blog_status import get_week_start_date
         from supabase_storage import get_supabase_client
-        supabase = get_supabase_client()
 
+        supabase = get_supabase_client()
         if supabase is None:
             return
 
-        # Calculate 3-day cutoff
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
+        week_start = get_week_start_date()
+        edition_start = (week_start - timedelta(days=1)).isoformat()
 
-        # Get published posts with blogger_url from last 3 days
-        all_posts = supabase.table("blog_posts").select(
-            "id"
-        ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-            "blogger_published_at", cutoff
-        ).order("blogger_published_at", desc=True).execute()
-
-        if not all_posts.data:
+        # The existing edition may already be a draft, scheduled or sent.
+        # Never create a second one, even when unused posts remain.
+        existing = (
+            supabase.table("newsletters")
+            .select("id,status")
+            .gte("created_at", edition_start)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
             return
 
-        all_post_ids = [p["id"] for p in all_posts.data]
+        published = (
+            supabase.table("blog_posts")
+            .select("id,title,category")
+            .eq("status", "published")
+            .not_.is_("blogger_url", "null")
+            .not_.is_("image_url", "null")
+            .gte("blogger_published_at", week_start.isoformat())
+            .order("blogger_published_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+        posts = published.data or []
+        if not posts:
+            return
 
-        # Get posts already in newsletters
-        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
+        used_ids = _get_used_post_ids(supabase, [p["id"] for p in posts])
+        candidates = [p for p in posts if str(p["id"]) not in used_ids]
+        recall = [p for p in candidates if (p.get("category") or "").upper() == "RECALL"]
+        shoppers = [p for p in candidates if (p.get("category") or "").upper() == "SHOPPERS"]
 
-        # Filter to unused posts
-        available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
+        # Wait for the FULL edition; the previous three-article trigger
+        # incorrectly split a single week into multiple newsletters.
+        if len(recall) < 1 or len(shoppers) < 6:
+            return
 
-        # Auto-create if 3+ posts available
-        if len(available_post_ids) >= 3:
-            date_str = datetime.now().strftime("%B %d, %Y")
-            title = f"Weekly Newsletter - {date_str}"
-            subject = f"Youdle Weekly - {date_str}"
+        chosen = recall[:1] + shoppers[:6]
+        post_ids = [p["id"] for p in chosen]
+        subject = generate_content_driven_subject([p["title"] for p in chosen])
+        html_content = generate_newsletter_html(supabase, post_ids, subject)
+        now = datetime.now(timezone.utc).isoformat()
+        newsletter_id = str(uuid4())
+        title = f"GrocerySOS Grocery News - {week_start.date().isoformat()}"
 
-            html_content = generate_newsletter_html(supabase, available_post_ids)
+        # Unique index (one Central-time week per newsletter) protects against
+        # simultaneous publish callbacks: only one insert may succeed.
+        result = supabase.table("newsletters").insert({
+            "id": newsletter_id,
+            "title": title,
+            "subject": subject,
+            "html_content": html_content,
+            "status": "draft",
+            "created_at": now,
+            "updated_at": now
+        }).execute()
+        if not result.data:
+            raise RuntimeError("Weekly newsletter insert returned no record")
 
-            newsletter_id = str(uuid4())
-            now = datetime.utcnow().isoformat()
-
-            supabase.table("newsletters").insert({
-                "id": newsletter_id,
-                "title": title,
-                "subject": subject,
-                "html_content": html_content,
-                "status": "draft",
-                "created_at": now,
-                "updated_at": now
-            }).execute()
-
-            for i, post_id in enumerate(available_post_ids):
-                supabase.table("newsletter_posts").insert({
+        try:
+            supabase.table("newsletter_posts").insert([
+                {
                     "id": str(uuid4()),
                     "newsletter_id": newsletter_id,
                     "blog_post_id": post_id,
                     "position": i
-                }).execute()
+                }
+                for i, post_id in enumerate(post_ids)
+            ]).execute()
+        except Exception:
+            # Do not leave an empty issue to block future newsletter creation.
+            supabase.table("newsletters").delete().eq("id", newsletter_id).eq("status", "draft").execute()
+            raise
 
-            print(f"Auto-created newsletter draft with {len(available_post_ids)} posts")
+        print("Created ONE weekly newsletter draft with 6 shopper stories and 1 recall")
 
     except Exception as e:
-        print(f"Warning: Auto-create newsletter check failed: {e}")
+        # The unique index may reject a concurrent callback. That is expected:
+        # the first callback has already created the sole weekly edition.
+        print(f"Weekly newsletter auto-create check: {e}")
