@@ -53,7 +53,7 @@ jobs:
           def inspect(body,original,posts):
               if not all(x in body for x in ("Youdle Logo","Top Grocery Stories","The grocery stories that matter.","*|UNSUB|*","*|LIST:ADDRESSLINE|*")):
                   raise RuntimeError("Approved design, logo or required Mailchimp footer is missing")
-              if any(x in body for x in ("Food Safety Alerts","GrocerySOS","grocerysos.com")):
+              if any(x in body for x in ("Food Safety Alerts","GrocerySOS","grocerysos.com","mailto:info@getyoudle.com")):
                   raise RuntimeError("Unapproved recall section or branding")
               if len(images(body))!=8 or Counter(images(body))!=Counter(images(original)):
                   raise RuntimeError("Original logo/photo URLs not preserved")
@@ -66,6 +66,33 @@ jobs:
               offsets=[body.index(p["blogger_url"]) for p in order]
               if len(set(offsets))!=7 or offsets!=sorted(offsets):
                   raise RuntimeError("Recall must appear seventh, in same story section")
+
+          def verify_only_one_edition(mail, expected):
+              """Fail safely if another Mailchimp email is scheduled to this audience today."""
+              expected_list=(expected.get("recipients") or {}).get("list_id")
+              if not expected_list:
+                  raise RuntimeError("Mailchimp audience missing; cannot verify duplicates")
+              candidates=[]
+              offset=0
+              while True:
+                  listing=mail.client.campaigns.all(params={"status":"schedule","count":100,"offset":offset})
+                  campaigns=listing.get("campaigns") or []
+                  for item in campaigns:
+                      if (item.get("recipients") or {}).get("list_id") != expected_list:
+                          continue
+                      scheduled_time=item.get("send_time")
+                      if not scheduled_time:
+                          continue
+                      when=as_utc(scheduled_time)
+                      # Saturday November 7 is the one-time send; don't change the normal weekday.
+                      if when.date()==TARGET.date():
+                          candidates.append(str(item.get("id")))
+                  offset+=len(campaigns)
+                  if not campaigns or offset>=int(listing.get("total_items") or 0):
+                      break
+              if candidates!=[CID]:
+                  raise RuntimeError("Duplicate or missing scheduled Mailchimp newsletter(s) for November 7: "+str(candidates))
+              print("SUCCESS: Mailchimp lists exactly ONE scheduled newsletter for Nov 7 audience: "+CID,flush=True)
 
           def main():
               if datetime.now(timezone.utc)>=TARGET: raise RuntimeError("The one-time send has already started; refusing changes")
@@ -96,6 +123,7 @@ jobs:
                   raise RuntimeError("Youdle sender or newsletter subject has changed")
               if mail.list_id and before.get("recipients",{}).get("list_id")!=mail.list_id:
                   raise RuntimeError("Target audience changed")
+              verify_only_one_edition(mail,before)
               original=mail.client.campaigns.content.get(CID).get("html") or ""
               approved=DESIGN.read_text(encoding="utf-8")
               inspect(approved,original,posts)
@@ -122,6 +150,7 @@ jobs:
                           print("CRITICAL: manual campaign schedule recovery required: "+type(error).__name__,flush=True)
                       raise
               after=mail.client.campaigns.get(CID)
+              verify_only_one_edition(mail,after)
               live=mail.client.campaigns.content.get(CID).get("html") or ""
               inspect(live,original,posts)
               if after["status"] not in ("schedule","scheduled") or as_utc(after["send_time"])!=TARGET:
@@ -134,6 +163,7 @@ jobs:
                   if len(saved)!=1: raise RuntimeError("Mailchimp updated, Supabase sync failed")
               print("SUCCESS: Existing Mailchimp campaign 9a0996117e has approved photo-rich Youdle design",flush=True)
               print("SUCCESS: Six shopper stories and recall as #7; 7 live links, original 8 images",flush=True)
+              print("SUCCESS: Visible info@getyoudle.com contact link removed from footer",flush=True)
               print("SUCCESS: One-time Saturday Nov 7, 9 AM Central schedule maintained, recurring day unchanged",flush=True)
 
           if __name__=="__main__":
