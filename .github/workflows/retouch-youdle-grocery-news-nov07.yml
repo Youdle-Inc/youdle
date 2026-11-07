@@ -20,7 +20,7 @@ jobs:
           python-version: '3.11'
       - name: Install newsletter dependencies
         run: python -m pip install 'supabase>=2,<3' 'mailchimp3>=3,<4' 'pytz>=2024' 'python-dotenv>=1,<2' 'pyspellchecker>=0.7' 'fastapi>=0.104' 'pydantic>=2'
-      - name: Update only Youdle newsletter name and spacing, preserve seven stories
+      - name: Place original recall as seventh story in same Youdle email
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -41,43 +41,77 @@ jobs:
           SUBJECT = "Salmonella and thallium: 4 foods to check"
           
           def change(html):
-              pairs = (
-                  ("Grocery Brief", "Grocery News"),
-                  ("#templateHeader { background-color:#ffffff; padding:54px 0; }", "#templateHeader { background-color:#ffffff; padding:26px 0; }"),
-                  ("#templateBody   { background-color:#ffffff; padding:27px 0 63px; }", "#templateBody   { background-color:#ffffff; padding:20px 0 32px; }"),
-                  ("#templateFooter { background-color:#333333; padding:45px 0 63px; }", "#templateFooter { background-color:#333333; padding:26px 0 32px; }"),
-                  ("font-family:Helvetica, Arial, sans-serif;", "font-family:Montserrat, Arial, sans-serif;"),
-                  ("font-family:Helvetica;", "font-family:Montserrat, Arial, sans-serif;"),
+              """Move ONLY the original recall story to the end of the existing list."""
+              marker = "<!-- Food Safety Alerts -->"
+              if marker not in html:
+                  return html  # Already combined: the checks below verify final position.
+
+              begin = html.index(marker)
+              heading = re.search(
+                  r'<h2\b[^>]*>\s*Top Grocery Stories\s*</h2>\s*<!-- Article List -->',
+                  html[begin:], flags=re.I
               )
-              for old, new in pairs:
-                  html = html.replace(old, new)
-              return html
-          
+              if heading is None:
+                  raise RuntimeError("Grocery story section not located; refusing edit")
+              heading_start = begin + heading.start()
+              separate_section = html[begin:heading_start]
+              card_re = r'<li style="margin:0 0 24px 0;line-height:1\.5;list-style:none;">.*?</li>'
+              recall_cards = re.findall(card_re, separate_section, flags=re.S)
+              if len(recall_cards) != 1:
+                  raise RuntimeError("Expected one recall card in original section")
+              # The recall is an ordinary story, including matching headline color.
+              recall_card = recall_cards[0].replace("color:#B8860B", "color:#007C89")
+
+              combined = html[:begin] + html[heading_start:]
+              marker_pos = combined.index("<!-- Article List -->")
+              list_start = combined.find('<ul style="padding-left:18px;margin:0;">', marker_pos)
+              if list_start < 0:
+                  raise RuntimeError("Existing grocery list not found")
+              list_end = combined.find("</ul>", list_start)
+              if list_end < 0:
+                  raise RuntimeError("Existing grocery list not closed")
+              grocery_cards = re.findall(card_re, combined[list_start:list_end], flags=re.S)
+              if len(grocery_cards) != 6:
+                  raise RuntimeError("Expected six untouched shopper cards")
+              return combined[:list_end] + "\n" + recall_card + combined[list_end:]
+
           def photo_urls(html):
               return re.findall(r'<img\s+src="([^"]+)"', html)
-          
+
           def check_content(original, changed, posts):
+              from collections import Counter
               if not original or not changed:
-                  raise RuntimeError("Newsletter body missing")
-              for phrase in ("Youdle Logo", "Food Safety Alerts", "Top Grocery Stories", "MORE FROM YOUDLE"):
+                  raise RuntimeError("Newsletter HTML missing")
+              for phrase in ("Youdle Logo", "Top Grocery Stories"):
                   if phrase not in original or phrase not in changed:
-                      raise RuntimeError("Existing Youdle element missing: " + phrase)
-              if original.count("<li style=\"margin:0 0 24px") != 7:
-                  raise RuntimeError("Unexpected story count in existing newsletter HTML")
-              if changed.count("<li style=\"margin:0 0 24px") != 7:
-                  raise RuntimeError("Story count changed")
-              if photo_urls(original) != photo_urls(changed):
-                  raise RuntimeError("The original images or Youdle logo changed")
+                      raise RuntimeError("Existing element missing: " + phrase)
+              if "Food Safety Alerts" in changed:
+                  raise RuntimeError("The separate recall section was not removed")
+              if "GrocerySOS" in changed or "grocerysos.com" in changed:
+                  raise RuntimeError("The unreleased brand appeared unexpectedly")
+              card_re = r'<li style="margin:0 0 24px 0;line-height:1\.5;list-style:none;">.*?</li>'
+              prior_cards = re.findall(card_re, original, flags=re.S)
+              final_cards = re.findall(card_re, changed, flags=re.S)
+              if len(prior_cards) != 7 or len(final_cards) != 7:
+                  raise RuntimeError("Exactly seven original story cards required")
+              if Counter(photo_urls(original)) != Counter(photo_urls(changed)):
+                  raise RuntimeError("Original logo or article photos were changed")
+              if len(posts) != 7 or [p["category"] for p in posts] != ["RECALL"] + ["SHOPPERS"] * 6:
+                  raise RuntimeError("Original article selection changed")
               for post in posts:
                   if post["status"] != "published" or not post.get("blogger_url") or not post.get("image_url"):
-                      raise RuntimeError("Newsletter story is not published or lacks a photo")
+                      raise RuntimeError("Published story URL or photo unavailable")
                   if post["blogger_url"] not in changed or post["image_url"] not in photo_urls(changed):
-                      raise RuntimeError("A published story link or photo is missing")
-              if "Grocery Brief" in changed:
-                  raise RuntimeError("Old section label remains")
-              if "Grocery News" not in changed:
-                  raise RuntimeError("Grocery News label missing")
-          
+                      raise RuntimeError("A published story URL or photo was removed")
+              for i, shopper in enumerate(posts[1:]):
+                  if shopper["blogger_url"] not in final_cards[i]:
+                      raise RuntimeError("One of the six grocery stories moved or changed")
+              recall = posts[0]
+              if recall["blogger_url"] not in final_cards[-1] or recall["image_url"] not in final_cards[-1]:
+                  raise RuntimeError("Recall is not the seventh card in the same list")
+              if "color:#B8860B" in final_cards[-1]:
+                  raise RuntimeError("Recall card styling is still different")
+
           def main():
               if datetime.now(timezone.utc) >= TARGET:
                   raise RuntimeError("Past scheduled Saturday 9 AM send. Never send late.")
@@ -144,15 +178,18 @@ jobs:
               verified = mail.client.campaigns.get(CID)
               if verified.get("status") not in ("schedule","scheduled") or verified.get("settings",{}).get("from_name")!="Youdle":
                   raise RuntimeError("Youdle newsletter schedule/sender not verified")
+              remote_time = verified.get("send_time")
+              if not remote_time or datetime.fromisoformat(str(remote_time).replace("Z","+00:00")).astimezone(timezone.utc) != TARGET:
+                  raise RuntimeError("Original 9 AM Central send time not confirmed")
               final = mail.client.campaigns.content.get(CID).get("html") or ""
               check_content(original,final,posts)
               if n.get("html_content") != final:
                   saved = db.table("newsletters").update({"html_content":final,"updated_at":datetime.now(timezone.utc).isoformat()}).eq("id",NID).eq("mailchimp_campaign_id",CID).execute().data or []
                   if len(saved) != 1:
                       raise RuntimeError("Mailchimp updated but Supabase HTML did not synchronize")
-              print("SUCCESS: YOUDLE Grocery News newsletter, 7 original stories and photos preserved",flush=True)
-              print("SUCCESS: Grocery Brief renamed; existing Youdle logo and sender retained; spacing reduced",flush=True)
-              print("SUCCESS: Original November 7 9:00 AM CST schedule still confirmed",flush=True)
+              print("SUCCESS: ONE Youdle newsletter, same seven original stories and all eight images",flush=True)
+              print("SUCCESS: Recall is card #7 in Top Grocery Stories, no separate section",flush=True)
+              print("SUCCESS: Original November 7 9:00 AM CST send schedule retained",flush=True)
           
           if __name__ == "__main__":
               main()
