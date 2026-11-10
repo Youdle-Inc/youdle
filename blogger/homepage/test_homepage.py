@@ -60,7 +60,7 @@ PAGE_COPY = [
     "Emergency prep",
     "Prices & deals",
     "Older posts",
-    "Get The Youdle Brief.",
+    "Get Grocery News.",
     "Recalls, price moves and the week\u2019s grocery news, in one email.",
     "Subscribe",
 ]
