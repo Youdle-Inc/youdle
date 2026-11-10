@@ -3754,7 +3754,7 @@ z-index:32
     </b:comment>
     <aside aria-labelledby='yd-brief-title' class='yd-side'>
       <div class='yd-side__inner yd-brief' id='the-youdle-brief'>
-        <h2 class='yd-brief__title' id='yd-brief-title'>Get The Youdle Brief.</h2>
+        <h2 class='yd-brief__title' id='yd-brief-title'>Get Grocery News.</h2>
         <p class='yd-brief__lede'>Recalls, price moves and the week&#8217;s grocery news, in one email.</p>
       <form class='yd-brief__form' data-yd-newsletter='true' method='post' novalidate='novalidate' target='_blank' action='https://ProductSightings.us10.list-manage.com/subscribe/post?u=a8e33153b11c8b750221ce4aa&amp;id=77d558bfda&amp;f_id=005547e4f0'>
         <label class='yd-visually-hidden' for='yd-brief-email'>Email address</label>
@@ -4784,7 +4784,7 @@ z-index:32
           if (data && data.result === "success") {
             say(
               "success",
-              "You’re in. Look for The Youdle Brief in your inbox."
+              "You’re in. Look for Grocery News in your inbox."
             );
             form.reset();
             track("newsletter_signup_success", {
