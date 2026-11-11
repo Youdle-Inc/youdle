@@ -32,6 +32,22 @@ except ImportError:
 DEFAULT_IMAGE_SIZE = "1K"  # Options: "1K", "2K", "4K"
 DEFAULT_ASPECT_RATIO = "16:9"
 
+def summarize_image_failure(error: str) -> str:
+    """Categorize Gemini failures without writing API keys or raw provider replies to logs."""
+    message = str(error or "").lower()
+    if any(word in message for word in ("429", "resource_exhausted", "quota", "rate limit")):
+        return "quota_or_rate_limit"
+    if any(word in message for word in ("401", "403", "unauthenticated", "permission_denied", "api key not valid", "invalid api key")):
+        return "authentication_or_permission"
+    if any(word in message for word in ("404", "not_found", "model not found", "not supported")):
+        return "model_unavailable"
+    if any(word in message for word in ("500", "502", "503", "504", "unavailable", "deadline_exceeded", "timeout")):
+        return "provider_temporarily_unavailable"
+    if any(word in message for word in ("blocked", "safety", "prohibited", "recitation")):
+        return "generation_blocked"
+    return "no_image_returned_or_unknown"
+
+
 IMAGE_PROMPT_TEMPLATE = """Photograph for a grocery news article.
 
 Headline: "{title}"
@@ -244,22 +260,38 @@ class ImageGenerator:
                             "metadata": {"model": self.model_name}
                         }
 
-            # If no inline image found, return failure
-            print("[ImageGenerator] ✗ No image data in response", flush=True)
+            # A text-only response or refused generation is not a photograph.
+            # Preserve safe provider status metadata to diagnose the failed batch,
+            # without dumping raw response text or API credentials.
+            candidates = getattr(response, "candidates", None) or []
+            candidate = candidates[0] if candidates else None
+            reason = getattr(candidate, "finish_reason", None)
+            reason_name = str(getattr(reason, "name", reason) or "unspecified")
+            prompt_feedback = getattr(response, "prompt_feedback", None)
+            blocked = getattr(prompt_feedback, "block_reason", None)
+            blocked_name = str(getattr(blocked, "name", blocked) or "")
+            failure_code = "generation_blocked" if blocked_name or any(
+                word in reason_name.upper() for word in ("SAFETY", "BLOCK", "PROHIBITED")
+            ) else "no_image_returned_or_unknown"
+            print(f"[ImageGenerator] No image returned; category={failure_code}; finish_reason={reason_name[:60]}", flush=True)
             return {
                 "success": False,
-                "error": "No image data in response",
+                "error": failure_code,
                 "image_data": None,
                 "format": None,
-                "metadata": {"model": self.model_name}
+                "metadata": {"model": self.model_name, "finish_reason": reason_name[:60]}
             }
 
         except Exception as e:
-            print(f"[ImageGenerator] ✗ Image generation failed: {str(e)}", flush=True)
+            # Provider errors can contain sensitive details: save only a
+            # stable diagnostic category, never the full exception text.
+            failure_code = summarize_image_failure(str(e))
+            print(f"[ImageGenerator] Image generation failed: {failure_code}", flush=True)
             return {
                 "success": False,
-                "error": str(e),
-                "image_data": None
+                "error": failure_code,
+                "image_data": None,
+                "metadata": {"model": self.model_name}
             }
 
     def generate_image_for_article(
