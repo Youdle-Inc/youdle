@@ -159,30 +159,67 @@ export default function ActionsPage() {
     )
   }
 
-  // Not configured state
+  // The API returns configured=false both when variables are missing and when
+  // GitHub rejects a stored credential. Show the actionable cause for HTTP 401.
   if (status && !status.configured) {
+    const githubAuthFailed = status.error?.includes('GitHub API error: 401') === true
+
     return (
       <div className="space-y-8 animate-fade-in">
         <div>
           <h1 className="text-3xl font-bold text-stone-900">Actions</h1>
           <p className="mt-2 text-stone-500">Manage GitHub Actions workflows</p>
         </div>
-        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-6">
+        <div role="alert" className="rounded-2xl bg-amber-50 border border-amber-200 p-6">
           <div className="flex items-start gap-4">
             <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0" />
-            <div>
-              <h3 className="font-semibold text-amber-900">GitHub Actions Not Configured</h3>
-              <p className="mt-1 text-amber-700">
-                Add the following environment variables to enable this feature:
-              </p>
-              <ul className="mt-2 text-sm text-amber-700 list-disc list-inside space-y-1">
-                <li><code className="bg-amber-100 px-1 rounded">GITHUB_TOKEN</code> - Personal access token with actions permissions</li>
-                <li><code className="bg-amber-100 px-1 rounded">GITHUB_OWNER</code> - Repository owner (username or org)</li>
-                <li><code className="bg-amber-100 px-1 rounded">GITHUB_REPO</code> - Repository name</li>
-              </ul>
-              {status.error && (
-                <p className="mt-3 text-sm text-amber-600 bg-amber-100 px-2 py-1 rounded">{status.error}</p>
+            <div className="min-w-0">
+              <h3 className="font-semibold text-amber-900">
+                {githubAuthFailed ? 'GitHub authorization failed' : 'GitHub Actions Not Configured'}
+              </h3>
+              {githubAuthFailed ? (
+                <>
+                  <p className="mt-1 text-sm text-amber-800">
+                    GitHub rejected the API&apos;s saved credential (HTTP 401). The Actions page cannot
+                    list or manage workflows until that credential is corrected. This does not mean
+                    the GitHub workflows have been deleted or disabled.
+                  </p>
+                  <p className="mt-3 text-sm text-amber-800">
+                    In Vercel, open the existing <strong>youdlenewsletteragentapi</strong> project,
+                    go to Settings &gt; Environment Variables, and replace its existing
+                    <code className="mx-1 rounded bg-amber-100 px-1">GITHUB_TOKEN</code> with a valid
+                    credential authorized for <strong>Youdle-Inc/youdle</strong>. Workflow controls
+                    require Actions read/write access; reading workflow files also requires Contents
+                    read access. Redeploy the API to apply the updated credential.
+                  </p>
+                  <p className="mt-3 text-xs text-amber-800">
+                    Keep the token server-side in Vercel. Never paste it into the dashboard, a chat,
+                    or a public NEXT_PUBLIC_ environment variable.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-amber-700">
+                    Check the following environment variables on the API project:
+                  </p>
+                  <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-amber-700">
+                    <li><code className="rounded bg-amber-100 px-1">GITHUB_TOKEN</code> - GitHub token with Actions access</li>
+                    <li><code className="rounded bg-amber-100 px-1">GITHUB_OWNER</code> - Repository owner</li>
+                    <li><code className="rounded bg-amber-100 px-1">GITHUB_REPO</code> - Repository name</li>
+                  </ul>
+                </>
               )}
+              {status.error && (
+                <p className="mt-3 rounded bg-amber-100 px-2 py-1 text-sm text-amber-700">{status.error}</p>
+              )}
+              <button
+                type="button"
+                onClick={() => refetchStatus()}
+                className="mt-4 inline-flex items-center gap-2 rounded-lg bg-amber-100 px-3 py-2 text-sm font-medium text-amber-900 hover:bg-amber-200"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Check connection again
+              </button>
             </div>
           </div>
         </div>
