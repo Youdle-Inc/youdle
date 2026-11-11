@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ExternalLink, Eye, Code, Copy, Check, Trash2, Edit2, Loader2, Globe } from 'lucide-react'
 import { cn, formatDate, getStatusColor, getCategoryColor, truncate, stripHtml } from '@/lib/utils'
 import { safeArticlePreviewHtml } from '@/lib/articleImages'
@@ -68,6 +69,25 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
   const [isPublishing, setIsPublishing] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
+  const previewButtonRef = useRef<HTMLButtonElement>(null)
+  const previewCloseRef = useRef<HTMLButtonElement>(null)
+
+  // The pop-out is portaled outside animated, overflow-hidden post cards.
+  useEffect(() => {
+    if (!isPreviewOpen) return
+    const oldOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsPreviewOpen(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    previewCloseRef.current?.focus()
+    return () => {
+      document.body.style.overflow = oldOverflow
+      document.removeEventListener('keydown', onKeyDown)
+      previewButtonRef.current?.focus()
+    }
+  }, [isPreviewOpen])
 
   const syncStatus = getSyncStatus(post)
 
@@ -154,10 +174,11 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
       <div className="flex flex-col gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-1">
           <button
+            ref={previewButtonRef}
             onClick={() => { setViewMode('preview'); setIsPreviewOpen(true) }}
             className={cn(
               'flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
-              viewMode === 'preview'
+              isPreviewOpen
                 ? 'bg-white text-stone-900 shadow-sm'
                 : 'text-stone-500 hover:text-stone-700'
             )}
@@ -222,19 +243,14 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
         </div>
       </div>
 
-      {/* Content */}
-      <div className="p-4 max-h-[70vh] overflow-y-auto sm:max-h-96">
-        {viewMode === 'preview' ? (
-          <div
-            className="prose prose-sm max-w-none break-words [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
-            dangerouslySetInnerHTML={{ __html: safeArticlePreviewHtml(post.html_content, post.image_url) }}
-          />
-        ) : (
-          <pre className="text-xs font-mono text-stone-700 whitespace-pre-wrap break-words bg-stone-50 rounded-lg p-4">
+      {/* HTML remains available in-card; Preview opens a separate reader view. */}
+      {viewMode === 'code' && (
+        <div className="max-h-[70vh] overflow-y-auto p-4 sm:max-h-96">
+          <pre className="whitespace-pre-wrap break-words rounded-lg bg-stone-50 p-4 font-mono text-xs text-stone-700">
             {post.html_content}
           </pre>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Actions */}
       {(onStatusChange || onPublish) && (
@@ -332,21 +348,70 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
       )}
 
 
-      {/* Full-screen, mobile-friendly draft preview. */}
-      {isPreviewOpen && (
-        <div role="dialog" aria-modal="true" aria-label="Article preview" className="fixed inset-0 z-50 flex flex-col bg-white">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 px-4 py-3">
-            <span className="min-w-0 truncate text-sm font-semibold text-stone-900">Article Preview · Draft only</span>
-            <button type="button" onClick={() => setIsPreviewOpen(false)} className="shrink-0 rounded-lg bg-stone-100 px-4 py-2 text-sm font-medium text-stone-900">Close</button>
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-6 sm:px-8">
-            <article className="mx-auto w-full max-w-3xl">
-              <h1 className="mb-6 text-2xl font-bold leading-tight text-stone-900 sm:text-3xl">{post.title}</h1>
-              <div className="prose prose-stone max-w-none break-words [&_strong]:font-bold [&_b]:font-bold [&_a]:text-blue-700 [&_a]:underline [&_a]:underline-offset-2 [&_a]:break-words [&_a:hover]:text-blue-900 [&_h2]:font-bold [&_h3]:font-semibold [&_img]:h-auto [&_img]:max-w-full [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto"
-                dangerouslySetInnerHTML={{ __html: safeArticlePreviewHtml(post.html_content, post.image_url) }} />
-            </article>
-          </div>
-        </div>
+      {/* Full web-style article reader, outside card clipping and animations. */}
+      {isPreviewOpen && typeof document !== 'undefined' && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/70 p-0 sm:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setIsPreviewOpen(false)
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={'article-preview-title-' + post.id}
+            className="flex h-[100dvh] w-full max-w-5xl flex-col overflow-hidden bg-white shadow-2xl sm:h-[94dvh] sm:rounded-2xl"
+          >
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-stone-200 bg-white px-4 py-3 sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider text-green-700">
+                  Article preview · {post.blogger_url ? 'Published' : 'Not published'}
+                </p>
+                <p id={'article-preview-title-' + post.id} className="truncate text-sm font-semibold text-stone-900">
+                  {post.title}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {post.blogger_url && (
+                  <a
+                    href={post.blogger_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hidden rounded-lg px-3 py-2 text-sm font-medium text-green-700 hover:bg-green-50 sm:inline-flex"
+                  >
+                    View published page
+                  </a>
+                )}
+                <button
+                  ref={previewCloseRef}
+                  type="button"
+                  onClick={() => setIsPreviewOpen(false)}
+                  className="rounded-lg bg-stone-100 px-4 py-2 text-sm font-semibold text-stone-900 hover:bg-stone-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-[#f6f7f4] px-3 py-5 sm:px-8 sm:py-8">
+              <article className="mx-auto w-full max-w-[780px] bg-white px-5 py-7 shadow-sm sm:rounded-xl sm:px-12 sm:py-12">
+                <header className="mb-6 border-b border-stone-200 pb-5">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-green-800">Youdle Grocery News</p>
+                  <p className="mt-2 text-sm text-stone-500">
+                    {formatDate(post.blogger_published_at || post.created_at)}
+                  </p>
+                </header>
+                {!/<h[12]\b/i.test(post.html_content) && (
+                  <h1 className="mb-6 text-3xl font-bold leading-tight text-stone-900">{post.title}</h1>
+                )}
+                <div
+                  className="max-w-none break-words text-[17px] leading-[1.8] text-stone-800 [&_a]:break-words [&_a]:font-semibold [&_a]:text-green-800 [&_a]:underline [&_a]:underline-offset-2 [&_blockquote]:my-5 [&_blockquote]:border-l-4 [&_blockquote]:border-green-700 [&_blockquote]:pl-4 [&_h1]:my-6 [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:leading-tight [&_h2]:my-6 [&_h2]:text-[28px] [&_h2]:font-bold [&_h2]:leading-tight [&_h3]:my-5 [&_h3]:text-xl [&_h3]:font-bold [&_img]:my-6 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg [&_li]:mb-2 [&_ol]:my-5 [&_ol]:list-decimal [&_ol]:pl-6 [&_p]:mb-5 [&_strong]:font-bold [&_table]:block [&_table]:max-w-full [&_table]:overflow-x-auto [&_ul]:my-5 [&_ul]:list-disc [&_ul]:pl-6"
+                  dangerouslySetInnerHTML={{ __html: safeArticlePreviewHtml(post.html_content, post.image_url) }}
+                />
+              </article>
+            </div>
+          </section>
+        </div>,
+        document.body
       )}
 
       {/* Edit Modal */}
