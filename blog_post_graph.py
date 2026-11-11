@@ -33,7 +33,7 @@ from langchain_blog_agent import (
     describe_image_subject,
 )
 from ai_models import get_default_openai_model
-from image_generator import get_image_generator
+from image_generator import get_image_generator, summarize_image_failure
 from supabase_storage import get_supabase_client, get_supabase_storage
 from example_store import ExampleStore
 from reflection_agent import ReflectionAgent
@@ -803,8 +803,9 @@ def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
 
         if not image.get("success") or not image.get("image_data"):
             uploaded_urls.append({"post_id": post_id, "url": "", "success": False})
-            upload_errors.append(f"Gemini did not return a photograph for {post_id}")
-            logs.append(f"  ✗ Gemini photo missing for {post_id}")
+            failure = summarize_image_failure(image.get("error"))
+            upload_errors.append(f"Gemini photo unavailable for {post_id}: {failure}")
+            logs.append(f"  Gemini photo unavailable for {post_id}: {failure}")
             continue
 
         fmt = image.get("format")
