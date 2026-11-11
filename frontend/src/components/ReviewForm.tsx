@@ -8,7 +8,7 @@ interface ReviewFormProps {
   postId: string
   postTitle: string
   onSubmit: (rating: number, comment: string, feedbackType: string, submissionId: string) => Promise<boolean>
-  onApprove?: (rating: number, comment: string, feedbackType: string, submissionId: string) => Promise<boolean>
+  onApprove?: (rating: number, comment: string, feedbackType: string, submissionId: string, checks: { sources: boolean; claims: boolean; links: boolean }) => Promise<boolean>
   onReject?: (rating: number, comment: string, feedbackType: string, submissionId: string) => Promise<boolean>
   onSkip: () => void
   className?: string
@@ -24,6 +24,9 @@ const feedbackTypes = [
 
 export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, onSkip, className }: ReviewFormProps) {
   const [rating, setRating] = useState(0)
+  const [sourcesChecked, setSourcesChecked] = useState(false)
+  const [claimsChecked, setClaimsChecked] = useState(false)
+  const [linksChecked, setLinksChecked] = useState(false)
   const [hoverRating, setHoverRating] = useState(0)
   const [comment, setComment] = useState('')
   const [feedbackType, setFeedbackType] = useState('general')
@@ -41,6 +44,9 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
 
   const resetForm = () => {
     setRating(0)
+    setSourcesChecked(false)
+    setClaimsChecked(false)
+    setLinksChecked(false)
     setComment('')
     setFeedbackType('general')
     submissionId.current = null
@@ -64,7 +70,7 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
     
     setIsApproving(true)
     try {
-      if (await onApprove(rating, comment, feedbackType, getSubmissionId())) {
+      if (await onApprove(rating, comment, feedbackType, getSubmissionId(), { sources: sourcesChecked, claims: claimsChecked, links: linksChecked })) {
         resetForm()
       }
     } finally {
@@ -177,7 +183,7 @@ export function ReviewForm({ postId, postTitle, onSubmit, onApprove, onReject, o
               <button
                 type="button"
                 onClick={handleApprove}
-                disabled={rating === 0 || isAnyActionPending}
+                disabled={rating === 0 || !sourcesChecked || !claimsChecked || !linksChecked || isAnyActionPending}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all',
                   'bg-green-600 text-white hover:bg-green-700',

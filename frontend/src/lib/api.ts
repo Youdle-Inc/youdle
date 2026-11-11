@@ -162,6 +162,9 @@ export interface ReviewSubmission {
   comment?: string
   feedback_type: 'general' | 'content' | 'formatting' | 'accuracy' | 'tone'
   mark_reviewed: boolean
+  sources_checked?: boolean
+  claims_checked?: boolean
+  links_checked?: boolean
   submission_id: string
 }
 

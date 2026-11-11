@@ -26,7 +26,8 @@ export default function ReviewPage() {
     comment: string,
     feedbackType: string,
     markReviewed: boolean,
-    submissionId: string
+    submissionId: string,
+    checks?: { sources: boolean; claims: boolean; links: boolean }
   ) => {
     if (!currentPost) return
 
@@ -35,6 +36,9 @@ export default function ReviewPage() {
       comment,
       feedback_type: feedbackType as 'general' | 'content' | 'formatting' | 'accuracy' | 'tone',
       mark_reviewed: markReviewed,
+      sources_checked: checks?.sources || false,
+      claims_checked: checks?.claims || false,
+      links_checked: checks?.links || false,
       submission_id: submissionId,
     })
     await queryClient.invalidateQueries({ queryKey: ['reviewPosts'] })
@@ -55,11 +59,11 @@ export default function ReviewPage() {
     }
   }
 
-  const handleApprove = async (rating: number, comment: string, feedbackType: string, submissionId: string) => {
+  const handleApprove = async (rating: number, comment: string, feedbackType: string, submissionId: string, checks: { sources: boolean; claims: boolean; links: boolean }) => {
     if (!currentPost) return false
     try {
       setActionError(null)
-      await saveReview(rating, comment, feedbackType, true, submissionId)
+      await saveReview(rating, comment, feedbackType, true, submissionId, checks)
       // The reviewed post disappears from this queue. Keep the same index so
       // the next post shifts into view; move back only when removing the last.
       if (posts && currentIndex === posts.length - 1) {
