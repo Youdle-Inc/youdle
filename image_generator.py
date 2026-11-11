@@ -35,6 +35,8 @@ DEFAULT_ASPECT_RATIO = "16:9"
 def summarize_image_failure(error: str) -> str:
     """Categorize Gemini failures without writing API keys or raw provider replies to logs."""
     message = str(error or "").lower()
+    if message in {"quota_or_rate_limit", "authentication_or_permission", "model_unavailable", "provider_temporarily_unavailable", "generation_blocked", "no_image_returned_or_unknown"}:
+        return message
     if any(word in message for word in ("429", "resource_exhausted", "quota", "rate limit")):
         return "quota_or_rate_limit"
     if any(word in message for word in ("401", "403", "unauthenticated", "permission_denied", "api key not valid", "invalid api key")):
