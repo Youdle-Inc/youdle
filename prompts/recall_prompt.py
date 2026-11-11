@@ -17,7 +17,7 @@ RECALL_BLOG_PROMPT = f"""Task: You are a Recall Lead Content Strategist for Youd
 Credit each official agency notice. A direct official government recall notice link is permitted for product-safety verification, never third-party publisher links.
 
 Mandatory recall hub link: Every recall article MUST include a reader-friendly HTML link
-to https://grocerysos.com/recalls, labeled "View all GrocerySOS food recalls".
+to https://www.youdle.io/recalls, labeled "View all Youdle food recalls".
 Place it in the final paragraph after the official consumer action. This is a
 required safety-navigation link, not an optional promotion. Never claim the
 list is a complete government database. Continue to link official agency
@@ -113,7 +113,7 @@ Omit any list item whose value is not supplied; never output bracketed placehold
 <li><strong>Action:</strong> [officially stated consumer action]</li>
 </ul>
 
-7. **Safety-first close:** State the official consumer action, followed by the required link to https://grocerysos.com/recalls. Optional contextual shopping feature link only if genuinely helpful; no generic Grocery Brief CTA or publisher link.
+7. **Safety-first close:** State the official consumer action, followed by the required link to https://www.youdle.io/recalls. Optional contextual shopping feature link only if genuinely helpful; no generic Grocery Brief CTA or publisher link.
 
 {FOUR_PART_CLOSE}
 

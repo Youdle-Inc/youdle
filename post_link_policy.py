@@ -19,16 +19,16 @@ FEATURE_URLS = frozenset({
     "https://www.youdle.io/specials",
 })
 SAFETY_AGENCIES = ("fda.gov", "usda.gov", "cdc.gov", "foodsafety.gov")
-GROCERYSOS_RECALLS_URL = "https://grocerysos.com/recalls"
+YOUDLE_RECALLS_URL = "https://www.youdle.io/recalls"
 
-# All agent-generated recall articles link shoppers back to the current
-# GrocerySOS recall list, in addition to any original government notices.
+# All agent-generated recall articles link shoppers back to the Youdle
+# recall list, in addition to any original government notices.
 # This is applied deterministically before drafts are persisted or published.
 RECALL_HUB_FOOTER = (
-    '<p class="grocerysos-recalls-link">'
+    '<p class="youdle-recalls-link">'
     '<strong>Check new and ongoing grocery recalls:</strong> '
-    '<a href="' + GROCERYSOS_RECALLS_URL + '">'
-    'View all GrocerySOS food recalls</a>.'
+    '<a href="' + YOUDLE_RECALLS_URL + '">'
+    'View all Youdle food recalls</a>.'
     '</p>'
 )
 
@@ -37,8 +37,17 @@ def ensure_recall_hub_link(html: str, *, is_recall: bool = False) -> str:
     """Append an idempotent, prominent current-recalls link to agent recall HTML."""
     if not is_recall or not html:
         return html
-    # Avoid duplicate links if a generated article or review already included it.
-    if re.search(r'https://(?:www\.)?grocerysos\.com/recalls(?:[\/"?&#<\s]|$)', html, re.I):
+    # Normalize any already-generated prelaunch recall link rather than
+    # adding a second link or exposing the unlaunched public name.
+    html = re.sub(
+        r'https://(?:www\.)?grocerysos\.com/recalls',
+        YOUDLE_RECALLS_URL,
+        html,
+        flags=re.I,
+    )
+    html = re.sub(r'GrocerySOS', 'Youdle', html, flags=re.I)
+    # Avoid duplicate links if generated text already includes the current hub.
+    if re.search(r'https://(?:www\.)?youdle\.io/recalls(?:[\/"?&#<\s]|$)', html, re.I):
         return html
     last_div = list(re.finditer(r'</div\s*>', html, re.I))
     if last_div:
@@ -84,6 +93,8 @@ def article_link_issues(html: str, *, is_recall: bool = False) -> list[str]:
         return [f"Invalid HTML link: {exc}"]
 
     issues = []
+    if re.search(r'GrocerySOS|grocerysos\.com', html or '', re.I):
+        issues.append("Prelaunch article contains GrocerySOS branding")
     feature_links = 0
     for anchor in parser.anchors:
         href, text = anchor["href"], anchor["text"].strip().lower()
@@ -96,13 +107,13 @@ def article_link_issues(html: str, *, is_recall: bool = False) -> list[str]:
             normalized = "https://www.youdle.io" + (parsed.path or "/")
             if parsed.query:
                 normalized += "?" + parsed.query
-            if normalized not in FEATURE_URLS:
+            if is_recall and normalized.rstrip("/") == YOUDLE_RECALLS_URL:
+                # Recall navigation is permitted in addition to a contextual feature.
+                pass
+            elif normalized not in FEATURE_URLS:
                 issues.append("Article links to a generic or unverified Youdle destination")
             else:
                 feature_links += 1
-        elif is_recall and host in ("grocerysos.com", "www.grocerysos.com") and parsed.path.rstrip("/") == "/recalls":
-            # Required destination for all agent-generated recall roundups.
-            pass
         elif is_recall and any(_hostname_is(host, base) for base in SAFETY_AGENCIES):
             # Official government recall notices are useful for identifying
             # affected products and verifying any lot numbers or health actions.
