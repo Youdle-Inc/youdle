@@ -4,6 +4,7 @@
 import os
 import sys
 import hashlib
+import re
 
 # Allow importing blogger_client from api/ directory
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api'))
@@ -142,6 +143,42 @@ BLOG_POSTS_DIR = os.getenv(
 )
 MAX_WORKERS = 4
 MAX_RECALL_ROUNDUP_SOURCES = 5
+MAX_ARTICLE_PHOTO_REQUESTS = 3
+PHOTO_TOPICS = (
+    "recipe", "cook", "bake", "roast", "turkey", "chicken", "cheesecake",
+    "cake", "dessert", "breakfast", "dinner", "lunch", "soup", "salad",
+    "vegetable", "fruit", "produce", "snack", "coffee", "bread", "cheese",
+    "pasta", "pantry", "food bank", "casserole", "meal prep",
+)
+NONVISUAL_TOPICS = (
+    "inflation", "price index", "consumer price", "interest rate", "lawsuit",
+    "policy", "earnings", "price check", "stock market", "coupon",
+    "black friday deal", "recall", "public health alert",
+)
+
+
+def photo_would_help(article):
+    if str(article.get("category") or "").upper() == "RECALL":
+        return False
+    title = str(article.get("title") or "").lower()
+    return (not any(word in title for word in NONVISUAL_TOPICS) and any(
+        re.search(r"\b" + re.escape(word) + r"\b", title) for word in PHOTO_TOPICS
+    ))
+
+
+def image_failure_kind(error):
+    message = str(error or "").lower()
+    if any(word in message for word in ("429", "resource_exhausted", "quota", "rate limit")):
+        return "quota_or_rate_limit"
+    if any(word in message for word in ("401", "403", "permission", "unauthorized", "api key")):
+        return "authentication_or_permission"
+    if any(word in message for word in ("404", "not_found", "not supported", "model")):
+        return "model_unavailable"
+    if any(word in message for word in ("503", "500", "unavailable", "timeout")):
+        return "provider_temporarily_unavailable"
+    return "no_image_returned_or_unknown"
+
+
 RECALL_CONTEXT_MAX_CHARS = 18000
 
 
@@ -693,88 +730,67 @@ def proofread_posts_node(state: BlogPostState) -> Dict[str, Any]:
 
 
 def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
-    """
-    Node: Generate images for all blog posts in parallel.
-    """
-    logs = [f"[{datetime.now().isoformat()}] Generating images..."]
-    
-    generated_posts = state.get("generated_posts", [])
-    
-    if not generated_posts:
-        return {"images": [], "logs": logs + ["No posts for image generation"]}
-    
-    try:
-        image_generator = get_image_generator(
-            use_placeholder=state.get("use_placeholder_images", False)
-        )
-        
-        images = []
+    """Try up to three relevant photographs. Missing photos never block text."""
+    logs = [f"[{datetime.now().isoformat()}] Choosing optional grocery photos..."]
+    posts = state.get("generated_posts", [])
+    images, warnings = [], []
+    generator = None
+    provider_failed = False
+    attempts = 0
+    seed = (posts[0].get("article", {}) or {}).get("title", "") if posts else ""
 
-        # Treatments are handed out by position in the batch, not hashed per
-        # title: independent hashes let two posts in one run collide on the
-        # same look. The seed moves where the rotation starts so consecutive
-        # runs do not open the same way.
-        batch_seed = (generated_posts[0].get("article", {}) or {}).get("title", "")
-        image_index = 0
-
-        for post in generated_posts:
-            if not post.get("success") and not post.get("blog_post"):
+    for post in posts:
+        if not post.get("success") and not post.get("blog_post"):
+            continue
+        article = post.get("article", {})
+        post_id = post.get("post_id")
+        if str(post.get("category", "")).upper() == "RECALL":
+            images.append({"post_id": post_id, "is_recall": True, "success": False})
+            continue
+        if provider_failed or attempts >= MAX_ARTICLE_PHOTO_REQUESTS or not photo_would_help(article):
+            images.append({"post_id": post_id, "success": False, "image_skipped": True})
+            continue
+        if generator is None:
+            try:
+                generator = get_image_generator(
+                    use_placeholder=state.get("use_placeholder_images", False)
+                )
+            except Exception as exc:
+                provider_failed = True
+                warnings.append(
+                    f"Gemini unavailable ({image_failure_kind(exc)}); saving text instead"
+                )
+                images.append({"post_id": post_id, "success": False, "image_skipped": True})
                 continue
-
-            article = post.get("article", {})
-            category = post.get("category", "").upper()
-
-            # Skip RECALL articles - they use a default image instead of generated
-            if category == "RECALL":
-                logs.append(f"  ⊘ Skipping image for RECALL: {article.get('title', 'Unknown')[:40]}...")
-                # Add placeholder entry so upload_images_node knows about this post
-                images.append({
-                    "post_id": post.get("post_id"),
-                    "success": False,
-                    "is_recall": True
-                })
-                continue
-
-            # The model that wrote the post names what its photograph should
-            # show. The keyword table underneath is still there for when this
-            # answers badly or not at all; it reads a fixed list and cannot
-            # know that "Cheez-It Protein" is a cracker.
-            look = image_generator.look_for(image_index, batch_seed)
-            image_index += 1
-
+        look = generator.look_for(attempts, seed)
+        attempts += 1
+        try:
             subject = describe_image_subject(
                 article.get("title", ""),
                 article.get("content") or article.get("description") or "",
                 look=look,
             )
-            if subject:
-                logs.append(f"  • {look.split('.')[0]}: {subject[:54]}")
-
-            image_result = image_generator.generate_image_for_article(
+            result = generator.generate_image_for_article(
                 article, theme_override=subject, look=look
             )
-            image_result["post_id"] = post.get("post_id")
-            image_result["is_recall"] = False
+        except Exception as exc:
+            result = {"success": False, "error": image_failure_kind(exc)}
+        result.update({"post_id": post_id, "is_recall": False})
+        images.append(result)
+        if not result.get("success"):
+            reason = image_failure_kind(result.get("error"))
+            logs.append(f"  Optional photo unavailable: {reason}")
+            if reason in {
+                "model_unavailable", "authentication_or_permission",
+                "quota_or_rate_limit", "provider_temporarily_unavailable",
+            }:
+                provider_failed = True
+                warnings.append(
+                    f"Stopped additional photo requests after {reason}; text drafts continue"
+                )
 
-            images.append(image_result)
-
-            status = "✓" if image_result.get("success") else "✗"
-            error_msg = f" ({image_result.get('error', 'unknown error')})" if not image_result.get("success") else ""
-            logs.append(f"  {status} Image for {article.get('title', 'Unknown')[:40]}...{error_msg}")
-        
-        logs.append(f"Generated {len([i for i in images if i.get('success')])} images")
-        
-        return {
-            "images": images,
-            "logs": logs
-        }
-        
-    except Exception as e:
-        return {
-            "images": [],
-            "errors": [f"Image generation error: {str(e)}"],
-            "logs": logs + [f"Image generation exception: {str(e)}"]
-        }
+    logs.append(f"Requested {attempts} photographs, maximum {MAX_ARTICLE_PHOTO_REQUESTS}")
+    return {"images": images, "warnings": warnings, "logs": logs}
 
 
 def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
@@ -805,14 +821,13 @@ def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
                 logs.append(f"  ✓ Using default image for RECALL post {post_id}")
                 continue
 
-            # Failed image generation - use placeholder
+            # Optional image was skipped or failed; never put a fake URL in text.
             if not image.get("success"):
                 uploaded_urls.append({
-                    "post_id": post_id,
-                    "url": "{IMAGE_HERE}",
-                    "success": False
+                    "post_id": post_id, "url": "", "success": False
                 })
-                logs.append(f"  ✗ No image data for {post_id}")
+                if not image.get("image_skipped"):
+                    logs.append(f"  Photo missing for {post_id}; text will be saved")
                 continue
 
             # Upload to imgBB
@@ -823,7 +838,7 @@ def upload_images_node(state: BlogPostState) -> Dict[str, Any]:
 
             uploaded_urls.append({
                 "post_id": post_id,
-                "url": upload_result.get("url", "{IMAGE_HERE}"),
+                "url": upload_result.get("url", "") if upload_result.get("success", False) else "",
                 "success": upload_result.get("success", False)
             })
 
@@ -956,12 +971,23 @@ def assemble_html_node(state: BlogPostState) -> Dict[str, Any]:
             )
 
         # Get image URL
-        image_url = url_lookup.get(post_id, "{IMAGE_HERE}")
-
-        # Replace placeholders
+        image_url = url_lookup.get(post_id, "")
         final_html = blog_post
-        final_html = final_html.replace("{IMAGE_HERE}", image_url)
-        final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
+        if isinstance(image_url, str) and image_url.startswith("https://"):
+            final_html = final_html.replace("{{IMAGE_HERE}}", image_url)
+            final_html = final_html.replace("{IMAGE_HERE}", image_url)
+        else:
+            image_url = ""
+            final_html = re.sub(
+                r'<img\b[^>]*\{\{?IMAGE_HERE\}\}?[^>]*>', "",
+                final_html, flags=re.IGNORECASE,
+            )
+            final_html = re.sub(
+                r'\{\{?IMAGE_HERE\}\}?', "", final_html, flags=re.IGNORECASE
+            )
+            assembly_warnings.append(
+                f"Saved text draft without a photograph: {article.get('title', 'Unknown')}"
+            )
         final_html = final_html.replace("{original_link}", original_link)
 
         final_unsafe_issues = find_unsafe_html_issues(final_html)
@@ -1209,6 +1235,11 @@ def push_drafts_to_blogger_node(state: BlogPostState) -> Dict[str, Any]:
         title = post.get("title", "Untitled")
         html = post.get("html", "")
         category = post.get("category", "SHOPPERS")
+
+        # Text-only articles stay in the agent dashboard pending editorial review.
+        if not post.get("image_url"):
+            logs.append(f"  Dashboard-only text draft: {title[:40]}")
+            continue
 
         try:
             result = blogger.publish_post(
