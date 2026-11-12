@@ -1,127 +1,45 @@
-# GitHub Actions workflow for sending notification after blog generation
-# Triggers after the Generate Blog Posts workflow completes successfully
-
 name: Post-Generation Notification
 
 on:
-  # Trigger when Generate Blog Posts workflow completes
   workflow_run:
     workflows: ["Generate Blog Posts"]
-    types:
-      - completed
-
-  # Allow manual trigger for testing
+    types: [completed]
+  # Manual resend requires the exact generating run ID; no guessed counts.
   workflow_dispatch:
     inputs:
-      posts_generated:
-        description: 'Number of posts generated (for testing)'
-        required: false
-        default: '7'
-        type: string
-      shoppers_count:
-        description: 'Number of SHOPPERS posts (for testing)'
-        required: false
-        default: '6'
-        type: string
-      recall_count:
-        description: 'Number of RECALL posts (for testing)'
-        required: false
-        default: '1'
+      source_run_id:
+        description: 'GitHub Actions run ID of the generation job to verify'
+        required: true
         type: string
 
 jobs:
   notify:
     runs-on: ubuntu-latest
-    # download-artifact needs actions:read to reach the triggering run's artifact
     permissions:
-      actions: read
       contents: read
-    # Only run if the triggering workflow succeeded (or manual trigger)
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install python-dotenv supabase pytz
-
-      - name: Get generation results (from workflow_run)
-        if: ${{ github.event_name == 'workflow_run' }}
-        uses: actions/download-artifact@v4
-        with:
-          name: blog-posts-${{ github.event.workflow_run.id }}
-          path: artifacts/
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
-        continue-on-error: true
-
-      - name: Check blog status and send notification
+      - name: Install notification dependencies
+        run: pip install python-dotenv supabase pytz
+      - name: Verify job and saved posts before emailing
         env:
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          ADMIN_NOTIFICATION_EMAIL: ${{ secrets.ADMIN_NOTIFICATION_EMAIL }}
+          SOURCE_GITHUB_RUN_ID: ${{ github.event.workflow_run.id || github.event.inputs.source_run_id }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-        run: |
-          # For manual trigger, use inputs
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-            POSTS="${{ github.event.inputs.posts_generated }}"
-            SHOPPERS="${{ github.event.inputs.shoppers_count }}"
-            RECALL="${{ github.event.inputs.recall_count }}"
-          else
-            # Try to get counts from generation_result.json artifact
-            if [ -f artifacts/generation_result.json ]; then
-              POSTS=$(python -c "import json; d=json.load(open('artifacts/generation_result.json')); print(d.get('posts_generated', 7))" 2>/dev/null || echo "7")
-              SHOPPERS=$(python -c "import json; d=json.load(open('artifacts/generation_result.json')); print(d.get('shoppers_count', 0))" 2>/dev/null || echo "0")
-              RECALL=$(python -c "import json; d=json.load(open('artifacts/generation_result.json')); print(d.get('recall_count', 0))" 2>/dev/null || echo "0")
-            else
-              # Fallback: query Supabase for actual counts
-              echo "No artifact found, querying Supabase for post counts..."
-              python -c "
-          from check_blog_status import check_publish_status
-          status = check_publish_status()
-          print(f\"POSTS={status.get('total_posts', 7)}\")
-          print(f\"SHOPPERS={status.get('shoppers_total', 6)}\")
-          print(f\"RECALL={status.get('recall_total', 1)}\")
-          " > counts.txt 2>/dev/null || echo "POSTS=7
-          SHOPPERS=6
-          RECALL=1" > counts.txt
-              source counts.txt
-            fi
-          fi
-
-          echo "Sending notification: $POSTS posts generated ($SHOPPERS shoppers, $RECALL recall)"
-
-          python -c "
-          from email_notifier import EmailNotifier
-          notifier = EmailNotifier()
-          result = notifier.send_blogs_generated_notification(
-              posts_generated=${POSTS:-7},
-              shoppers_count=${SHOPPERS:-6},
-              recall_count=${RECALL:-1}
-          )
-          print(f'Notification result: {result}')
-          if not result.get('success'):
-              exit(1)
-          "
-
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ADMIN_NOTIFICATION_EMAIL: ${{ secrets.ADMIN_NOTIFICATION_EMAIL }}
+        run: python scripts/notify_post_generation_status.py
       - name: Summary
+        if: success()
         run: |
-          echo "## Post-Generation Notification" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Notification email sent to admin about new blog posts." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Steps:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Review blog posts in the dashboard" >> $GITHUB_STEP_SUMMARY
-          echo "2. Publish at least 7 posts (6 SHOPPERS + 1 RECALL)" >> $GITHUB_STEP_SUMMARY
-          echo "3. Newsletter will be sent Thursday 9 AM CST" >> $GITHUB_STEP_SUMMARY
+          echo '## Post-Generation Notification' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Verified job and saved article counts before sending any email.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Review the Youdle dashboard for actual saved drafts and failures.' >> "$GITHUB_STEP_SUMMARY"
