@@ -9,6 +9,16 @@ from image_generator import ImageGenerator, summarize_image_failure
 from blog_post_graph import upload_images_node
 
 
+def test_image_generation_uses_supported_stable_model_without_provider_call():
+    # Construct the client with a dummy key; do not contact Gemini or bill.
+    with patch("image_generator.genai_client") as sdk, patch.dict(
+        "os.environ", {"GEMINI_NEWSLETTER_IMAGE_API_KEY": "offline-test-key"}
+    ):
+        generator = ImageGenerator()
+    assert generator.model_name == "gemini-3.1-flash-image"
+    sdk.Client.assert_called_once_with(api_key="offline-test-key")
+
+
 def test_failure_categories_do_not_expose_provider_details():
     assert summarize_image_failure("429 RESOURCE_EXHAUSTED api-key redacted") == "quota_or_rate_limit"
     assert summarize_image_failure("403 PERMISSION_DENIED credentials rejected") == "authentication_or_permission"
