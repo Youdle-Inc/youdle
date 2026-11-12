@@ -78,7 +78,7 @@ export function RunStatus({ jobs, className, onCancel }: RunStatusProps) {
 
                 <div className="flex-1">
                   <p className="text-sm font-medium text-stone-900 ">
-                    {job.config?.batch_size || 10} articles • {job.config?.model || DEFAULT_OPENAI_MODEL}
+                    {job.config?.batch_size || 10} requested • {job.config?.model || DEFAULT_OPENAI_MODEL}
                   </p>
                   <div className="flex items-center gap-3 mt-1">
                     <p className="text-xs text-stone-500 ">
@@ -104,7 +104,7 @@ export function RunStatus({ jobs, className, onCancel }: RunStatusProps) {
                   </span>
                   {job.result?.posts_generated !== undefined && (
                     <p className="text-xs text-stone-500  mt-1">
-                      {job.result.posts_generated} posts
+                      {job.result.posts_generated} saved drafts
                     </p>
                   )}
                   {job.error && (

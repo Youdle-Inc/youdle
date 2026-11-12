@@ -64,6 +64,9 @@ export default function DashboardPage() {
   const activeJob = jobsData?.jobs?.find(
     (job) => job.status === 'pending' || job.status === 'running'
   )
+  const latestJob = jobsData?.jobs?.[0] || null
+  const latestFailed = latestJob?.status === 'failed' ? latestJob : null
+  const latestSuccess = latestJob?.status === 'completed' ? latestJob : null
   const apiAvailable = apiCheck?.status === 'available'
   const supabaseAvailable = supabaseCheck?.status === 'available'
   const apiChecking = !apiCheck && healthLoading
@@ -89,6 +92,34 @@ export default function DashboardPage() {
           Monitor your blog generation pipeline and manage content.
         </p>
       </div>
+
+      {/* Put the real job outcome where an editor sees it immediately.
+          An API health check can be green even if generation failed. */}
+      {latestFailed && (
+        <div role="alert" className="rounded-xl border border-red-300 bg-red-50 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="font-semibold text-red-900">Latest article generation failed</p>
+              <p className="mt-1 text-sm text-red-800">
+                {latestFailed.error?.includes('model_unavailable')
+                  ? 'The image model was unavailable. Existing saved articles are unaffected.'
+                  : latestFailed.error?.includes('quota_or_rate_limit')
+                    ? 'The image service reported a quota or rate limit.'
+                    : 'The latest run did not complete successfully. Open Jobs for the recorded cause.'}
+              </p>
+            </div>
+            <a href="/jobs" className="rounded-lg bg-red-100 px-3 py-2 text-sm font-semibold text-red-900 hover:bg-red-200">
+              View failure in Jobs
+            </a>
+          </div>
+        </div>
+      )}
+      {latestSuccess && (
+        <div role="status" className="rounded-xl border border-stone-200 bg-white px-5 py-3 text-sm text-stone-700">
+          Latest run completed. <strong>{latestSuccess.result?.posts_generated ?? 'Unknown'}</strong> articles saved.
+          <a href="/posts" className="ml-2 font-semibold text-green-700 underline">Review drafts</a>
+        </div>
+      )}
 
       {/* Schedule Banner */}
       <ScheduleBanner

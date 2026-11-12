@@ -336,6 +336,7 @@ Examples:
         "use_legacy_orchestrator": args.legacy,
         # Recorded so the dashboard can tell a scheduled run from a local one.
         "source": "github-actions" if os.getenv("GITHUB_ACTIONS") else "cli",
+        "github_run_id": os.getenv("GITHUB_RUN_ID") if os.getenv("GITHUB_ACTIONS") else None,
     }
     supabase, job_id, conflict = start_job_record(job_config)
     if conflict:
