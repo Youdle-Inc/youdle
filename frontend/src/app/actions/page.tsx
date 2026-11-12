@@ -33,6 +33,33 @@ const statusIcons: Record<string, typeof Clock> = {
   completed: CheckCircle2,
 }
 
+/**
+ * Show the newsletter's routine operations before one-off repair and catch-up
+ * workflows. Names cover recurring jobs that are triggered manually rather
+ * than by cron; any future scheduled workflow is also sorted ahead of one-offs.
+ * Sorting never changes the workflow's enabled state or GitHub schedule.
+ */
+const routineWorkflowOrder = [
+  'Generate Blog Posts',
+  'Create Newsletter Campaign',
+  'Feedback Analysis',
+  'Blog Review Reminders',
+  'Weekly Shopper Behavior Report',
+  'Post-Generation Notification',
+  'Grocery Brief editorial QA',
+  'Historical Shopper Behavior Report',
+]
+
+const routineWorkflowRanks = new Map(
+  routineWorkflowOrder.map((name, index) => [name.toLowerCase(), index])
+)
+
+function workflowDisplayRank(workflow: Workflow): number {
+  const pinnedRank = routineWorkflowRanks.get(workflow.name.trim().toLowerCase())
+  if (pinnedRank !== undefined) return pinnedRank
+  return workflow.schedule ? routineWorkflowOrder.length : routineWorkflowOrder.length + 1
+}
+
 export default function ActionsPage() {
   const queryClient = useQueryClient()
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null)
@@ -113,7 +140,11 @@ export default function ActionsPage() {
     },
   })
 
-  const workflows = workflowsData?.workflows || []
+  const workflows = [...(workflowsData?.workflows || [])].sort(
+    (a, b) =>
+      workflowDisplayRank(a) - workflowDisplayRank(b) ||
+      a.name.localeCompare(b.name)
+  )
   const runs = runsData?.runs || []
 
   // Loading state
@@ -263,6 +294,7 @@ export default function ActionsPage() {
         {/* Workflows List */}
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-stone-900">Workflows</h2>
+          <p className="text-xs text-stone-500">Routine workflows first, one-time tools below.</p>
 
           {workflowsLoading && (
             <div className="flex items-center justify-center py-8">
