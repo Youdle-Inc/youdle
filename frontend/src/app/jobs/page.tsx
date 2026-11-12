@@ -179,7 +179,7 @@ export default function JobsPage() {
 
                       <div>
                         <p className="font-medium text-stone-900">
-                          {job.config?.batch_size || 10} articles • {job.config?.model || DEFAULT_OPENAI_MODEL}
+                          {job.config?.batch_size || 10} articles requested • {job.config?.model || DEFAULT_OPENAI_MODEL}
                         </p>
                         <p className="text-sm text-stone-500">
                           {formatRelativeTime(job.started_at || job.completed_at || job.created_at)}
@@ -210,7 +210,9 @@ export default function JobsPage() {
                 
                 {job.result?.posts_generated !== undefined && (
                   <p className="mt-2 text-sm text-stone-500">
-                    Generated {job.result.posts_generated} posts
+                    Saved {job.result.posts_generated} of {job.config?.batch_size || 10} requested articles as drafts
+                    {job.status === 'completed' && job.result.posts_generated < (job.config?.batch_size || 10)
+                      ? ' (partial result, review before publishing)' : ''}
                   </p>
                 )}
                 
