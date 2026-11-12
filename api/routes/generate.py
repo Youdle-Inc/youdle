@@ -332,7 +332,14 @@ async def get_blog_posts(
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
         
-        query = supabase.table("blog_posts").select("*").order("created_at", desc=True)
+        # Old, unused editorial drafts remain recoverable in the database but
+        # must not occupy the live review dashboard.
+        query = (
+            supabase.table("blog_posts")
+            .select("*")
+            .is_("archived_at", "null")
+            .order("created_at", desc=True)
+        )
         
         if status:
             query = query.eq("status", status)
@@ -1116,6 +1123,10 @@ async def sync_with_blogger():
         # Create drafts on Blogger for local posts that don't have a blogger_post_id
         pushed_count = 0
         for db_post in db_posts:
+            # Archival is a terminal editorial state for this draft; never
+            # recreate it in Blogger as part of a dashboard sync.
+            if db_post.get('archived_at'):
+                continue
             # Skip posts that already have a blogger_post_id
             if db_post.get('blogger_post_id'):
                 continue
