@@ -61,6 +61,21 @@ function getSyncStatus(post: BlogPost): { status: 'synced' | 'issue' | 'not_publ
   }
 }
 
+// Reuse the post's existing photo. Older posts may have their image stored
+// only in the article HTML, so use that source when image_url is absent.
+// Never fabricate a fallback image or treat placeholders as a real photo.
+function getCardImageUrl(post: BlogPost): string | null {
+  const savedImage = post.image_url?.trim()
+  if (savedImage && /^https:\/\//i.test(savedImage)) return savedImage
+
+  const html = safeArticlePreviewHtml(post.html_content, post.image_url)
+  for (const match of html.matchAll(/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+    const url = (match[1] || match[2] || match[3] || '').trim()
+    if (/^https:\/\//i.test(url)) return url
+  }
+  return null
+}
+
 export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPublish, onUnpublish, className }: BlogPostPreviewProps) {
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview')
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
@@ -69,6 +84,8 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
   const [isPublishing, setIsPublishing] = useState(false)
   const [isUnpublishing, setIsUnpublishing] = useState(false)
   const [publishError, setPublishError] = useState<string | null>(null)
+  const [failedCardImage, setFailedCardImage] = useState<string | null>(null)
+  const cardImageUrl = getCardImageUrl(post)
   const previewButtonRef = useRef<HTMLButtonElement>(null)
   const previewCloseRef = useRef<HTMLButtonElement>(null)
 
@@ -169,6 +186,20 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
           {truncate(stripHtml(post.html_content), 150)}
         </p>
       </div>
+
+      {/* Restore the saved article photograph on the resting card. The full
+          article still opens only through the separate Preview reader. */}
+      {cardImageUrl && failedCardImage !== cardImageUrl && (
+        <div className="border-b border-stone-200 bg-stone-50">
+          <img
+            src={cardImageUrl}
+            alt={post.title}
+            loading="lazy"
+            className="aspect-video w-full object-cover"
+            onError={() => setFailedCardImage(cardImageUrl)}
+          />
+        </div>
+      )}
 
       {/* View Toggle */}
       <div className="flex flex-col gap-2 px-4 py-2 bg-stone-50 border-b border-stone-200 sm:flex-row sm:items-center sm:justify-between">
