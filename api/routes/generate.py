@@ -856,6 +856,11 @@ async def sync_with_blogger():
 
         # === PHASE 2 & 3: VERIFICATION AND AUTO-FIX ===
         for db_post in db_posts:
+            if db_post.get('archived_at'):
+                # Preserve Blogger identities so archived drafts are not reimported.
+                if db_post.get('blogger_post_id'):
+                    matched_blogger_ids.add(db_post['blogger_post_id'])
+                continue
             db_id = db_post['id']
             db_title = db_post.get('title', '')
             db_status = db_post.get('status')
