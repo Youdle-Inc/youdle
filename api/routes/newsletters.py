@@ -832,8 +832,15 @@ def _prepare_newsletter_campaign(db, mailchimp, newsletter):
         remote = mailchimp.client.campaigns.get(campaign_id)
         if remote.get("status") not in ("save", "paused"):
             raise HTTPException(status_code=409, detail="The existing Mailchimp campaign is already scheduled or sent; no second campaign was created")
+        settings = remote.get("settings", {})
+        if not settings.get("from_name") or not settings.get("reply_to"):
+            raise HTTPException(status_code=409, detail="The existing campaign sender settings are missing; no second campaign was created")
         mailchimp.client.campaigns.content.update(campaign_id, {"html": newsletter["html_content"]})
-        mailchimp.client.campaigns.update(campaign_id, {"settings": {"subject_line": newsletter["subject"]}})
+        mailchimp.client.campaigns.update(campaign_id, {"settings": {
+            "subject_line": newsletter["subject"],
+            "from_name": settings["from_name"],
+            "reply_to": settings["reply_to"],
+        }})
         verified = mailchimp.client.campaigns.get(campaign_id)
         verified_html = mailchimp.client.campaigns.content.get(campaign_id).get("html", "")
         from html import unescape

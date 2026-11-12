@@ -117,13 +117,14 @@ class CampaignTests(unittest.TestCase):
     def test_existing_unsent_campaign_is_reused_and_verified(self):
         from api.routes.newsletters import _prepare_newsletter_campaign
         db=DB({'newsletters':[edition()]});mail=MagicMock()
-        mail.client.campaigns.get.return_value={'status':'save','settings':{'subject_line':'Actual story preview'}}
+        mail.client.campaigns.get.return_value={'status':'save','settings':{'subject_line':'Actual story preview','from_name':'Existing Youdle sender','reply_to':'existing@example.com'}}
         body='<a href="https://news.youdle.io/story"><img src="https://i.ibb.co/image.jpg"></a>'
         mail.client.campaigns.content.get.return_value={'html':body}
         n={'id':'same-edition','mailchimp_campaign_id':'same-campaign','subject':'Actual story preview','html_content':body}
         result=_prepare_newsletter_campaign(db,mail,n)
         self.assertEqual(result['campaign_id'],'same-campaign');mail.create_campaign.assert_not_called()
         mail.client.campaigns.content.update.assert_called_once_with('same-campaign',{'html':body})
+        mail.client.campaigns.update.assert_called_once_with('same-campaign',{'settings':{'subject_line':'Actual story preview','from_name':'Existing Youdle sender','reply_to':'existing@example.com'}})
     def test_already_sent_campaign_never_creates_a_second_one(self):
         from api.routes.newsletters import _prepare_newsletter_campaign
         from fastapi import HTTPException
