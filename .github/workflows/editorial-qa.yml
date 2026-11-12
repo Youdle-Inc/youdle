@@ -38,7 +38,7 @@ jobs:
           python -m pip install -r requirements.txt 'pytest>=8,<9'
       - name: Compile Python source
         run: |
-          python -m compileall -q headline_policy.py reflection_agent.py langchain_blog_agent.py blog_post_graph.py post_link_policy.py mailchimp_campaign.py prompts/
+          python -m compileall -q headline_policy.py reflection_agent.py langchain_blog_agent.py blog_post_graph.py post_link_policy.py mailchimp_campaign.py prompts/ generate_blog_posts.py scripts/notify_post_generation_status.py
       - name: Run no-service tests
         env:
           OPENAI_API_KEY: ''
@@ -46,4 +46,4 @@ jobs:
           GEMINI_API_KEY: ''
           IMGBB_API_KEY: ''
         run: |
-          python -m pytest -q tests/test_headline_policy.py tests/test_newsletter_article_links.py tests/test_prompt_pipeline.py tests/test_recall_hub_link.py tests/test_image_failure_diagnostics.py
+          python -m pytest -q tests/test_headline_policy.py tests/test_newsletter_article_links.py tests/test_prompt_pipeline.py tests/test_recall_hub_link.py tests/test_image_failure_diagnostics.py tests/test_generation_notifications.py
