@@ -48,7 +48,11 @@ def generation_notice(job, rows):
 
     actual = len(rows or [])
     reported = (job.get("result") or {}).get("posts_generated")
-    if actual == 0 or reported is None or int(reported) != actual:
+    try:
+        reported_count = int(reported)
+    except (ValueError, TypeError):
+        reported_count = -1
+    if actual == 0 or reported_count != actual:
         return (
             "Youdle alert: generation count mismatch",
             f"Job marked completed, but saved post count does not match: "
