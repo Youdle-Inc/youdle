@@ -17,8 +17,6 @@ import os
 import sys
 import json
 import argparse
-from uuid import uuid4
-from datetime import datetime
 
 try:
     from dotenv import load_dotenv
@@ -27,128 +25,33 @@ except ImportError:
     pass
 
 from supabase_storage import get_supabase_client
-from mailchimp_campaign import MailchimpCampaign
-from check_blog_status import get_week_start_date
 
 # Import subject line generator from the API routes
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'api', 'routes'))
-from newsletters import generate_content_driven_subject, generate_newsletter_html
+from newsletters import generate_newsletter_html
 
 
 def create_draft_newsletter(custom_subject: str = None) -> dict:
-    """
-    Create a draft newsletter from this week's published posts that have not
-    already been used in a newsletter.
-    
-    Returns a dict with newsletter info or error details.
-    """
-    supabase = get_supabase_client()
-    if supabase is None:
+    """Build or refresh the same unsent weekly issue, without sending it."""
+    from newsletter_edition import sync_weekly_draft
+    db = get_supabase_client()
+    if db is None:
         return {"success": False, "error": "Database not configured"}
-
-    # Match the workflow's publish gate: use actual Blogger publication time
-    # since the most recent Tuesday, not the database row creation time.
-    week_start = get_week_start_date().isoformat()
-    all_posts = supabase.table("blog_posts").select(
-        "id, title, category, blogger_url"
-    ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-        "blogger_published_at", week_start
-    ).order(
-        "blogger_published_at", desc=True
-    ).limit(50).execute()
-
-    if not all_posts.data:
-        return {"success": False, "error": "No posts were published this week"}
-
-    all_post_ids = [p["id"] for p in all_posts.data]
-
-    # Exclude posts already in newsletters
-    used_posts = supabase.table("newsletter_posts").select("blog_post_id").in_(
-        "blog_post_id", all_post_ids
-    ).execute()
-    used_post_ids = set(p["blog_post_id"] for p in (used_posts.data or []))
-    available_posts = [p for p in all_posts.data if p["id"] not in used_post_ids]
-
-    if not available_posts:
-        return {"success": False, "error": "All published posts are already in newsletters"}
-
-    available_post_ids = [p["id"] for p in available_posts]
-    post_titles = [p["title"] for p in available_posts]
-
-    # Generate subject line (or use custom one)
-    if custom_subject:
-        subject = custom_subject
-    else:
-        subject = generate_content_driven_subject(post_titles)
-
-    # Generate HTML
-    html_content = generate_newsletter_html(supabase, available_post_ids, subject)
-
-    # Create the newsletter as a draft
-    newsletter_id = str(uuid4())
-    now = datetime.utcnow().isoformat()
-    date_str = datetime.now().strftime("%B %d, %Y")
-    title = f"Weekly Newsletter - {date_str}"
-
-    newsletter_result = supabase.table("newsletters").insert({
-        "id": newsletter_id,
-        "title": title,
-        "subject": subject,
-        "html_content": html_content,
-        "status": "draft",
-        "created_at": now,
-        "updated_at": now
-    }).execute()
-
-    if not newsletter_result.data:
-        return {"success": False, "error": "Failed to create newsletter in database"}
-
-    # Link posts
-    newsletter_posts_data = []
-    for i, post_id in enumerate(available_post_ids):
-        newsletter_posts_data.append({
-            "id": str(uuid4()),
-            "newsletter_id": newsletter_id,
-            "blog_post_id": post_id,
-            "position": i
-        })
-
-    posts_result = supabase.table("newsletter_posts").insert(newsletter_posts_data).execute()
-    if not posts_result.data:
-        # Clean up
-        supabase.table("newsletters").delete().eq("id", newsletter_id).execute()
-        return {"success": False, "error": "Failed to link posts to newsletter"}
-
-    # Categorize posts for the summary
-    shoppers = [p for p in available_posts if p.get("category", "").upper() != "RECALL"]
-    recalls = [p for p in available_posts if p.get("category", "").upper() == "RECALL"]
-
-    # Send notification email
-    try:
-        from email_notifier import EmailNotifier
-        notifier = EmailNotifier()
-        notifier.send_newsletter_draft_ready_notification(
-            newsletter_id=newsletter_id,
-            subject=subject,
-            post_count=len(available_posts),
-            shoppers_count=len(shoppers),
-            recall_count=len(recalls),
-            post_titles=post_titles[:10]  # First 10 titles for the email
-        )
-    except Exception as e:
-        print(f"Warning: Could not send notification email: {e}", file=sys.stderr)
-
-    return {
-        "success": True,
-        "newsletter_id": newsletter_id,
-        "title": title,
-        "subject": subject,
-        "status": "draft",
-        "post_count": len(available_posts),
-        "shoppers_count": len(shoppers),
-        "recall_count": len(recalls),
-        "message": "Draft newsletter created. Review and edit the subject line on the dashboard, then schedule or send."
-    }
+    result = sync_weekly_draft(db, generate_newsletter_html, subject=custom_subject, require_complete=True)
+    if not result:
+        return {"success": False, "error": "Waiting for six shopper stories and one recall"}
+    newsletter = result['newsletter']
+    links = db.table('newsletter_posts').select('blog_post_id').eq('newsletter_id', newsletter['id']).order('position').execute().data or []
+    posts = db.table('blog_posts').select('id,title,category').in_('id', [p['blog_post_id'] for p in links]).execute().data or []
+    shopper_count = sum(p.get('category') != 'RECALL' for p in posts)
+    recall_count = len(posts) - shopper_count
+    if result['created']:
+        try:
+            from email_notifier import EmailNotifier
+            EmailNotifier().send_newsletter_draft_ready_notification(newsletter_id=newsletter['id'], subject=newsletter['subject'], post_count=len(posts), shoppers_count=shopper_count, recall_count=recall_count, post_titles=[p['title'] for p in posts][:10])
+        except Exception as error:
+            print(f"Warning: Could not send draft-ready notification: {error}", file=sys.stderr)
+    return {"success": True, "newsletter_id": newsletter['id'], "title": newsletter['title'], "subject": newsletter['subject'], "status": newsletter['status'], "post_count": len(posts), "shoppers_count": shopper_count, "recall_count": recall_count, "message": "Existing weekly edition refreshed. Review it on the dashboard."}
 
 
 def main():

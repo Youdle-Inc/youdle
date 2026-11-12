@@ -54,6 +54,13 @@ class RecordingQuery:
         self.filter_descriptions.append(("gte", column, value))
         return self
 
+    def lt(self, column, value):
+        self.filters.append(
+            lambda row, c=column, v=value: row.get(c) is not None and row.get(c) < v
+        )
+        self.filter_descriptions.append(("lt", column, value))
+        return self
+
     @property
     def not_(self):
         self.negate_next = True
@@ -277,16 +284,18 @@ def test_create_draft_limits_used_post_lookup_to_candidates():
         ],
     })
 
-    with patch.object(draft_newsletter, "get_supabase_client", return_value=client), patch.object(
-        draft_newsletter,
-        "get_week_start_date",
-        return_value=_parse_utc_datetime("2026-01-01T00:00:00Z"),
+    with patch.object(draft_newsletter, "get_supabase_client", return_value=client), patch(
+        "newsletter_edition.week_bounds",
+        return_value=(_parse_utc_datetime("2999-01-01T00:00:00Z"), _parse_utc_datetime("2999-01-08T00:00:00Z")),
     ):
         result = draft_newsletter.create_draft_newsletter()
 
     assert result["success"] is False
     used_query = next(call for call in client.executions if call["table"] == "newsletter_posts")
-    assert ("in", "blog_post_id", ("post-1", "post-2")) in used_query["filters"]
+    assert any(
+        operation == "in" and column == "blog_post_id" and set(values) == {"post-1", "post-2"}
+        for operation, column, values in used_query["filters"]
+    )
     posts_query = next(call for call in client.executions if call["table"] == "blog_posts")
     assert any(
         operation == "gte" and column == "blogger_published_at"

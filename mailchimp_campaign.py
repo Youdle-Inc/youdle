@@ -495,65 +495,10 @@ class MailchimpCampaign:
         recall_articles: List[Dict[str, Any]] = None,
         dynamic_headline: str = None
     ) -> str:
-        """
-        Create newsletter HTML from articles.
-        
-        Args:
-            articles: List of article data (title, url)
-            recall_articles: List of recall article data
-            dynamic_headline: Custom headline for the newsletter (Issue #857 fix)
-            
-        Returns:
-            HTML newsletter content
-        """
-        # Format article links with summaries
-        article_links = "\n            ".join([
-            self._format_article_link(
-                title=a.get("title", "Article"),
-                url=a.get("url", a.get("link", "#")),
-                category=a.get("category", ""),
-                summary=a.get("summary", a.get("description", "")),
-                image_url=a.get("image_url", "")
-            )
-            for a in articles[:6]
-        ])
+        """Render selected articles in the existing approved Youdle design."""
+        from youdle_email_template import render_youdle_newsletter_html
+        return render_youdle_newsletter_html(articles, recall_articles, dynamic_headline)
 
-        # Format recall section with summaries
-        if recall_articles:
-            recall_links = "\n            ".join([
-                self._format_recall_link(
-                    title=a.get("title", "Recall Alert"),
-                    url=a.get("url", a.get("link", "#")),
-                    summary=a.get("summary", a.get("description", "")),
-                    image_url=a.get("image_url", "")
-                )
-                for a in recall_articles[:3]
-            ])
-            recall_section = RECALL_SECTION_TEMPLATE.format(recall_links=recall_links)
-        else:
-            recall_section = ""
-        
-        # Generate dynamic headline if not provided (Issue #857 fix)
-        if not dynamic_headline:
-            if articles:
-                top_story = articles[0].get("title", "Grocery News")
-                total_stories = len(articles) + len(recall_articles or [])
-                if total_stories > 1:
-                    dynamic_headline = f"{top_story} + {total_stories - 1} More Stories"
-                else:
-                    dynamic_headline = top_story
-            else:
-                date_str = datetime.now().strftime("%B %d, %Y")
-                dynamic_headline = f"Grocery News - {date_str}"
-        
-        # Create newsletter
-        return NEWSLETTER_TEMPLATE.format(
-            article_links=article_links,
-            recall_section=recall_section,
-            dynamic_headline=dynamic_headline,
-            year=datetime.now().year
-        )
-    
     def create_campaign(
         self,
         subject: str,

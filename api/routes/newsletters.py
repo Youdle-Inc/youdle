@@ -355,94 +355,9 @@ def _spellcheck_subject(subject: str) -> str:
 
 
 def generate_content_driven_subject(post_titles: list) -> str:
-    """
-    Generate enhanced subject line from top 2 stories with natural variety.
-    Issue #857: Improved randomness and patterns to avoid repetitive headlines.
-    Includes automatic spell checking.
-    """
-    import random
-    import time
-
-    # Seed random with time to ensure different results each run (Issue #857)
-    random.seed(int(time.time() * 1000) % 10000)
-
-    subject = None
-
-    if not post_titles:
-        # More varied fallbacks
-        fallbacks = [
-            'Your weekly grocery updates',
-            'This week in grocery retail',
-            'Grocery trends you need to know',
-            'Your grocery news roundup'
-        ]
-        subject = random.choice(fallbacks)
-
-    elif len(post_titles) == 1:
-        single_patterns = [
-            clean_title_for_subject(post_titles[0]),
-            f"{clean_title_for_subject(post_titles[0])} — what it means for shoppers",
-            f"{clean_title_for_subject(post_titles[0])} + this week's grocery news"
-        ]
-        subject = random.choice(single_patterns)
-
-    else:
-        # Get top 2 stories for dual-story subject
-        title1 = clean_title_for_subject(post_titles[0])
-        title2 = clean_title_for_subject(post_titles[1])
-        remaining_count = len(post_titles) - 1
-
-        # Expanded pattern variations with better distribution (Issue #857)
-        openers = [
-            # Direct conjunction patterns (20%)
-            {"pattern": f"{title1} + {title2}", "weight": 8},
-            {"pattern": f"{title1}, {title2}", "weight": 7},
-            {"pattern": f"{title1} & {title2}", "weight": 5},
-
-            # Story count patterns (25%)
-            {"pattern": f"{title1} + {remaining_count} more grocery stories", "weight": 10},
-            {"pattern": f"{title1} and {remaining_count} more stories you need to know", "weight": 8},
-            {"pattern": f"{title1} plus {remaining_count} more updates", "weight": 7},
-
-            # Weekly framing patterns (20%)
-            {"pattern": f"This week: {title1} + {title2}", "weight": 8},
-            {"pattern": f"Weekly roundup: {title1} + more", "weight": 6},
-            {"pattern": f"Week ahead: {title1} + {remaining_count} stories", "weight": 6},
-
-            # Temporal/causal patterns (15%)
-            {"pattern": f"{title1} while {title2}", "weight": 5},
-            {"pattern": f"{title1} as {title2}", "weight": 5},
-            {"pattern": f"{title1} amid {title2}", "weight": 5},
-
-            # Impact/attention patterns (20%)
-            {"pattern": f"{title1} — plus {title2}", "weight": 6},
-            {"pattern": f"{title1}: what shoppers need to know", "weight": 5},
-            {"pattern": f"{title1} + breaking grocery news", "weight": 4},
-            {"pattern": f"Breaking: {title1} + more stories", "weight": 5},
-        ]
-
-        # Weighted random selection with better distribution
-        total_weight = sum(opener["weight"] for opener in openers)
-        random_val = random.randint(1, total_weight)
-        current_weight = 0
-
-        for opener in openers:
-            current_weight += opener["weight"]
-            if random_val <= current_weight:
-                subject = opener["pattern"]
-                break
-
-        # Enhanced fallback with variety
-        if subject is None:
-            fallbacks = [
-                f"{title1} + {title2}",
-                f"{title1} and {remaining_count} more stories",
-                f"This week: {title1} + more"
-            ]
-            subject = random.choice(fallbacks)
-
-    # Apply spell check to the final subject line
-    return _spellcheck_subject(subject)
+    """Preview actual stories instead of a generic weekly label or story count."""
+    from newsletter_edition import preview_subject
+    return preview_subject([{"title": title} for title in post_titles])
 
 
 def clean_title_for_subject(title: str) -> str:
@@ -515,7 +430,7 @@ def clean_title_for_subject(title: str) -> str:
     return cleaned
 
 
-def generate_newsletter_html(supabase, post_ids: List[str], subject: str = None) -> str:
+def generate_newsletter_html(supabase, post_ids: List[str], subject: str = None, image_overrides: dict = None) -> str:
     """
     Generate newsletter HTML from blog post IDs.
     
@@ -554,7 +469,7 @@ def generate_newsletter_html(supabase, post_ids: List[str], subject: str = None)
             "title": post.get("title", "Article"),
             "url": post.get("blogger_url") or "https://www.youdle.io/news",
             "category": post.get("category", "SHOPPERS"),
-            "image_url": post.get("image_url") or "",
+            "image_url": post.get("image_url") or (image_overrides or {}).get(post.get("blogger_url"), ""),
             "summary": summary,
         }
 
@@ -772,86 +687,17 @@ async def get_newsletter(newsletter_id: str):
 
 @router.post("", response_model=Newsletter)
 async def create_newsletter(data: NewsletterCreate):
-    """
-    Create a new newsletter from selected blog posts.
-    """
+    from supabase_storage import get_supabase_client
+    from newsletter_edition import sync_weekly_draft
+    db = get_supabase_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
     if not data.post_ids:
-        raise HTTPException(status_code=400, detail="At least one post ID is required")
-
-    try:
-        from supabase_storage import get_supabase_client
-        supabase = get_supabase_client()
-
-        if supabase is None:
-            raise HTTPException(status_code=503, detail="Database not configured")
-
-        # Filter out posts already used in other newsletters (Bug #861 - prevent duplicates)
-        # Use a fresh query each time to avoid race conditions
-        used_post_ids = _get_used_post_ids(supabase, data.post_ids)
-        filtered_post_ids = [pid for pid in data.post_ids if pid not in used_post_ids]
-
-        if not filtered_post_ids:
-            raise HTTPException(status_code=400, detail="All selected posts are already in existing newsletters")
-
-        # Use filtered list going forward
-        data.post_ids = filtered_post_ids
-
-        # Generate default title and subject if not provided
-        date_str = datetime.now().strftime("%B %d, %Y")
-        title = data.title or f"Weekly Newsletter - {date_str}"
-
-        # Auto-generate content-driven subject from post titles if not provided
-        if data.subject:
-            subject = data.subject
-        else:
-            post_titles = _get_ordered_post_titles(supabase, data.post_ids)
-            subject = generate_content_driven_subject(post_titles)
-
-        # Generate HTML content with subject as headline (Issue #857 fix)
-        html_content = generate_newsletter_html(supabase, data.post_ids, subject)
-
-        # Create newsletter
-        newsletter_id = str(uuid4())
-        now = datetime.utcnow().isoformat()
-
-        # Create newsletter first
-        newsletter_result = supabase.table("newsletters").insert({
-            "id": newsletter_id,
-            "title": title,
-            "subject": subject,
-            "html_content": html_content,
-            "status": "draft",
-            "created_at": now,
-            "updated_at": now
-        }).execute()
-
-        if not newsletter_result.data:
-            raise HTTPException(status_code=500, detail="Failed to create newsletter")
-
-        # Immediately link posts in batch to prevent race conditions
-        newsletter_posts_data = []
-        for i, post_id in enumerate(data.post_ids):
-            newsletter_posts_data.append({
-                "id": str(uuid4()),
-                "newsletter_id": newsletter_id,
-                "blog_post_id": post_id,
-                "position": i
-            })
-
-        # Insert all post links in one batch to minimize race condition window
-        posts_result = supabase.table("newsletter_posts").insert(newsletter_posts_data).execute()
-        if not posts_result.data:
-            # Clean up the newsletter if post linking failed
-            supabase.table("newsletters").delete().eq("id", newsletter_id).execute()
-            raise HTTPException(status_code=500, detail="Failed to link posts to newsletter")
-
-        # Return the created newsletter
-        return get_newsletter_with_posts(supabase, newsletter_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create newsletter: {str(e)}")
+        raise HTTPException(status_code=400, detail="At least one published article is required")
+    result = sync_weekly_draft(db, generate_newsletter_html, post_ids=data.post_ids, title=data.title, subject=data.subject)
+    if not result:
+        raise HTTPException(status_code=400, detail="No current published articles are available")
+    return get_newsletter_with_posts(db, result['newsletter']['id'])
 
 
 @router.patch("/{newsletter_id}", response_model=Newsletter)
@@ -898,7 +744,17 @@ async def update_newsletter(newsletter_id: str, data: NewsletterUpdate):
 
             # Regenerate HTML with updated subject (Issue #857 fix)
             current_subject = data.subject if data.subject is not None else existing.data.get("subject", "")
-            update_data["html_content"] = generate_newsletter_html(supabase, data.post_ids, current_subject)
+            from newsletter_edition import existing_images
+            update_data["html_content"] = generate_newsletter_html(supabase, data.post_ids, current_subject, image_overrides=existing_images(existing.data.get("html_content")))
+
+        elif data.subject is not None:
+            # A subject edit also updates the visible headline without replacing
+            # the selected stories or their approved newsletter photos.
+            from newsletter_edition import existing_images
+            links = supabase.table("newsletter_posts").select("blog_post_id").eq("newsletter_id", newsletter_id).order("position").execute().data or []
+            update_data["html_content"] = generate_newsletter_html(
+                supabase, [link["blog_post_id"] for link in links], data.subject,
+                image_overrides=existing_images(existing.data.get("html_content")))
 
         # Update newsletter
         supabase.table("newsletters").update(update_data).eq("id", newsletter_id).execute()
@@ -967,11 +823,37 @@ async def preview_newsletter(newsletter_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get preview: {str(e)}")
 
 
+def _prepare_newsletter_campaign(db, mailchimp, newsletter):
+    """Reuse the same unsent Mailchimp campaign; never send or schedule here."""
+    campaign_id = newsletter.get("mailchimp_campaign_id")
+    if campaign_id:
+        if not mailchimp.client:
+            raise HTTPException(status_code=503, detail="Mailchimp is not configured")
+        remote = mailchimp.client.campaigns.get(campaign_id)
+        if remote.get("status") not in ("save", "paused"):
+            raise HTTPException(status_code=409, detail="The existing Mailchimp campaign is already scheduled or sent; no second campaign was created")
+        mailchimp.client.campaigns.content.update(campaign_id, {"html": newsletter["html_content"]})
+        mailchimp.client.campaigns.update(campaign_id, {"settings": {"subject_line": newsletter["subject"]}})
+        verified = mailchimp.client.campaigns.get(campaign_id)
+        verified_html = mailchimp.client.campaigns.content.get(campaign_id).get("html", "")
+        from html import unescape
+        import re
+        expected_urls = re.findall(r'(?:href|src)=["\'](https://[^"\']+)', newsletter["html_content"])
+        if (verified.get("settings", {}).get("subject_line") != newsletter["subject"]
+                or any(unescape(url) not in unescape(verified_html) for url in expected_urls)):
+            raise HTTPException(status_code=502, detail="The existing Mailchimp campaign did not confirm the updated subject, links and images")
+        return {"success": True, "campaign_id": campaign_id, "web_id": newsletter.get("mailchimp_web_id")}
+    result = mailchimp.create_campaign(subject=newsletter["subject"], html_content=newsletter["html_content"])
+    if result.get("success"):
+        db.table("newsletters").update({"mailchimp_campaign_id": result["campaign_id"], "mailchimp_web_id": str(result.get("web_id") or ""), "updated_at": datetime.now(timezone.utc).isoformat()}).eq("id", newsletter["id"]).execute()
+    return result
+
+
 @router.post("/{newsletter_id}/schedule", response_model=Newsletter)
 async def schedule_newsletter(newsletter_id: str):
     """
-    Schedule a newsletter for the next Thursday at 9 AM EST.
-    Creates a Mailchimp campaign and schedules it.
+    Schedule a newsletter for the next Thursday at 9 AM Central.
+    Reuse its existing unsent Mailchimp campaign when present.
     """
     try:
         from supabase_storage import get_supabase_client
@@ -995,10 +877,7 @@ async def schedule_newsletter(newsletter_id: str):
         # Create Mailchimp campaign
         mailchimp = MailchimpCampaign()
 
-        campaign_result = mailchimp.create_campaign(
-            subject=nl["subject"],
-            html_content=nl["html_content"]
-        )
+        campaign_result = _prepare_newsletter_campaign(supabase, mailchimp, nl)
 
         if not campaign_result.get("success"):
             supabase.table("newsletters").update({
@@ -1074,10 +953,7 @@ async def send_newsletter(newsletter_id: str):
 
         if not campaign_id:
             # Create new campaign
-            campaign_result = mailchimp.create_campaign(
-                subject=nl["subject"],
-                html_content=nl["html_content"]
-            )
+            campaign_result = _prepare_newsletter_campaign(supabase, mailchimp, nl)
 
             if not campaign_result.get("success"):
                 supabase.table("newsletters").update({
@@ -1088,6 +964,9 @@ async def send_newsletter(newsletter_id: str):
                 raise HTTPException(status_code=500, detail=campaign_result.get("error", "Failed to create Mailchimp campaign"))
 
             campaign_id = campaign_result["campaign_id"]
+
+        if campaign_id and nl["status"] == "draft" and nl.get("mailchimp_campaign_id"):
+            _prepare_newsletter_campaign(supabase, mailchimp, nl)
 
         # Send campaign
         send_result = mailchimp.send_campaign(campaign_id)
@@ -1146,13 +1025,15 @@ async def unschedule_newsletter(newsletter_id: str):
         campaign_id = nl.get("mailchimp_campaign_id")
 
         if campaign_id:
-            # Try to unschedule in Mailchimp
             mailchimp = MailchimpCampaign()
-            try:
-                if mailchimp.client:
-                    mailchimp.client.campaigns.actions.unschedule(campaign_id)
-            except Exception:
-                pass  # Best effort - campaign might not be unschedulable
+            if not mailchimp.client:
+                raise HTTPException(status_code=503, detail="Mailchimp is not configured; the newsletter remains scheduled")
+            remote = mailchimp.client.campaigns.get(campaign_id)
+            if remote.get("status") == "schedule":
+                mailchimp.client.campaigns.actions.unschedule(campaign_id)
+                remote = mailchimp.client.campaigns.get(campaign_id)
+            if remote.get("status") not in ("save", "paused"):
+                raise HTTPException(status_code=409, detail="Mailchimp did not confirm cancellation; the newsletter status was preserved")
 
         # Update newsletter status back to draft
         supabase.table("newsletters").update({
@@ -1173,7 +1054,7 @@ async def unschedule_newsletter(newsletter_id: str):
 async def retry_newsletter(newsletter_id: str):
     """
     Retry a failed newsletter by resetting it to draft status.
-    Clears the error and Mailchimp campaign ID so it can be sent again.
+    Clears the error while retaining the existing campaign to prevent duplicates.
     """
     try:
         from supabase_storage import get_supabase_client
@@ -1193,12 +1074,10 @@ async def retry_newsletter(newsletter_id: str):
         if nl["status"] != "failed":
             raise HTTPException(status_code=400, detail="Only failed newsletters can be retried")
 
-        # Reset to draft status, clear error and campaign ID
+        # Return to draft while preserving its existing unsent campaign identity
         supabase.table("newsletters").update({
             "status": "draft",
             "error": None,
-            "mailchimp_campaign_id": None,
-            "mailchimp_web_id": None,
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", newsletter_id).execute()
 
@@ -1212,342 +1091,31 @@ async def retry_newsletter(newsletter_id: str):
 
 @router.post("/queue-articles", response_model=Newsletter)
 async def queue_articles():
-    """
-    One-click: Create newsletter from ALL published posts not yet in any newsletter,
-    then schedule for Thursday 9 AM CST.
-    """
-    try:
-        from supabase_storage import get_supabase_client
-        from mailchimp_campaign import MailchimpCampaign
-
-        supabase = get_supabase_client()
-
-        if supabase is None:
-            raise HTTPException(status_code=503, detail="Database not configured")
-
-        # Use a database transaction to prevent race conditions
-        # Check if there's already a newsletter in progress from today
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        
-        # Check for existing newsletters created today that are queued/scheduled
-        existing_newsletters = supabase.table("newsletters").select("id, status, created_at").like(
-            "title", f"Weekly Newsletter - %{datetime.now().strftime('%Y')}%"
-        ).eq("status", "scheduled").execute()
-        
-        if existing_newsletters.data:
-            # Check if any were created in the last 5 minutes (prevent rapid duplicate creation)
-            recent_newsletters = []
-            cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=5)
-            for newsletter in existing_newsletters.data:
-                created_time = _parse_utc_datetime(newsletter["created_at"])
-                if created_time > cutoff_time:
-                    recent_newsletters.append(newsletter)
-            
-            if recent_newsletters:
-                raise HTTPException(status_code=409, detail="A newsletter was already queued recently. Please wait a few minutes before creating another one.")
-
-        # Get ALL published posts with blogger_url (no date restriction)
-        all_posts = supabase.table("blog_posts").select(
-            "id"
-        ).eq("status", "published").not_.is_("blogger_url", "null").order(
-            "created_at", desc=True
-        ).limit(50).execute()
-
-        if not all_posts.data:
-            raise HTTPException(status_code=400, detail="No published posts available")
-
-        all_post_ids = [p["id"] for p in all_posts.data]
-
-        # Get posts already in newsletters - use a more precise query to avoid race conditions
-        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
-
-        # Filter to unused posts
-        available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
-
-        if not available_post_ids:
-            raise HTTPException(status_code=400, detail="No posts available - all published posts are already in newsletters")
-
-        # Create newsletter with available posts
-        date_str = datetime.now().strftime("%B %d, %Y")
-        title = f"Weekly Newsletter - {date_str}"
-        post_titles = _get_ordered_post_titles(supabase, available_post_ids)
-        subject = generate_content_driven_subject(post_titles)
-
-        html_content = generate_newsletter_html(supabase, available_post_ids)
-
-        newsletter_id = str(uuid4())
-        now = datetime.utcnow().isoformat()
-
-        # Create newsletter first
-        newsletter_result = supabase.table("newsletters").insert({
-            "id": newsletter_id,
-            "title": title,
-            "subject": subject,
-            "html_content": html_content,
-            "status": "draft",
-            "created_at": now,
-            "updated_at": now
-        }).execute()
-
-        if not newsletter_result.data:
-            raise HTTPException(status_code=500, detail="Failed to create newsletter")
-
-        # Immediately link posts to prevent race conditions
-        newsletter_posts_data = []
-        for i, post_id in enumerate(available_post_ids):
-            newsletter_posts_data.append({
-                "id": str(uuid4()),
-                "newsletter_id": newsletter_id,
-                "blog_post_id": post_id,
-                "position": i
-            })
-
-        # Insert all post links in one batch to minimize race condition window
-        posts_result = supabase.table("newsletter_posts").insert(newsletter_posts_data).execute()
-        if not posts_result.data:
-            # Clean up the newsletter if post linking failed
-            supabase.table("newsletters").delete().eq("id", newsletter_id).execute()
-            raise HTTPException(status_code=500, detail="Failed to link posts to newsletter")
-
-        # Now schedule the newsletter for Thursday 9 AM CST
-        mailchimp = MailchimpCampaign()
-
-        campaign_result = mailchimp.create_campaign(
-            subject=subject,
-            html_content=html_content
-        )
-
-        if not campaign_result.get("success"):
-            # Mark as failed but keep the newsletter
-            supabase.table("newsletters").update({
-                "status": "failed",
-                "error": campaign_result.get("error", "Failed to create campaign"),
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", newsletter_id).execute()
-            raise HTTPException(status_code=500, detail=campaign_result.get("error", "Failed to create Mailchimp campaign"))
-
-        campaign_id = campaign_result["campaign_id"]
-
-        # Schedule for Thursday 9 AM CST
-        schedule_time = get_next_thursday_9am_cst()
-
-        schedule_result = mailchimp.schedule_campaign(campaign_id, schedule_time)
-
-        if not schedule_result.get("success"):
-            supabase.table("newsletters").update({
-                "status": "failed",
-                "mailchimp_campaign_id": campaign_id,
-                "error": schedule_result.get("error", "Failed to schedule campaign"),
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", newsletter_id).execute()
-            raise HTTPException(status_code=500, detail=schedule_result.get("error", "Failed to schedule campaign"))
-
-        # Update newsletter status to scheduled
-        supabase.table("newsletters").update({
-            "status": "scheduled",
-            "mailchimp_campaign_id": campaign_id,
-            "mailchimp_web_id": campaign_result.get("web_id"),
-            "scheduled_for": schedule_time.isoformat(),
-            "error": None,
-            "updated_at": datetime.utcnow().isoformat()
-        }).eq("id", newsletter_id).execute()
-
-        return get_newsletter_with_posts(supabase, newsletter_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to queue articles: {str(e)}")
+    draft = await auto_create_newsletter()
+    if draft['status'] != 'draft':
+        raise HTTPException(status_code=409, detail="This week's edition is already scheduled or sent; no second newsletter was created")
+    return await schedule_newsletter(draft['id'])
 
 
 @router.post("/publish-now", response_model=Newsletter)
 async def publish_now_auto():
-    """
-    One-click: Create newsletter from ALL published posts not yet in any newsletter,
-    then send immediately via Mailchimp.
-    """
-    try:
-        from supabase_storage import get_supabase_client
-        from mailchimp_campaign import MailchimpCampaign
-
-        supabase = get_supabase_client()
-
-        if supabase is None:
-            raise HTTPException(status_code=503, detail="Database not configured")
-
-        # Get ALL published posts with blogger_url (no date restriction)
-        all_posts = supabase.table("blog_posts").select(
-            "id"
-        ).eq("status", "published").not_.is_("blogger_url", "null").order(
-            "created_at", desc=True
-        ).limit(50).execute()
-
-        if not all_posts.data:
-            raise HTTPException(status_code=400, detail="No published posts available")
-
-        all_post_ids = [p["id"] for p in all_posts.data]
-
-        # Get posts already in newsletters
-        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
-
-        # Filter to unused posts
-        available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
-
-        if not available_post_ids:
-            raise HTTPException(status_code=400, detail="No posts available - all published posts are already in newsletters")
-
-        # Create newsletter with available posts
-        date_str = datetime.now().strftime("%B %d, %Y")
-        title = f"Weekly Newsletter - {date_str}"
-        post_titles = _get_ordered_post_titles(supabase, available_post_ids)
-        subject = generate_content_driven_subject(post_titles)
-
-        html_content = generate_newsletter_html(supabase, available_post_ids)
-
-        newsletter_id = str(uuid4())
-        now = datetime.utcnow().isoformat()
-
-        supabase.table("newsletters").insert({
-            "id": newsletter_id,
-            "title": title,
-            "subject": subject,
-            "html_content": html_content,
-            "status": "draft",
-            "created_at": now,
-            "updated_at": now
-        }).execute()
-
-        # Link posts
-        for i, post_id in enumerate(available_post_ids):
-            supabase.table("newsletter_posts").insert({
-                "id": str(uuid4()),
-                "newsletter_id": newsletter_id,
-                "blog_post_id": post_id,
-                "position": i
-            }).execute()
-
-        # Now send immediately via Mailchimp
-        mailchimp = MailchimpCampaign()
-
-        campaign_result = mailchimp.create_campaign(
-            subject=subject,
-            html_content=html_content
-        )
-
-        if not campaign_result.get("success"):
-            supabase.table("newsletters").update({
-                "status": "failed",
-                "error": campaign_result.get("error", "Failed to create campaign"),
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", newsletter_id).execute()
-            raise HTTPException(status_code=500, detail=campaign_result.get("error", "Failed to create Mailchimp campaign"))
-
-        campaign_id = campaign_result["campaign_id"]
-
-        # Send immediately
-        send_result = mailchimp.send_campaign(campaign_id)
-
-        if not send_result.get("success"):
-            supabase.table("newsletters").update({
-                "status": "failed",
-                "mailchimp_campaign_id": campaign_id,
-                "error": send_result.get("error", "Failed to send campaign"),
-                "updated_at": datetime.utcnow().isoformat()
-            }).eq("id", newsletter_id).execute()
-            raise HTTPException(status_code=500, detail=send_result.get("error", "Failed to send campaign"))
-
-        # Update newsletter status to sent
-        supabase.table("newsletters").update({
-            "status": "sent",
-            "mailchimp_campaign_id": campaign_id,
-            "mailchimp_web_id": campaign_result.get("web_id"),
-            "sent_at": datetime.utcnow().isoformat(),
-            "error": None,
-            "updated_at": datetime.utcnow().isoformat()
-        }).eq("id", newsletter_id).execute()
-
-        return get_newsletter_with_posts(supabase, newsletter_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to publish now: {str(e)}")
+    draft = await auto_create_newsletter()
+    if draft['status'] != 'draft':
+        raise HTTPException(status_code=409, detail="This week's edition is already scheduled or sent; no second newsletter was created")
+    return await send_newsletter(draft['id'])
 
 
 @router.post("/auto-create", response_model=Newsletter)
 async def auto_create_newsletter():
-    """
-    Auto-create a newsletter from recent published posts (last 3 days) that aren't in any newsletter yet.
-    """
-    try:
-        from supabase_storage import get_supabase_client
-        supabase = get_supabase_client()
-
-        if supabase is None:
-            raise HTTPException(status_code=503, detail="Database not configured")
-
-        # Calculate 3-day cutoff
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
-
-        # Get published posts with blogger_url from last 3 days
-        all_posts = supabase.table("blog_posts").select(
-            "id"
-        ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-            "blogger_published_at", cutoff
-        ).order(
-            "blogger_published_at", desc=True
-        ).limit(20).execute()
-
-        if not all_posts.data:
-            raise HTTPException(status_code=400, detail="No published posts available")
-
-        all_post_ids = [p["id"] for p in all_posts.data]
-
-        # Get posts already in newsletters
-        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
-
-        # Filter to unused posts
-        available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
-
-        if not available_post_ids:
-            raise HTTPException(status_code=400, detail="All published posts are already in newsletters")
-
-        # Create newsletter with available posts
-        date_str = datetime.now().strftime("%B %d, %Y")
-        title = f"Weekly Newsletter - {date_str}"
-        post_titles = _get_ordered_post_titles(supabase, available_post_ids)
-        subject = generate_content_driven_subject(post_titles)
-
-        html_content = generate_newsletter_html(supabase, available_post_ids)
-
-        newsletter_id = str(uuid4())
-        now = datetime.utcnow().isoformat()
-
-        supabase.table("newsletters").insert({
-            "id": newsletter_id,
-            "title": title,
-            "subject": subject,
-            "html_content": html_content,
-            "status": "draft",
-            "created_at": now,
-            "updated_at": now
-        }).execute()
-
-        # Link posts
-        for i, post_id in enumerate(available_post_ids):
-            supabase.table("newsletter_posts").insert({
-                "id": str(uuid4()),
-                "newsletter_id": newsletter_id,
-                "blog_post_id": post_id,
-                "position": i
-            }).execute()
-
-        return get_newsletter_with_posts(supabase, newsletter_id)
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to auto-create newsletter: {str(e)}")
+    from supabase_storage import get_supabase_client
+    from newsletter_edition import sync_weekly_draft
+    db = get_supabase_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    result = sync_weekly_draft(db, generate_newsletter_html)
+    if not result:
+        raise HTTPException(status_code=400, detail="No current published articles are available")
+    return get_newsletter_with_posts(db, result['newsletter']['id'])
 
 
 @router.post("/{newsletter_id}/sync-stats", response_model=Newsletter)
@@ -1611,69 +1179,12 @@ async def sync_newsletter_stats(newsletter_id: str):
 # ============================================================================
 
 async def check_auto_create_newsletter():
-    """
-    Check if we should auto-create a newsletter.
-    Called after publishing a post to Blogger.
-    Creates a draft newsletter if 3+ published posts from the last 3 days are available.
-    """
+    """Append later publications to the same weekly draft; never send here."""
     try:
         from supabase_storage import get_supabase_client
-        supabase = get_supabase_client()
-
-        if supabase is None:
-            return
-
-        # Calculate 3-day cutoff
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=3)).isoformat()
-
-        # Get published posts with blogger_url from last 3 days
-        all_posts = supabase.table("blog_posts").select(
-            "id"
-        ).eq("status", "published").not_.is_("blogger_url", "null").gte(
-            "blogger_published_at", cutoff
-        ).order("blogger_published_at", desc=True).execute()
-
-        if not all_posts.data:
-            return
-
-        all_post_ids = [p["id"] for p in all_posts.data]
-
-        # Get posts already in newsletters
-        used_post_ids = _get_used_post_ids(supabase, all_post_ids)
-
-        # Filter to unused posts
-        available_post_ids = [pid for pid in all_post_ids if pid not in used_post_ids]
-
-        # Auto-create if 3+ posts available
-        if len(available_post_ids) >= 3:
-            date_str = datetime.now().strftime("%B %d, %Y")
-            title = f"Weekly Newsletter - {date_str}"
-            subject = f"Youdle Weekly - {date_str}"
-
-            html_content = generate_newsletter_html(supabase, available_post_ids)
-
-            newsletter_id = str(uuid4())
-            now = datetime.utcnow().isoformat()
-
-            supabase.table("newsletters").insert({
-                "id": newsletter_id,
-                "title": title,
-                "subject": subject,
-                "html_content": html_content,
-                "status": "draft",
-                "created_at": now,
-                "updated_at": now
-            }).execute()
-
-            for i, post_id in enumerate(available_post_ids):
-                supabase.table("newsletter_posts").insert({
-                    "id": str(uuid4()),
-                    "newsletter_id": newsletter_id,
-                    "blog_post_id": post_id,
-                    "position": i
-                }).execute()
-
-            print(f"Auto-created newsletter draft with {len(available_post_ids)} posts")
-
-    except Exception as e:
-        print(f"Warning: Auto-create newsletter check failed: {e}")
+        from newsletter_edition import sync_weekly_draft
+        db = get_supabase_client()
+        if db is not None:
+            sync_weekly_draft(db, generate_newsletter_html, require_complete=True)
+    except Exception as error:
+        print(f"Weekly newsletter draft refresh failed: {error}")
