@@ -79,7 +79,7 @@ class ImageGenerator:
 
         # Initialize the new client
         self.client = genai_client.Client(api_key=self.api_key)
-        self.model_name = "gemini-3-pro-image-preview"
+        self.model_name = "gemini-3.1-flash-image"
 
     # One fixed style block gave every image the same hero-object-on-a-board
     # look, so a week of posts read as a set even where subjects differed.
