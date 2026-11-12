@@ -69,7 +69,9 @@ function getCardImageUrl(post: BlogPost): string | null {
   if (savedImage && /^https:\/\//i.test(savedImage)) return savedImage
 
   const html = safeArticlePreviewHtml(post.html_content, post.image_url)
-  for (const match of html.matchAll(/<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi)) {
+  const imageTag = /<img\b[^>]*\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
+  let match: RegExpExecArray | null
+  while ((match = imageTag.exec(html)) !== null) {
     const url = (match[1] || match[2] || match[3] || '').trim()
     if (/^https:\/\//i.test(url)) return url
   }
