@@ -214,6 +214,10 @@ class ImageGenerator:
             Dictionary with image_data (base64), format, and metadata
         """
         prompt = self._create_image_prompt(title, theme, look)
+        prompt += (
+            f"\\nDeliver a single {aspect_ratio} photograph at {image_size} "
+            "resolution, with no watermark or overlay."
+        )
 
         try:
             print(f"[ImageGenerator] Generating image with model: {self.model_name}", flush=True)
@@ -224,12 +228,9 @@ class ImageGenerator:
             response = self.client.interactions.create(
                 model=self.model_name,
                 input=prompt,
-                response_format={
-                    "type": "image",
-                    "mime_type": "image/png",
-                    "aspect_ratio": aspect_ratio,
-                    "image_size": image_size,
-                },
+                response_modalities=["IMAGE"],
+                # Framing and resolution remain explicit in our prompt.
+                # Interactions accepts image output through output_image.data.
             )
             output = getattr(response, "output_image", None)
             if output is None:
