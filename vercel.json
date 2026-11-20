@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/repair-nov17-photos",
       "schedule": "43 13 20 11 *"
+    },
+    {
+      "path": "/api/cron/publish-nov20-newsletter",
+      "schedule": "55 13 20 11 *"
     }
   ]
 }
