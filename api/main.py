@@ -136,6 +136,26 @@ def publish_nov20_newsletter_once(request: Request):
         raise HTTPException(status_code=503, detail="Publishing checklist incomplete")
 
 
+
+@app.get("/api/cron/attach-approved-imgbb-and-send-nov20")
+def attach_approved_imgbb_and_send_nov20(request: Request):
+    """Run approved ImgBB photo attachment and one newsletter send, once."""
+    from datetime import date
+    secret = os.environ.get("CRON_SECRET", "").strip()
+    auth = request.headers.get("authorization", "")
+    if not secret or not hmac.compare_digest(auth, f"Bearer {secret}"):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if datetime.now(ZoneInfo("America/Chicago")).date() != date(2026, 11, 20):
+        return {"status": "disabled_outside_approved_date"}
+    try:
+        from scripts.attach_imgbb_approved_six_and_send_nov20 import run
+        return run()
+    except Exception as exc:
+        # No raw secrets, signed Canva media URLs or provider bodies in logs.
+        logger.error("Approved ImgBB newsletter job incomplete: %s", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Approved photos or newsletter not fully verified")
+
+
 @app.get("/")
 async def root():
     """API root - health check"""
