@@ -1,6 +1,8 @@
 name: Weekly Grocery News Deadline and Send Guard
 on:
   schedule:
+    - cron: '0 18 * * 2'
+      timezone: 'America/Chicago'
     - cron: '0 6 * * 4'
       timezone: 'America/Chicago'
     - cron: '30 8 * * 5'
