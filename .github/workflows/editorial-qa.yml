@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/affordable-newsletter-imgbb-links-20261017
+      - hotfix/newsletter-images-prod-20261120
   pull_request:
     paths:
       - 'prompts/**'
