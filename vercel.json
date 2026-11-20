@@ -11,5 +11,11 @@
       "src": "/(.*)",
       "dest": "api/main.py"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/repair-nov17-photos",
+      "schedule": "43 13 20 11 *"
+    }
   ]
 }
