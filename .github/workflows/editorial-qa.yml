@@ -11,6 +11,9 @@ on:
       - 'reflection_agent.py'
       - 'langchain_blog_agent.py'
       - 'blog_post_graph.py'
+      - 'image_generator.py'
+      - 'scripts/repair_nov17_newsletter_photos.py'
+      - 'requirements.txt'
       - 'post_link_policy.py'
       - 'mailchimp_campaign.py'
       - 'api/routes/newsletters.py'
@@ -38,7 +41,7 @@ jobs:
           python -m pip install -r requirements.txt 'pytest>=8,<9'
       - name: Compile Python source
         run: |
-          python -m compileall -q headline_policy.py reflection_agent.py langchain_blog_agent.py blog_post_graph.py post_link_policy.py mailchimp_campaign.py prompts/ generate_blog_posts.py scripts/notify_post_generation_status.py
+          python -m compileall -q headline_policy.py reflection_agent.py langchain_blog_agent.py blog_post_graph.py image_generator.py scripts/repair_nov17_newsletter_photos.py post_link_policy.py mailchimp_campaign.py prompts/ generate_blog_posts.py scripts/notify_post_generation_status.py
       - name: Run no-service tests
         env:
           OPENAI_API_KEY: ''
