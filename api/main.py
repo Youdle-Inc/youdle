@@ -112,6 +112,30 @@ def repair_nov17_photos_once(request: Request):
     return {"status": "repaired", "missing": 0, "count": len(STORIES)}
 
 
+
+@app.get("/api/cron/publish-nov20-newsletter")
+def publish_nov20_newsletter_once(request: Request):
+    """One approved publication attempt after the exact eight images are fixed.
+
+    Requires the same Vercel-managed CRON_SECRET. Never sends outside Nov 20,
+    and refuses a second newsletter if an issue is already sent or scheduled.
+    """
+    from datetime import date
+    secret = os.environ.get("CRON_SECRET", "").strip()
+    auth = request.headers.get("authorization", "")
+    if not secret or not hmac.compare_digest(auth, f"Bearer {secret}"):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if datetime.now(ZoneInfo("America/Chicago")).date() != date(2026, 11, 20):
+        return {"status": "disabled_outside_approved_date"}
+    try:
+        from scripts.publish_nov20_newsletter_once import run
+        return run()
+    except Exception as error:
+        logger.error("Nov 20 publication incomplete (%s): %s",
+                     type(error).__name__, str(error)[:160])
+        raise HTTPException(status_code=503, detail="Publishing checklist incomplete")
+
+
 @app.get("/")
 async def root():
     """API root - health check"""
