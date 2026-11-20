@@ -143,7 +143,7 @@ BLOG_POSTS_DIR = os.getenv(
 )
 MAX_WORKERS = 4
 MAX_RECALL_ROUNDUP_SOURCES = 5
-MAX_ARTICLE_PHOTO_REQUESTS = 3
+MAX_ARTICLE_PHOTO_REQUESTS = 10
 PHOTO_TOPICS = (
     "recipe", "cook", "bake", "roast", "turkey", "chicken", "cheesecake",
     "cake", "dessert", "breakfast", "dinner", "lunch", "soup", "salad",
@@ -158,12 +158,8 @@ NONVISUAL_TOPICS = (
 
 
 def photo_would_help(article):
-    if str(article.get("category") or "").upper() == "RECALL":
-        return False
-    title = str(article.get("title") or "").lower()
-    return (not any(word in title for word in NONVISUAL_TOPICS) and any(
-        re.search(r"\b" + re.escape(word) + r"\b", title) for word in PHOTO_TOPICS
-    ))
+    """Illustrate every non-recall shopper story, not just keyword matches."""
+    return str(article.get("category") or "SHOPPERS").upper() != "RECALL"
 
 
 def image_failure_kind(error):
@@ -730,8 +726,8 @@ def proofread_posts_node(state: BlogPostState) -> Dict[str, Any]:
 
 
 def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
-    """Try up to three relevant photographs. Missing photos never block text."""
-    logs = [f"[{datetime.now().isoformat()}] Choosing optional grocery photos..."]
+    """Try one photograph for each shopper article, max ten; preserve text on failure."""
+    logs = [f"[{datetime.now().isoformat()}] Choosing shopper photos..."]
     posts = state.get("generated_posts", [])
     images, warnings = [], []
     generator = None
