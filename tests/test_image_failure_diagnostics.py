@@ -15,7 +15,7 @@ def test_image_generation_uses_supported_stable_model_without_provider_call():
         "os.environ", {"GEMINI_NEWSLETTER_IMAGE_API_KEY": "offline-test-key"}
     ):
         generator = ImageGenerator()
-    assert generator.model_name == "gemini-3.1-flash-image"
+    assert generator.model_name == "gemini-nano-banana-2.1"
     sdk.Client.assert_called_once_with(api_key="offline-test-key")
 
 
@@ -31,18 +31,30 @@ def test_failure_categories_do_not_expose_provider_details():
 def test_text_only_gemini_response_is_not_a_fake_success():
     generator = ImageGenerator.__new__(ImageGenerator)
     generator.model_name = "test-image-model"
-    generator.client = SimpleNamespace(models=SimpleNamespace(generate_content=lambda **kwargs: SimpleNamespace(
-        parts=[SimpleNamespace(text="No image generated", inline_data=None)],
-        candidates=[SimpleNamespace(finish_reason="STOP")],
-        prompt_feedback=None,
-    )))
-    with patch("image_generator.genai_types") as types:
-        types.GenerateContentConfig.return_value = object()
-        types.ImageConfig.return_value = object()
-        result = generator.generate_image("A product photo")
+    called = []
+    def respond(**kwargs):
+        called.append(kwargs)
+        return SimpleNamespace(output_image=None, steps=[], status="completed")
+    generator.client = SimpleNamespace(interactions=SimpleNamespace(create=respond))
+    result = generator.generate_image("A product photo")
+    assert called[0]["model"] == "test-image-model"
     assert result["success"] is False
     assert result["image_data"] is None
     assert result["error"] == "no_image_returned_or_unknown"
+
+
+def test_interactions_image_is_validated_before_success():
+    import base64
+    generator = ImageGenerator.__new__(ImageGenerator)
+    generator.model_name = "test-image-model"
+    good = base64.b64encode(b"\\x89PNG" + b"0" * 3000).decode("ascii")
+    generator.client = SimpleNamespace(interactions=SimpleNamespace(
+        create=lambda **kw: SimpleNamespace(output_image=SimpleNamespace(
+            data=good, mime_type="image/png"
+        ), steps=[])))
+    result = generator.generate_image("A grocery photo")
+    assert result["success"] is True
+    assert result["format"] == "image/png"
 
 
 def test_gemini_exception_is_categorized_without_raw_secret():
@@ -50,11 +62,8 @@ def test_gemini_exception_is_categorized_without_raw_secret():
     generator.model_name = "test-image-model"
     def fail(**kwargs):
         raise RuntimeError("429 RESOURCE_EXHAUSTED sensitive-token-should-not-appear")
-    generator.client = SimpleNamespace(models=SimpleNamespace(generate_content=fail))
-    with patch("image_generator.genai_types") as types:
-        types.GenerateContentConfig.return_value = object()
-        types.ImageConfig.return_value = object()
-        result = generator.generate_image("A product photo")
+    generator.client = SimpleNamespace(interactions=SimpleNamespace(create=fail))
+    result = generator.generate_image("A product photo")
     assert result["error"] == "quota_or_rate_limit"
     assert "sensitive-token" not in str(result)
 
@@ -75,9 +84,9 @@ def test_missing_photo_carries_reason_but_never_creates_url():
     assert not result.get("errors")
 
 
-def test_photo_relevance_excludes_statistics_and_recalls():
+def test_photo_relevance_includes_all_shopper_stories_but_excludes_recalls():
     assert photo_would_help({"title": "How to make a Thanksgiving turkey dinner", "category": "SHOPPERS"})
-    assert not photo_would_help({"title": "Consumer price index climbs", "category": "SHOPPERS"})
+    assert photo_would_help({"title": "Consumer price index climbs", "category": "SHOPPERS"})
     assert not photo_would_help({"title": "Turkey recall notice", "category": "RECALL"})
 
 
@@ -131,16 +140,23 @@ def test_image_quota_and_model_failure_short_circuit_extra_calls():
     assert any("Stopped additional" in w for w in result["warnings"])
 
 
-def test_nonvisual_stories_generate_no_images_and_no_provider_call():
-    state = {"generated_posts": [{
-        "post_id": "economic-story", "success": True,
-        "blog_post": "<p>News</p>", "category": "SHOPPERS",
-        "article": {"title": "Consumer price index rises", "category": "SHOPPERS"}
-    }]}
-    with patch("blog_post_graph.get_image_generator") as client:
+def test_all_ten_shopper_posts_get_one_bounded_photo_attempt_each():
+    state = {"generated_posts": [
+        {"post_id": str(i), "success": True, "blog_post": "<p>Text</p>",
+         "category": "SHOPPERS",
+         "article": {"title": f"Grocery trend {i}", "category": "SHOPPERS"}}
+        for i in range(10)
+    ]}
+    with patch("blog_post_graph.get_image_generator") as client, patch(
+        "blog_post_graph.describe_image_subject", return_value="grocery shelf"
+    ):
+        mock = client.return_value
+        mock.look_for.return_value = "daylight"
+        mock.generate_image_for_article.return_value = {
+            "success": True, "image_data": "test-image", "format": "image/png"
+        }
         result = generate_images_node(state)
-    client.assert_not_called()
-    assert result["images"][0]["image_skipped"] is True
-    uploaded = upload_images_node({"images": result["images"]})
-    assert not uploaded.get("errors")
-    assert not uploaded.get("warnings")
+    assert mock.generate_image_for_article.call_count == 10
+    assert len(result["images"]) == 10
+
+
