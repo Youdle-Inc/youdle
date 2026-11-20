@@ -9,7 +9,6 @@ import argparse
 import base64
 from datetime import datetime, timezone
 from html import escape
-from uuid import UUID
 
 from image_generator import ImageGenerator, summarize_image_failure
 from supabase_storage import get_supabase_client, get_supabase_storage
@@ -153,8 +152,9 @@ def repair(execute: bool = False) -> None:
             "html_content": html,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", post_id).eq("job_id", JOB_ID)
-            .eq("status", post["status"]).eq("image_url", post.get("image_url") or ""))
-        # Supabase stores empty strings for this job, verified before execution.
+            .eq("status", post["status"]))
+        # Exact Nov 17 records use empty strings rather than NULLs.
+        query = query.eq("image_url", "") if post.get("image_url") == "" else query.is_("image_url", "null")
         saved = query.execute().data or []
         if not saved:
             errors.append(post_id + ": DB compare-and-set failed; inspect Blogger sync")
