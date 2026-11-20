@@ -9,6 +9,7 @@ from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 # Add parent directory to path
@@ -796,6 +797,41 @@ async def delete_newsletter(newsletter_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to delete newsletter: {str(e)}")
+
+
+@router.get("/{newsletter_id}/design-preview", response_class=HTMLResponse)
+async def preview_existing_newsletter_design(newsletter_id: str):
+    """Show an updated read-only HTML design using the original seven stories.
+
+    This route never edits the sent campaign, newsletter record or audience.
+    It renders the current approved email template against original story IDs
+    in their saved order and is safe for owner mobile review.
+    """
+    from supabase_storage import get_supabase_client
+    db = get_supabase_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Newsletter database unavailable")
+    edition = db.table("newsletters").select("id,subject").eq("id", newsletter_id).maybe_single().execute().data
+    if not edition:
+        raise HTTPException(status_code=404, detail="Newsletter not found")
+    links = (
+        db.table("newsletter_posts")
+        .select("blog_post_id,position")
+        .eq("newsletter_id", newsletter_id)
+        .order("position")
+        .execute().data or []
+    )
+    ids = [link["blog_post_id"] for link in links]
+    if not ids:
+        raise HTTPException(status_code=409, detail="No original stories attached")
+    html = generate_newsletter_html(db, ids, edition["subject"])
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Cache-Control": "no-store",
+            "X-Robots-Tag": "noindex, nofollow",
+        },
+    )
 
 
 @router.get("/{newsletter_id}/preview")
