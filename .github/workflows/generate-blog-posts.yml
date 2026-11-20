@@ -1,9 +1,10 @@
 name: Generate Blog Posts
 
 on:
-  # Run every Tuesday at 9 AM CST (15:00 UTC)
+  # Run every Tuesday at 9 AM America/Chicago (handles CST/CDT)
   schedule:
-    - cron: '0 15 * * 2'
+    - cron: '0 9 * * 2'
+      timezone: 'America/Chicago'
   # Allow manual trigger
   workflow_dispatch:
     inputs:
