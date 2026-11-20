@@ -14,12 +14,8 @@
   ],
   "crons": [
     {
-      "path": "/api/cron/repair-nov17-photos",
-      "schedule": "43 13 20 11 *"
-    },
-    {
-      "path": "/api/cron/publish-nov20-newsletter",
-      "schedule": "55 13 20 11 *"
+      "path": "/api/cron/attach-approved-imgbb-and-send-nov20",
+      "schedule": "27 17 20 11 *"
     }
   ]
 }
