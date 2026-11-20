@@ -95,6 +95,9 @@ class ReviewSubmission(BaseModel):
         "general", "content", "formatting", "accuracy", "tone"
     ] = "general"
     mark_reviewed: bool = False
+    sources_checked: bool = False
+    claims_checked: bool = False
+    links_checked: bool = False
     submission_id: UUID
 
 
@@ -382,13 +385,21 @@ async def update_post_status(
     """
     Update the status of a blog post.
     """
-    if status not in ["draft", "reviewed", "published"]:
-        raise HTTPException(status_code=400, detail="Invalid status. Must be: draft, reviewed, or published")
-    
+    if status != "draft":
+        raise HTTPException(
+            status_code=409,
+            detail="Use the Review Queue to approve articles and the publish action to go live.",
+        )
+
     try:
         from supabase_storage import get_supabase_client
         supabase = get_supabase_client()
-        
+        current = supabase.table("blog_posts").select("status").eq("id", post_id).maybe_single().execute()
+        if current is None or not current.data:
+            raise HTTPException(status_code=404, detail="Post not found")
+        if current.data.get("status") == "published":
+            raise HTTPException(status_code=409, detail="Use the Unpublish action for a live Blogger post")
+
         result = supabase.table("blog_posts").update({
             "status": status,
             "updated_at": datetime.utcnow().isoformat()
@@ -419,11 +430,28 @@ async def submit_post_review(post_id: UUID, review: ReviewSubmission):
         supabase = get_supabase_client()
         if supabase is None:
             raise HTTPException(status_code=503, detail="Database not configured")
+        if review.mark_reviewed and not all(
+            (review.sources_checked, review.claims_checked, review.links_checked)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Confirm the source, factual-claim and link checks before marking reviewed.",
+            )
+
+        # An approval attestation helps accountability but does not itself
+        # establish whether the source claims are accurate.
+        comment = review.comment or ""
+        if review.mark_reviewed:
+            note = (
+                "[Grocery Brief QA attestation: sources, claims and Youdle links "
+                "checked on " + datetime.utcnow().isoformat() + " UTC]"
+            )
+            comment = (comment + "\n" + note).strip()
 
         rpc_result = supabase.rpc("submit_post_review", {
             "p_post_id": str(post_id),
             "p_rating": review.rating,
-            "p_comment": review.comment or None,
+            "p_comment": comment or None,
             "p_feedback_type": review.feedback_type,
             "p_mark_reviewed": review.mark_reviewed,
             "p_submission_id": str(review.submission_id),
@@ -534,6 +562,13 @@ async def update_blog_post(post_id: str, updates: BlogPostUpdate):
             update_data["image_url"] = updates.image_url
         if updates.category is not None:
             update_data["category"] = updates.category.upper()
+        # Recheck edits that change a draft's factual claims or presentation.
+        if post_data.get("status") == "reviewed" and any((
+            updates.title is not None,
+            updates.html_content is not None,
+            updates.category is not None,
+        )):
+            update_data["status"] = "draft"
 
         if not update_data:
             raise HTTPException(status_code=400, detail="No fields provided to update")
@@ -650,6 +685,11 @@ async def publish_post_to_blogger(post_id: str):
             raise HTTPException(status_code=404, detail="Post not found")
 
         post = result.data
+        if post.get("status") != "reviewed":
+            raise HTTPException(
+                status_code=409,
+                detail="Fact-check and mark the article reviewed before publishing to Blogger.",
+            )
 
         # Check if already published to Blogger (has both ID and URL)
         if post.get("blogger_post_id") and post.get("blogger_url"):
