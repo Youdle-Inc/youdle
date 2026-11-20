@@ -49,7 +49,7 @@ def _insert_photo(html: str, url: str, alt: str) -> str:
     photo = _photo_html(url, alt)
     if html.lstrip().startswith("<div"):
         from re import sub
-        return sub(r"(<div\\b[^>]*>)", lambda match: match.group(1) + photo,
+        return sub(r"(<div\b[^>]*>)", lambda match: match.group(1) + photo,
                    html, count=1, flags=2)
     return photo + html
 
