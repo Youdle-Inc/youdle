@@ -145,31 +145,18 @@ BLOG_POSTS_DIR = os.getenv(
 MAX_WORKERS = 4
 MAX_RECALL_ROUNDUP_SOURCES = 5
 
-# Each run may illustrate a few concrete food/recipe stories. A budget here
-# prevents requests for every article, and never changes the generated words.
-MAX_ARTICLE_PHOTO_REQUESTS = 3
-PHOTO_TOPICS = (
-    "recipe", "cook", "bake", "roast", "turkey", "chicken", "cheesecake",
-    "cake", "dessert", "breakfast", "dinner", "lunch", "soup", "salad",
-    "vegetable", "fruit", "produce", "snack", "coffee", "bread", "cheese",
-    "pasta", "pantry", "food bank", "casserole", "meal prep",
-)
-NO_ILLUSTRATION_TOPICS = (
-    "inflation", "price index", "consumer price", "interest rate",
-    "lawsuit", "policy", "earnings", "price check", "stock market",
-    "coupon", "black friday deal", "recall", "public health alert",
-)
+# A generation batch contains at most ten articles. Generate a relevant,
+# clearly illustrative photo for every SHOPPERS article rather than letting
+# headline keywords or a three-photo cap publish an image-less batch.
+# One request per eligible post; stop the batch on provider auth/quota/model
+# failures. Recalls keep the existing verified, generic safety graphic.
+MAX_ARTICLE_PHOTO_REQUESTS = 10
 
 
 def photo_would_help(article: Dict[str, Any]) -> bool:
-    """Favor visibly concrete grocery stories, not charts or invented brand shots."""
-    if str(article.get("category", "")).upper() == "RECALL":
-        return False
-    title = str(article.get("title") or "").lower()
-    if any(topic in title for topic in NO_ILLUSTRATION_TOPICS):
-        return False
-    return any(re.search(r"\b" + re.escape(topic) + r"\b", title)
-               for topic in PHOTO_TOPICS)
+    """Every non-recall shopper story needs its own editorial illustration."""
+    return str(article.get("category", "SHOPPERS")).upper() != "RECALL"
+
 
 RECALL_CONTEXT_MAX_CHARS = 18000
 
@@ -722,7 +709,7 @@ def proofread_posts_node(state: BlogPostState) -> Dict[str, Any]:
 
 
 def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
-    """Illustrate only a few visually useful posts. Text generation never depends on Gemini."""
+    """Illustrate all shopper posts, with bounded Gemini calls and safe text fallback."""
     logs = [f"[{datetime.now().isoformat()}] Selecting useful article photographs..."]
     generated_posts = state.get("generated_posts", [])
     if not generated_posts:
