@@ -30,7 +30,7 @@ JOB_ID = "f0b86d72-f5e9-437d-85ef-760fc3405d11"
 def _live_img(post_id, blogger, db, record, alt):
     remote = blogger.get_post(record["blogger_post_id"])
     content = str(remote.get("content") or "")
-    urls = re.findall(r'<img\\b[^>]*\\bsrc=["\\\']([^"\\\']+)', content, flags=re.I)
+    urls = re.findall(r'<img[^>]+src="([^"]+)"', content, flags=re.I)
     existing = [x for x in urls if x.startswith(COMPANY_PHOTO_HOST)]
     if existing and not record.get("image_url"):
         url = existing[0]
