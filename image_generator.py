@@ -117,10 +117,9 @@ class ImageGenerator:
 
         # Initialize the new client
         self.client = genai_client.Client(api_key=self.api_key)
-        # Gemini 3 Pro Image Preview was retired on June 25, 2026.
-        # Use the supported, lower-cost stable Flash Image model for routine
-        # 1K grocery-news photographs. Do not automatically retry on failure.
-        self.model_name = "gemini-3.1-flash-image"
+        # Nano Banana 2.1 supersedes the retired 3.1 Flash Image model.
+        # Continue using the already-configured Gemini newsletter image key.
+        self.model_name = "gemini-nano-banana-2.1"
 
     # One fixed style block gave every image the same hero-object-on-a-board
     # look, so a week of posts read as a set even where subjects differed.
@@ -220,71 +219,67 @@ class ImageGenerator:
             print(f"[ImageGenerator] Generating image with model: {self.model_name}", flush=True)
             print(f"[ImageGenerator] Prompt: {prompt[:80]}...", flush=True)
 
-            # Use the new google-genai API
-            response = self.client.models.generate_content(
+            # The Nano Banana 2.1 image endpoint uses the Interactions API.
+            # Its output_image.data field contains base64, not inline_data bytes.
+            response = self.client.interactions.create(
                 model=self.model_name,
-                contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                    image_config=genai_types.ImageConfig(
-                        aspect_ratio=aspect_ratio,
-                        image_size=image_size
-                    )
-                )
+                input=prompt,
+                response_format={
+                    "type": "image",
+                    "aspect_ratio": aspect_ratio,
+                    "image_size": image_size,
+                },
             )
+            output = getattr(response, "output_image", None)
+            if output is None:
+                # Keep compatibility with Interactions responses that expose
+                # an image only inside the model_output step.
+                for step in getattr(response, "steps", None) or []:
+                    if str(getattr(step, "type", "")) != "model_output":
+                        continue
+                    for part in getattr(step, "content", None) or []:
+                        if str(getattr(part, "type", "")) == "image":
+                            output = part
+                            break
+                    if output is not None:
+                        break
 
-            # Debug: Print response structure
-            part_types = []
-            if hasattr(response, 'parts') and response.parts:
-                for part in response.parts:
-                    if hasattr(part, 'inline_data') and part.inline_data:
-                        part_types.append("IMAGE")
-                    elif hasattr(part, 'text') and part.text:
-                        part_types.append("TEXT")
-            print(f"[ImageGenerator] Response parts: {part_types if part_types else 'none'}", flush=True)
-
-            # Extract image from response parts
-            if hasattr(response, 'parts') and response.parts:
-                for part in response.parts:
-                    if hasattr(part, 'inline_data') and part.inline_data:
-                        # Get the image bytes from inline_data
-                        image_bytes = part.inline_data.data
-                        # Handle if already bytes or needs encoding
-                        if isinstance(image_bytes, bytes):
-                            image_data = base64.b64encode(image_bytes).decode('utf-8')
-                        else:
-                            image_data = image_bytes  # Already base64 string
-
-                        mime_type = getattr(part.inline_data, "mime_type", "image/png")
-                        print(f"[ImageGenerator] ✓ Image generated successfully ({mime_type})", flush=True)
-
+            encoded = getattr(output, "data", None)
+            mime_type = getattr(output, "mime_type", None) or "image/png"
+            if isinstance(encoded, bytes):
+                encoded = encoded.decode("ascii", errors="ignore")
+            if isinstance(encoded, str) and mime_type in (
+                "image/png", "image/jpeg", "image/webp"
+            ):
+                try:
+                    # Reject blank/invalid provider output before persisting
+                    # any URL in the newsletter, Blogger, or the dashboard.
+                    normalized = "".join(encoded.split())
+                    raw = base64.b64decode(normalized, validate=True)
+                    if 2000 <= len(raw) <= 10 * 1024 * 1024:
+                        print(
+                            f"[ImageGenerator] Image generated ({mime_type})",
+                            flush=True,
+                        )
                         return {
                             "success": True,
-                            "image_data": image_data,
+                            "image_data": normalized,
                             "format": mime_type,
-                            "metadata": {"model": self.model_name}
+                            "metadata": {"model": self.model_name},
                         }
+                except (ValueError, base64.binascii.Error):
+                    pass
 
-            # A text-only response or refused generation is not a photograph.
-            # Preserve safe provider status metadata to diagnose the failed batch,
-            # without dumping raw response text or API credentials.
-            candidates = getattr(response, "candidates", None) or []
-            candidate = candidates[0] if candidates else None
-            reason = getattr(candidate, "finish_reason", None)
-            reason_name = str(getattr(reason, "name", reason) or "unspecified")
-            prompt_feedback = getattr(response, "prompt_feedback", None)
-            blocked = getattr(prompt_feedback, "block_reason", None)
-            blocked_name = str(getattr(blocked, "name", blocked) or "")
-            failure_code = "generation_blocked" if blocked_name or any(
-                word in reason_name.upper() for word in ("SAFETY", "BLOCK", "PROHIBITED")
-            ) else "no_image_returned_or_unknown"
-            print(f"[ImageGenerator] No image returned; category={failure_code}; finish_reason={reason_name[:60]}", flush=True)
+            # No photo is not success, even if the request returned HTTP 200.
+            # Never log a raw provider body or key.
+            reason = str(getattr(response, "status", "unknown") or "unknown")
+            print(f"[ImageGenerator] No usable image; provider status={reason[:24]}", flush=True)
             return {
                 "success": False,
-                "error": failure_code,
+                "error": "no_image_returned_or_unknown",
                 "image_data": None,
                 "format": None,
-                "metadata": {"model": self.model_name, "finish_reason": reason_name[:60]}
+                "metadata": {"model": self.model_name},
             }
 
         except Exception as e:
