@@ -5,11 +5,13 @@ FastAPI server that wraps the Python blog generation pipeline.
 import sys
 import os
 import logging
+import hmac
+from zoneinfo import ZoneInfo
 from uuid import uuid4
 from datetime import datetime
 from typing import Optional
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -68,6 +70,46 @@ app.include_router(jobs.router, prefix="/api/jobs", tags=["Jobs"])
 app.include_router(newsletters.router, prefix="/api/newsletters", tags=["Newsletters"])
 app.include_router(media.router, prefix="/api/media", tags=["Media"])
 app.include_router(actions.router, prefix="/api/actions", tags=["Actions"])
+
+
+
+@app.get("/api/cron/repair-nov17-photos")
+def repair_nov17_photos_once(request: Request):
+    """Approved, date-gated photo repair. Runs from a single authorized Vercel cron.
+
+    No publishing, new posts, or newsletter emails. After 2026-11-20 the
+    endpoint is permanently inert, even if a stale cron definition survives.
+    """
+    from datetime import date
+    key = os.environ.get("CRON_SECRET", "").strip()
+    auth = request.headers.get("authorization", "")
+    if not key or not hmac.compare_digest(auth, f"Bearer {key}"):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if datetime.now(ZoneInfo("America/Chicago")).date() != date(2026, 11, 20):
+        return {"status": "disabled_outside_approved_date"}
+    from scripts.repair_nov17_newsletter_photos import STORIES, repair
+    from supabase_storage import get_supabase_client
+    db = get_supabase_client()
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    rows = db.table("blog_posts").select("id,image_url").in_("id", list(STORIES)).execute().data or []
+    if len(rows) != len(STORIES):
+        raise HTTPException(status_code=409, detail="Expected eight exact repair targets")
+    pending = sum(not str(row.get("image_url") or "").strip() for row in rows)
+    if pending == 0:
+        return {"status": "already_repaired", "missing": 0}
+    # This endpoint has exactly one invocation in the approved schedule,
+    # preventing overlapping provider calls. The script itself skips completed rows.
+    try:
+        repair(execute=True)
+    except Exception as error:
+        logger.error("Approved image repair incomplete (%s)", type(error).__name__)
+        raise HTTPException(status_code=503, detail="Image repair incomplete")
+    rows = db.table("blog_posts").select("id,image_url").in_("id", list(STORIES)).execute().data or []
+    missing = sum(not str(row.get("image_url") or "").strip() for row in rows)
+    if missing:
+        raise HTTPException(status_code=503, detail=f"Still missing {missing} of eight images")
+    return {"status": "repaired", "missing": 0, "count": len(STORIES)}
 
 
 @app.get("/")
