@@ -228,9 +228,8 @@ class ImageGenerator:
             response = self.client.interactions.create(
                 model=self.model_name,
                 input=prompt,
-                response_modalities=["IMAGE"],
-                # Framing and resolution remain explicit in our prompt.
-                # Interactions accepts image output through output_image.data.
+                # Image models return output_image directly; no extra
+                # response-format arguments are required by this endpoint.
             )
             output = getattr(response, "output_image", None)
             if output is None:
