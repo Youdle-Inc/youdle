@@ -226,6 +226,7 @@ class ImageGenerator:
                 input=prompt,
                 response_format={
                     "type": "image",
+                    "mime_type": "image/png",
                     "aspect_ratio": aspect_ratio,
                     "image_size": image_size,
                 },
