@@ -33,12 +33,7 @@ const statusIcons: Record<string, typeof Clock> = {
   completed: CheckCircle2,
 }
 
-/**
- * Show the newsletter's routine operations before one-off repair and catch-up
- * workflows. Names cover recurring jobs that are triggered manually rather
- * than by cron; any future scheduled workflow is also sorted ahead of one-offs.
- * Sorting never changes the workflow's enabled state or GitHub schedule.
- */
+/** Only routine operations belong in the dashboard. Keep the GitHub workflow\n * files and their run history intact, including past one-off repairs. */
 const routineWorkflowOrder = [
   'Generate Blog Posts',
   'Create Newsletter Campaign',
@@ -140,7 +135,7 @@ export default function ActionsPage() {
     },
   })
 
-  const workflows = [...(workflowsData?.workflows || [])].sort(
+  const workflows = (workflowsData?.workflows || []).filter(\n    workflow => routineWorkflowRanks.has(workflow.name.trim().toLowerCase()) || Boolean(workflow.schedule)\n  ).sort(
     (a, b) =>
       workflowDisplayRank(a) - workflowDisplayRank(b) ||
       a.name.localeCompare(b.name)
@@ -294,7 +289,7 @@ export default function ActionsPage() {
         {/* Workflows List */}
         <div className="space-y-3">
           <h2 className="text-lg font-semibold text-stone-900">Workflows</h2>
-          <p className="text-xs text-stone-500">Routine workflows first, one-time tools below.</p>
+          <p className="text-xs text-stone-500">Routine workflows only. Past repair runs remain in GitHub.</p>
 
           {workflowsLoading && (
             <div className="flex items-center justify-center py-8">
