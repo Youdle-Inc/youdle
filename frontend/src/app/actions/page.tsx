@@ -135,7 +135,9 @@ export default function ActionsPage() {
     },
   })
 
-  const workflows = (workflowsData?.workflows || []).filter(\n    workflow => routineWorkflowRanks.has(workflow.name.trim().toLowerCase()) || Boolean(workflow.schedule)\n  ).sort(
+  const workflows = (workflowsData?.workflows || []).filter(
+    workflow => routineWorkflowRanks.has(workflow.name.trim().toLowerCase()) || Boolean(workflow.schedule)
+  ).sort(
     (a, b) =>
       workflowDisplayRank(a) - workflowDisplayRank(b) ||
       a.name.localeCompare(b.name)
