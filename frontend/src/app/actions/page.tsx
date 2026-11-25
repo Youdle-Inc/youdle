@@ -33,7 +33,8 @@ const statusIcons: Record<string, typeof Clock> = {
   completed: CheckCircle2,
 }
 
-/** Only routine operations belong in the dashboard. Keep the GitHub workflow\n * files and their run history intact, including past one-off repairs. */
+/** Only routine operations belong in the dashboard. Keep the GitHub workflow
+ * files and their run history intact, including past one-off repairs. */
 const routineWorkflowOrder = [
   'Generate Blog Posts',
   'Create Newsletter Campaign',
