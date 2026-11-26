@@ -1,9 +1,9 @@
 name: Generate Blog Posts
 
 on:
-  # Run every Tuesday at 9 AM America/Chicago (handles CST/CDT)
+  # Propose one article each morning; the Friday newsletter selects seven published stories.
   schedule:
-    - cron: '0 9 * * 2'
+    - cron: '0 9 * * *'
       timezone: 'America/Chicago'
   # Allow manual trigger
   workflow_dispatch:
@@ -20,7 +20,7 @@ on:
       batch_size:
         description: 'Number of articles to search'
         required: false
-        default: '20'
+        default: '1'
         type: string
       days_back:
         description: 'Days to search back (1-7)'
@@ -115,7 +115,7 @@ jobs:
             echo "🔵 Running real blog post generation..."
             python generate_blog_posts.py \
               --model ${{ github.event.inputs.model || 'gpt-4o' }} \
-              --batch-size ${{ github.event.inputs.batch_size || '10' }} \
+              --batch-size ${{ github.event.inputs.batch_size || '1' }} \
               --days-back ${{ github.event.inputs.days_back || '7' }} \
               --json > generation_result.json 2> generation_error.log
             GEN_EXIT=$?

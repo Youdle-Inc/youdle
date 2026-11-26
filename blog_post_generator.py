@@ -608,6 +608,7 @@ class BlogPostOrchestrator:
 def run_generation(
     model: Optional[str] = None,
     use_placeholder_images: bool = False,
+    generate_photos: bool = False,
     batch_size: int = 30,
     search_days_back: int = 7,
     use_langgraph: bool = True,
@@ -626,6 +627,7 @@ def run_generation(
             search_days_back=search_days_back,
             model=model,
             use_placeholder_images=use_placeholder_images,
+            generate_photos=generate_photos,
             job_id=job_id,
         )
 

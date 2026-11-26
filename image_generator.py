@@ -62,7 +62,7 @@ the line above names a brand.
 Treatment: {look}
 
 Hard rules:
-- No recognisable people. A hand or a silhouette is fine; no faces.
+- No people, hands, silhouettes, or human body parts anywhere in the frame.
 - No real brand names, logos or wordmarks. Packaging is generic.
 - Any text in frame is English, short, and plausible: a shelf label, a price, a
   receipt line. No paragraphs, no invented statistics.

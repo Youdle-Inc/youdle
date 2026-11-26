@@ -6,6 +6,7 @@ import { ExternalLink, Eye, Code, Copy, Check, Trash2, Edit2, Loader2, Globe } f
 import { cn, formatDate, getStatusColor, getCategoryColor, truncate, stripHtml } from '@/lib/utils'
 import { safeArticlePreviewHtml } from '@/lib/articleImages'
 import { EditBlogPostModal } from './EditBlogPostModal'
+import { PhotoControls } from './PhotoControls'
 import type { BlogPostUpdate } from '@/lib/api'
 
 interface BlogPost {
@@ -307,7 +308,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
                         : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
                     )}
                   >
-                    Draft
+                    Proposed
                   </button>
                   <button
                     onClick={() => onStatusChange(post.id, 'reviewed')}
@@ -319,7 +320,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
                         : 'bg-purple-100 text-purple-700 hover:bg-purple-200'
                     )}
                   >
-                    Mark Reviewed
+                    Approve article
                   </button>
                 </>
               )}
@@ -347,7 +348,7 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
               {onPublish && !isPublishedToBlogger && (
                 <button
                   onClick={handlePublish}
-                  disabled={isPublishing}
+                  disabled={isPublishing || post.status !== 'reviewed'}
                   className={cn(
                     'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all',
                     isPublishing
@@ -382,6 +383,8 @@ export function BlogPostPreview({ post, onStatusChange, onDelete, onEdit, onPubl
 
 
       {/* Full web-style article reader, outside card clipping and animations. */}
+      {isPublishedToBlogger && <PhotoControls postId={post.id} currentImageUrl={cardImageUrl} />}
+
       {isPreviewOpen && typeof document !== 'undefined' && createPortal(
         <div
           className="fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/70 p-0 sm:p-5"

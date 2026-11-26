@@ -6,7 +6,9 @@ import sys
 import os
 import re
 import logging
-from html import unescape
+import base64
+import io
+from html import unescape, escape
 from difflib import SequenceMatcher
 from uuid import UUID, uuid4
 from typing import Optional, List, Literal
@@ -41,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 class GenerationConfig(BaseModel):
     """Configuration for blog post generation"""
-    batch_size: int = Field(default=10, ge=1, le=10)
+    batch_size: int = Field(default=1, ge=1, le=10)
     search_days_back: int = Field(default=7, ge=1, le=7)
     model: str = Field(
         default_factory=get_default_openai_model,
@@ -49,6 +51,7 @@ class GenerationConfig(BaseModel):
     )
     use_placeholder_images: bool = False
     use_legacy_orchestrator: bool = False
+    generate_photos: bool = False
 
     @field_validator("model")
     @classmethod
@@ -98,6 +101,139 @@ class ReviewSubmission(BaseModel):
     submission_id: UUID
 
 
+class PhotoRequest(BaseModel):
+    notes: str = Field(default="", max_length=600)
+
+
+class PhotoPublishRequest(BaseModel):
+    media_id: UUID
+
+
+@router.post("/posts/{post_id}/photo/generate")
+async def generate_post_photo(post_id: UUID, request: PhotoRequest):
+    """Save a high-resolution candidate in media, without changing the live article."""
+    from supabase_storage import get_supabase_client, get_supabase_storage
+    from image_generator import get_image_generator, summarize_image_failure
+    from PIL import Image
+
+    supabase = get_supabase_client()
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    result = supabase.table("blog_posts").select("*").eq("id", str(post_id)).maybe_single().execute()
+    post = result.data if result else None
+    if not post:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if post.get("status") != "published" or not post.get("blogger_url"):
+        raise HTTPException(status_code=409, detail="Publish the article before generating its photo")
+
+    try:
+        generator = get_image_generator()
+        # Use only the article's own subject and the editor's requested changes.
+        subject = re.sub(r"<[^>]+>", " ", post.get("html_content") or "")[:400]
+        theme = f"Article context: {subject}. Editor's photo direction: {request.notes.strip()}"
+        generated = generator.generate_image(
+            title=post["title"], theme=theme, image_size="2K"
+        )
+        if not generated.get("success") or not generated.get("image_data"):
+            raise HTTPException(status_code=502, detail="Photo generation failed: " + summarize_image_failure(generated.get("error")))
+        raw = base64.b64decode(generated["image_data"], validate=True)
+        with Image.open(io.BytesIO(raw)) as picture:
+            width, height = picture.size
+            image_format = picture.format
+            picture.verify()
+        if width < 1200 or height < 800 or image_format not in ("PNG", "JPEG", "WEBP"):
+            raise HTTPException(status_code=502, detail="Generated photo did not meet the 1200 × 800 pixel minimum")
+        mime = {"PNG": "image/png", "JPEG": "image/jpeg", "WEBP": "image/webp"}[image_format]
+        ext = {"PNG": "png", "JPEG": "jpg", "WEBP": "webp"}[image_format]
+        storage = get_supabase_storage()
+        if storage is None:
+            raise HTTPException(status_code=503, detail="Image storage not configured")
+        filename = f"photo-{post_id}-{uuid4().hex[:12]}.{ext}"
+        uploaded = storage.upload_image(
+            image_data=generated["image_data"], filename=filename,
+            folder="media", content_type=mime,
+        )
+        if not uploaded.get("success"):
+            raise HTTPException(status_code=502, detail="Could not store the photo")
+        try:
+            media = supabase.table("media").insert({
+                "filename": filename,
+                "original_filename": filename,
+                "file_path": uploaded["path"],
+                "public_url": uploaded["url"],
+                "mime_type": mime,
+                "file_size": len(raw),
+                "width": width,
+                "height": height,
+                "alt_text": post["title"],
+                "created_at": datetime.utcnow().isoformat(),
+                "updated_at": datetime.utcnow().isoformat(),
+            }).execute()
+            if not media.data:
+                raise RuntimeError("Media record was not saved")
+        except Exception:
+            storage.client.storage.from_(storage.bucket).remove([uploaded["path"]])
+            raise
+        return {"media_id": media.data[0]["id"], "url": uploaded["url"], "width": width, "height": height}
+    except HTTPException:
+        raise
+    except Exception as error:
+        logger.exception("Photo candidate failed for %s", post_id)
+        raise HTTPException(status_code=502, detail="Could not create a photo candidate") from error
+
+
+@router.post("/posts/{post_id}/photo/publish")
+async def publish_post_photo(post_id: UUID, request: PhotoPublishRequest):
+    """Update the live Blogger article first, then its dashboard image record."""
+    from supabase_storage import get_supabase_client
+    from blogger_client import get_blogger_client
+
+    supabase = get_supabase_client()
+    if supabase is None:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    result = supabase.table("blog_posts").select("*").eq("id", str(post_id)).maybe_single().execute()
+    post = result.data if result else None
+    if not post:
+        raise HTTPException(status_code=404, detail="Article not found")
+    if post.get("status") != "published" or not post.get("blogger_url") or not post.get("blogger_post_id"):
+        raise HTTPException(status_code=409, detail="Article must be published to Blogger first")
+    media_result = supabase.table("media").select("*").eq("id", str(request.media_id)).maybe_single().execute()
+    media = media_result.data if media_result else None
+    if not media or not media.get("public_url", "").startswith("https://"):
+        raise HTTPException(status_code=404, detail="Saved photo not found")
+    if (media.get("width") or 0) < 1200 or (media.get("height") or 0) < 800:
+        raise HTTPException(status_code=400, detail="Use an image at least 1200 × 800 pixels")
+
+    image_url = media["public_url"]
+    html = post.get("html_content") or ""
+    old_url = post.get("image_url") or ""
+    if old_url and old_url in html:
+        html = html.replace(old_url, image_url)
+    elif re.search(r"<img\b", html, re.I):
+        html = re.sub(r'(<img\b[^>]*\bsrc\s*=\s*["\'])[^"\']+(["\'])',
+                      lambda m: m.group(1) + image_url + m.group(2), html, count=1, flags=re.I)
+    else:
+        html = f'<figure><img src="{image_url}" alt="{escape(post["title"], quote=True)}" style="max-width:100%;height:auto" /></figure>\n' + html
+    blogger = get_blogger_client()
+    if not blogger.is_configured():
+        raise HTTPException(status_code=503, detail="Blogger is not configured")
+    try:
+        response = blogger.update_post(blogger_post_id=post["blogger_post_id"], html_content=html)
+        if not response or "error" in response:
+            raise RuntimeError("Blogger did not confirm the update")
+    except Exception as error:
+        logger.exception("Blogger photo update failed for %s", post_id)
+        raise HTTPException(status_code=502, detail="Blogger did not publish the photo; article record was unchanged") from error
+    saved = supabase.table("blog_posts").update({
+        "html_content": html, "image_url": image_url,
+        "last_synced_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+    }).eq("id", str(post_id)).execute()
+    if not saved.data:
+        raise HTTPException(status_code=502, detail="Blogger updated, but dashboard sync failed; refresh before retrying")
+    return {"message": "Photo published", "url": image_url, "post": saved.data[0]}
+
+
 def run_generation_task(job_id: str, config: dict):
     """
     Background task to run blog generation.
@@ -131,6 +267,7 @@ def run_generation_task(job_id: str, config: dict):
         result = run_generation(
             model=config.get("model") or get_default_openai_model(),
             use_placeholder_images=config.get("use_placeholder_images", False),
+            generate_photos=config.get("generate_photos", False),
             batch_size=config.get("batch_size", 10),
             search_days_back=config.get("search_days_back", 7),
             use_langgraph=use_langgraph,
@@ -650,6 +787,9 @@ async def publish_post_to_blogger(post_id: str):
             raise HTTPException(status_code=404, detail="Post not found")
 
         post = result.data
+
+        if post.get("status") != "reviewed":
+            raise HTTPException(status_code=409, detail="Review the proposed article before publishing")
 
         # Check if already published to Blogger (has both ID and URL)
         if post.get("blogger_post_id") and post.get("blogger_url"):

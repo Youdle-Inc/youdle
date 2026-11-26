@@ -58,6 +58,7 @@ export interface GenerationConfig {
   model: string
   use_placeholder_images: boolean
   use_legacy_orchestrator: boolean
+  generate_photos?: boolean
 }
 
 export interface GenerationResponse {
@@ -401,11 +402,12 @@ class ApiClient {
     return this.request('/api/generate/run', {
       method: 'POST',
       body: JSON.stringify({
-        batch_size: config.batch_size ?? 10,
+        batch_size: config.batch_size ?? 1,
         search_days_back: config.search_days_back ?? 7,
         model: normalizeOpenAIModel(config.model),
         use_placeholder_images: config.use_placeholder_images ?? false,
         use_legacy_orchestrator: config.use_legacy_orchestrator ?? false,
+        generate_photos: config.generate_photos ?? false,
       }),
     })
   }
@@ -462,6 +464,18 @@ class ApiClient {
   async publishToBlogger(postId: string): Promise<PublishResponse> {
     return this.request(`/api/generate/posts/${postId}/publish`, {
       method: 'POST',
+    })
+  }
+
+  async generatePostPhoto(postId: string, notes: string): Promise<{media_id: string; url: string; width: number; height: number}> {
+    return this.request(`/api/generate/posts/${postId}/photo/generate`, {
+      method: 'POST', body: JSON.stringify({ notes }),
+    })
+  }
+
+  async publishPostPhoto(postId: string, mediaId: string): Promise<{message: string; url: string}> {
+    return this.request(`/api/generate/posts/${postId}/photo/publish`, {
+      method: 'POST', body: JSON.stringify({ media_id: mediaId }),
     })
   }
 
