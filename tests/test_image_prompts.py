@@ -124,7 +124,7 @@ def test_the_prompt_carries_the_look_and_the_hard_rules():
     )
 
     assert look in prompt
-    assert "No recognisable people" in prompt
+    assert "No people, hands, silhouettes" in prompt
     assert "No real brand names" in prompt
     assert "{look}" not in prompt, "placeholder left unsubstituted"
     # The licence to be interesting has to survive, or the rules alone read as

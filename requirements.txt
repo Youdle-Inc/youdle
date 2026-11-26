@@ -45,6 +45,7 @@ requests>=2.31.0
 tenacity>=8.2.0
 pytz>=2024.1
 python-dateutil>=2.8.0
+Pillow>=10.0.0
 
 # Spell checking for newsletter subjects
 pyspellchecker>=0.7.0

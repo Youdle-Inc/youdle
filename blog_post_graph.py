@@ -85,6 +85,7 @@ class BlogPostState(TypedDict):
     search_days_back: int
     model: str
     use_placeholder_images: bool
+    generate_photos: bool
     job_id: Optional[str]
     
     # Search results
@@ -219,6 +220,7 @@ def create_initial_state(
     search_days_back: int = 7,
     model: Optional[str] = None,
     use_placeholder_images: bool = False,
+    generate_photos: bool = False,
     job_id: Optional[str] = None,
 ) -> BlogPostState:
     """Create the initial state for the workflow."""
@@ -227,6 +229,7 @@ def create_initial_state(
         search_days_back=search_days_back,
         model=model,
         use_placeholder_images=use_placeholder_images,
+        generate_photos=generate_photos,
         job_id=job_id,
         search_results={},
         articles=[],
@@ -725,6 +728,8 @@ def generate_images_node(state: BlogPostState) -> Dict[str, Any]:
     """Illustrate only a few visually useful posts. Text generation never depends on Gemini."""
     logs = [f"[{datetime.now().isoformat()}] Selecting useful article photographs..."]
     generated_posts = state.get("generated_posts", [])
+    if not state.get("generate_photos", False):
+        return {"images": [], "logs": logs + ["Photos deferred until editorial approval"]}
     if not generated_posts:
         return {"images": [], "logs": logs + ["No posts for image generation"]}
 
@@ -1386,6 +1391,7 @@ def run_blog_post_workflow(
     search_days_back: int = 7,
     model: Optional[str] = None,
     use_placeholder_images: bool = False,
+    generate_photos: bool = False,
     job_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
@@ -1413,6 +1419,7 @@ def run_blog_post_workflow(
         search_days_back=search_days_back,
         model=model,
         use_placeholder_images=use_placeholder_images,
+        generate_photos=generate_photos,
         job_id=job_id,
     )
     

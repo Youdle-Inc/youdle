@@ -116,8 +116,8 @@ export default function DashboardPage() {
       )}
       {latestSuccess && (
         <div role="status" className="rounded-xl border border-stone-200 bg-white px-5 py-3 text-sm text-stone-700">
-          Latest run completed. <strong>{latestSuccess.result?.posts_generated ?? 'Unknown'}</strong> articles saved.
-          <a href="/posts" className="ml-2 font-semibold text-green-700 underline">Review drafts</a>
+          Latest run completed. <strong>{latestSuccess.result?.posts_generated ?? 'Unknown'}</strong> article proposals saved.
+          <a href="/posts" className="ml-2 font-semibold text-green-700 underline">Review proposals</a>
         </div>
       )}
 

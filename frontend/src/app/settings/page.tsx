@@ -13,7 +13,7 @@ import { useSystemHealth } from '@/lib/hooks/useSystemHealth'
 
 export default function SettingsPage() {
   const [config, setConfig] = useState({
-    batchSize: 10,
+    batchSize: 1,
     searchDaysBack: 7,
     model: DEFAULT_OPENAI_MODEL,
     usePlaceholderImages: false,
