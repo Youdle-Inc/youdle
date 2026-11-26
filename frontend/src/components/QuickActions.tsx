@@ -13,7 +13,6 @@ interface QuickActionsProps {
 }
 
 interface SavedGenerationConfig {
-  batchSize?: number
   searchDaysBack?: number
   model?: string
   usePlaceholderImages?: boolean
@@ -47,10 +46,9 @@ export function QuickActions({
           preferences = {}
         }
       }
-      const batchSize = Math.min(10, Math.max(1, Number(preferences.batchSize) || 1))
       const searchDaysBack = Math.min(7, Math.max(1, Number(preferences.searchDaysBack) || 7))
       const response = await api.startGeneration({
-        batch_size: batchSize,
+        batch_size: 1,
         search_days_back: searchDaysBack,
         model: normalizeOpenAIModel(preferences.model),
         use_placeholder_images: preferences.usePlaceholderImages ?? false,
