@@ -5,10 +5,9 @@ import os
 import json
 from datetime import datetime
 from html import escape, unescape
-from html.parser import HTMLParser
 from typing import Dict, Any, List, Optional
 
-import httpx
+from publication_links import check_newsletter_links
 
 try:
     from dotenv import load_dotenv
@@ -26,21 +25,6 @@ except ImportError:
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-class _ImgBBImages(HTMLParser):
-    def __init__(self):
-        super().__init__()
-        self.urls: set[str] = set()
-
-    def handle_starttag(self, tag, attrs):
-        if tag != "img":
-            return
-        src = (dict(attrs).get("src") or "").strip()
-        if src.startswith("//"):
-            src = "https:" + src
-        if src.lower().startswith(("https://i.ibb.co/", "https://ibb.co/", "http://i.ibb.co/", "http://ibb.co/")):
-            self.urls.add(src)
-
 
 def _spellcheck_subject(subject: str) -> str:
     """
@@ -553,20 +537,7 @@ class MailchimpCampaign:
             }
         
         try:
-            images = _ImgBBImages()
-            images.feed(html_content)
-            for url in sorted(images.urls):
-                # ImgBB can return an upgrade graphic with an image content type.
-                with httpx.stream(
-                    "GET", url, timeout=5, follow_redirects=False,
-                    headers={"Referer": f"https://{self.server_prefix}.campaign-archive.com/"},
-                ) as response:
-                    content_type = response.headers.get("Content-Type", "").lower()
-                    if response.status_code != 200 or not content_type.startswith("image/"):
-                        return {
-                            "success": False,
-                            "error": "An ImgBB photo is unavailable in the newsletter. Replace it with the original from the media library.",
-                        }
+            check_newsletter_links(html_content, f"https://{self.server_prefix}.campaign-archive.com/")
 
             # Create campaign
             campaign = self.client.campaigns.create({
@@ -623,6 +594,8 @@ class MailchimpCampaign:
             }
         
         try:
+            content = self.client.campaigns.content.get(campaign_id)
+            check_newsletter_links(content.get("html") or "", f"https://{self.server_prefix}.campaign-archive.com/")
             self.client.campaigns.actions.send(campaign_id)
             return {
                 "success": True,
@@ -657,6 +630,8 @@ class MailchimpCampaign:
             }
         
         try:
+            content = self.client.campaigns.content.get(campaign_id)
+            check_newsletter_links(content.get("html") or "", f"https://{self.server_prefix}.campaign-archive.com/")
             # mailchimp3 SDK expects a datetime object with UTC tzinfo
             from datetime import timezone
             if schedule_time.tzinfo is None:

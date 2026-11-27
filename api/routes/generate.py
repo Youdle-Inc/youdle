@@ -529,6 +529,16 @@ async def update_blog_post(post_id: str, updates: BlogPostUpdate):
         post_data = current_post.data
         blogger_post_id = post_data.get("blogger_post_id")
 
+        from publication_links import check_article_photos
+
+        try:
+            previous_html = post_data.get("html_content") or ""
+            image_url = updates.image_url if updates.image_url != post_data.get("image_url") else ""
+            if updates.html_content is not None or image_url:
+                check_article_photos(updates.html_content or previous_html, previous_html, image_url)
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+
         # Build update dict from provided fields only
         update_data = {}
         if updates.title is not None:
@@ -662,6 +672,13 @@ async def publish_post_to_blogger(post_id: str):
                 status_code=400,
                 detail=f"Post already published to Blogger. URL: {post.get('blogger_url')}"
             )
+
+        from publication_links import check_article_photos
+
+        try:
+            check_article_photos(post.get("html_content") or "", image_url=post.get("image_url") or "")
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
         # Publish to Blogger
         labels = [post.get("category", "SHOPPERS")]
