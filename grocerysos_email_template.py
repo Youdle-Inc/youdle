@@ -221,6 +221,11 @@ def render_grocerysos_newsletter_html(
     </p>
     <p style="font:600 15px/1.45 Montserrat,Arial,sans-serif;color:{INK};
               margin:13px 0 0;">{headline}</p>
+    <p style="margin:17px 0 0;">
+      <a href="*|LIST:SUBSCRIBE|*" style="display:inline-block;background:{GREEN};
+         border-radius:6px;color:#FFFFFF;text-decoration:none;padding:12px 18px;
+         font:700 15px/1.35 Montserrat,Arial,sans-serif;">Subscribe to the newsletter</a>
+    </p>
   </td></tr>
   {story_section}
   <tr><td align="center" style="padding:24px 20px 30px;">

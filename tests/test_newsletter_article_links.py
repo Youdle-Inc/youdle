@@ -1,5 +1,33 @@
 """Newsletter regression checks without external services or paid model calls."""
+from contextlib import nullcontext
+from unittest.mock import Mock, patch
+
+import httpx
+
 from mailchimp_campaign import MailchimpCampaign
+
+
+def test_signup_button_appears_before_the_story_section():
+    mailer = MailchimpCampaign()
+    html = mailer.create_newsletter_html([
+        {"title": "An original grocery story", "url": "https://news.youdle.io/grocery-story.html"},
+    ])
+    assert 'href="*|LIST:SUBSCRIBE|*"' in html
+    assert html.index("Subscribe to the newsletter") < html.index("Top Grocery Stories")
+
+
+def test_campaign_rejects_imgbb_upgrade_graphic_before_creating_a_campaign():
+    mailer = MailchimpCampaign(list_id="test-audience", server_prefix="us10")
+    mailer.client = Mock()
+    blocked = httpx.Response(403, headers={"Content-Type": "image/png"})
+    html = '<img src="https://i.ibb.co/example/photo.jpg" alt="Groceries">'
+
+    with patch("mailchimp_campaign.httpx.stream", return_value=nullcontext(blocked)):
+        result = mailer.create_campaign("Grocery News", html)
+
+    assert not result["success"]
+    assert "ImgBB photo is unavailable" in result["error"]
+    mailer.client.campaigns.create.assert_not_called()
 
 
 def test_newsletter_preserves_distinct_saved_images_and_published_article_urls():
