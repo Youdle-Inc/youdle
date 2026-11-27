@@ -16,18 +16,42 @@ def test_signup_button_appears_before_the_story_section():
     assert html.index("Subscribe to the newsletter") < html.index("Top Grocery Stories")
 
 
-def test_campaign_rejects_imgbb_upgrade_graphic_before_creating_a_campaign():
+def test_working_imgbb_photo_can_be_used_in_a_campaign():
     mailer = MailchimpCampaign(list_id="test-audience", server_prefix="us10")
     mailer.client = Mock()
-    blocked = httpx.Response(403, headers={"Content-Type": "image/png"})
+    mailer.client.campaigns.create.return_value = {"id": "new"}
     html = '<img src="https://i.ibb.co/example/photo.jpg" alt="Groceries">'
+    working = httpx.Response(200, headers={"Content-Type": "image/jpeg"})
+    with patch("publication_links.httpx.stream", return_value=nullcontext(working)):
+        assert mailer.create_campaign("Grocery News", html)["success"]
+    mailer.client.campaigns.create.assert_called_once()
 
-    with patch("mailchimp_campaign.httpx.stream", return_value=nullcontext(blocked)):
+
+def test_broken_story_link_prevents_campaign_creation():
+    mailer = MailchimpCampaign(list_id="test-audience")
+    mailer.client = Mock()
+    html = '<a href="https://news.youdle.io/2026/11/grocery-story.html">Read story</a>'
+    missing = httpx.Response(404, headers={"Content-Type": "text/html"})
+    with patch("publication_links.httpx.stream", return_value=nullcontext(missing)):
         result = mailer.create_campaign("Grocery News", html)
-
-    assert not result["success"]
-    assert "ImgBB photo is unavailable" in result["error"]
+    assert not result["success"] and "story link did not load" in result["error"]
     mailer.client.campaigns.create.assert_not_called()
+
+
+def test_preexisting_campaign_with_broken_imgbb_link_cannot_be_sent_or_scheduled():
+    from datetime import datetime, timezone
+
+    mailer = MailchimpCampaign(list_id="test-audience")
+    mailer.client = Mock()
+    mailer.client.campaigns.content.get.return_value = {
+        "html": '<img srcset="//i.ibb.co/example/photo.jpg 1x">'
+    }
+    blocked = httpx.Response(403, headers={"Content-Type": "image/png"})
+    with patch("publication_links.httpx.stream", return_value=nullcontext(blocked)):
+        assert not mailer.send_campaign("legacy")["success"]
+        assert not mailer.schedule_campaign("legacy", datetime.now(timezone.utc))["success"]
+    mailer.client.campaigns.actions.send.assert_not_called()
+    mailer.client.campaigns.actions.schedule.assert_not_called()
 
 
 def test_newsletter_preserves_distinct_saved_images_and_published_article_urls():
