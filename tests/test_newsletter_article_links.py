@@ -16,6 +16,22 @@ def test_signup_button_appears_before_the_story_section():
     assert html.index("Subscribe to the newsletter") < html.index("Keep reading")
 
 
+def test_each_story_keeps_its_full_width_photo_including_quick_reads_and_recalls():
+    articles = [
+        {
+            "title": f"Story {index}",
+            "url": f"https://news.youdle.io/2026/11/story-{index}.html",
+            "image_url": f"https://blogger.googleusercontent.com/story-{index}.jpg",
+        }
+        for index in range(7)
+    ]
+    newsletter = MailchimpCampaign().create_newsletter_html(articles[:6], articles[6:])
+    for article in articles:
+        assert f'src="{article["image_url"]}" width="668"' in newsletter
+    assert "background:#4CA733" in newsletter
+    assert newsletter.index("Quick Reads") < newsletter.index("Recall Roundup")
+
+
 def test_working_imgbb_photo_can_be_used_in_a_campaign():
     mailer = MailchimpCampaign(list_id="test-audience", server_prefix="us10")
     mailer.client = Mock()
