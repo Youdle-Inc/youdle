@@ -13,7 +13,7 @@ def test_signup_button_appears_before_the_story_section():
         {"title": "An original grocery story", "url": "https://news.youdle.io/grocery-story.html"},
     ])
     assert 'href="*|LIST:SUBSCRIBE|*"' in html
-    assert html.index("Subscribe to the newsletter") < html.index("Top Grocery Stories")
+    assert html.index("Subscribe to the newsletter") < html.index("Keep reading")
 
 
 def test_working_imgbb_photo_can_be_used_in_a_campaign():

@@ -1,7 +1,7 @@
-"""Youdle Grocery News email, using the GrocerySOS color palette."""
+"""Email-safe Youdle Grocery News digest in the GrocerySOS palette."""
 from datetime import datetime, timedelta
 from html import escape, unescape
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 from zoneinfo import ZoneInfo
 
 
@@ -15,8 +15,10 @@ RULE = "#E6D9C2"
 SITE = "https://www.youdle.io"
 NEWS = f"{SITE}/news"
 LOGO = "https://mcusercontent.com/a8e33153b11c8b750221ce4aa/images/5f2d9977-bf45-cdb6-23dd-0c18573407e4.png"
-SANS = "Montserrat,Arial,sans-serif"
-SERIF = "Georgia,'Times New Roman',serif"
+FONT = "Arial,Helvetica,sans-serif"
+CARD = f"background:#FFFFFF;border:1px solid {RULE};border-radius:15px;"
+BODY = f"font:16px/22px {FONT};color:{INK};"
+SECTION = f"font:700 16px/22px {FONT};text-transform:uppercase;"
 
 
 def _https(value):
@@ -24,64 +26,94 @@ def _https(value):
     try:
         parts = urlsplit(value)
         if parts.scheme == "https" and parts.hostname and not parts.username and not parts.password:
-            return escape(value, quote=True)
+            return value
     except ValueError:
         pass
     return ""
 
 
-def _story(article, compact=False):
-    raw_title = str(article.get("title") or "Grocery story")
-    title = escape(raw_title)
-    url = _https(article.get("url") or article.get("link")) or NEWS
-    summary = escape(" ".join(unescape(str(article.get("summary") or article.get("description") or "")).split()))
-    image_url = _https(article.get("image_url"))
-    width = 112 if compact else 568
-    image = (
-        f'<a href="{url}" style="text-decoration:none;"><img src="{image_url}" alt="" width="{width}" '
-        f'style="display:block;width:100%;max-width:{width}px;height:auto;border:0;border-radius:6px;"></a>'
-        if image_url else ""
+def _title(article):
+    return escape(str(article.get("title") or "Grocery story"))
+
+
+def _url(article):
+    return _https(article.get("url") or article.get("link")) or NEWS
+
+
+def _summary(article):
+    return escape(" ".join(unescape(str(article.get("summary") or article.get("description") or "")).split()))
+
+
+def _share(article_url):
+    encoded = quote(article_url, safe="")
+    destinations = (
+        ("Facebook", "f", f"https://www.facebook.com/sharer/sharer.php?u={encoded}"),
+        ("X", "𝕏", f"https://twitter.com/intent/tweet?url={encoded}"),
+        ("LinkedIn", "in", f"https://www.linkedin.com/sharing/share-offsite/?url={encoded}"),
     )
-    size = 21 if compact else 32
-    headline = (
-        f'<h3 style="margin:0 0 8px;font:700 {size}px/1.18 {SERIF};">'
-        f'<a href="{url}" style="color:{DARK};text-decoration:none;">{title}</a></h3>'
-    )
-    body = (
-        (f'<p style="margin:0 0 9px;font:15px/1.55 {SANS};color:{INK};">{summary}</p>' if summary else "")
-        + f'<a href="{url}" style="font:700 13px/1.4 {SANS};color:{GREEN};text-decoration:underline;">Read the story →</a>'
-    )
-    content = headline + body
-    if not compact:
-        return f'<div style="padding:20px 0 24px;border-bottom:1px solid {RULE};">{headline}{image}<div style="margin-top:14px;">{body}</div></div>'
-    if not image:
-        return f'<div style="padding:16px 0;border-bottom:1px solid {RULE};">{content}</div>'
-    return (
-        f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-bottom:1px solid {RULE};"><tr>'
-        f'<td class="thumb" width="112" valign="top" style="padding:16px 14px 16px 0;">{image}</td>'
-        f'<td valign="top" style="padding:16px 0;">{content}</td></tr></table>'
+    return "".join(
+        f'<a href="{escape(url, quote=True)}" aria-label="Share on {label}" title="Share on {label}" '
+        f'style="display:inline-block;width:25px;height:25px;text-align:center;border-radius:50%;'
+        f'background:{GREEN};color:white;font:700 13px/25px {FONT};text-decoration:none;'
+        f'margin-right:7px;">{glyph}</a>'
+        for label, glyph, url in destinations
     )
 
 
-def _section(label, contents, color=GREEN):
-    if not contents:
+def _story(article, label="Grocery News", accent=RED):
+    article_url = _url(article)
+    url = escape(article_url, quote=True)
+    title = _title(article)
+    photo = escape(_https(article.get("image_url")), quote=True)
+    summary = _summary(article)
+    image_row = (
+        f'<tr><td style="padding-top:15px;"><a href="{url}">'
+        f'<img src="{photo}" width="668" alt="" style="display:block;width:100%;max-width:668px;height:auto;border:0;">'
+        '</a></td></tr>'
+        if photo else ""
+    )
+    return f"""
+<tr><td style="{CARD}">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+    <tr><td style="padding:15px 15px 0;">
+      <p style="{SECTION}margin:0;color:{accent};">{label}</p>
+      <h2 style="margin:8px 0 0;font:700 24px/26px {FONT};">
+        <a href="{url}" style="text-decoration:none;color:{DARK};">{title}</a>
+      </h2>
+    </td></tr>
+    {image_row}
+    <tr><td style="padding:15px;">
+      {f'<p style="{BODY}margin:0 0 15px;">{summary}</p>' if summary else ''}
+      <a href="{url}" style="font:700 16px/22px {FONT};color:{DARK};
+        text-decoration:none;border-bottom:2px solid {accent};">Keep reading</a>
+      <div style="padding-top:12px;">{_share(article_url)}</div>
+    </td></tr>
+  </table>
+</td></tr>
+<tr><td height="7" style="font-size:0;line-height:0;">&nbsp;</td></tr>"""
+
+
+def _quick_reads(articles):
+    if not articles:
         return ""
-    return (
-        f'<tr><td class="gutter" style="padding:16px 26px 0;">'
-        f'<h2 style="margin:0;padding:9px 12px;background:{color};color:white;'
-        f'font:700 13px/1.35 {SANS};letter-spacing:0.07em;text-transform:uppercase;">{label}</h2>'
-        f'{contents}</td></tr>'
-    )
+    rows = []
+    for article in articles:
+        title, url, summary = _title(article), escape(_url(article), quote=True), _summary(article)
+        link = f'<a href="{url}" style="color:{DARK};font-weight:700;text-decoration:underline;">{title}</a>'
+        rows.append(f'<p style="{BODY}margin:0 0 13px;">{link}{(" " + summary) if summary else ""}</p>')
+    return f"""
+<tr><td style="{CARD}padding:15px;">
+  <h2 style="{SECTION}margin:0 0 12px;color:{RED};">Quick Reads</h2>
+  {"".join(rows)}
+</td></tr>
+<tr><td height="7" style="font-size:0;line-height:0;">&nbsp;</td></tr>"""
 
 
 def render_youdle_newsletter_html(articles, recall_articles=None, dynamic_headline=None):
-    """Use the selected Youdle stories, retaining their order inside each section."""
+    """Render the current edition without changing its story selections or destinations."""
     stories, recalls = [], []
     for article in articles or []:
-        if str(article.get("category", "")).upper() == "RECALL":
-            recalls.append(article)
-        else:
-            stories.append(article)
+        (recalls if str(article.get("category", "")).upper() == "RECALL" else stories).append(article)
     for article in recall_articles or []:
         if article not in recalls:
             recalls.append(article)
@@ -89,22 +121,18 @@ def render_youdle_newsletter_html(articles, recall_articles=None, dynamic_headli
 
     now = datetime.now(ZoneInfo("America/Chicago"))
     monday = now.date() - timedelta(days=now.weekday())
-    week = escape(monday.strftime("%B %d, %Y").replace(" 0", " "))
-    headline = escape(str(dynamic_headline or "Your weekly grocery news"))
-    agenda_items = stories[:2] + recalls[:1] if recalls else stories[:3]
+    week = monday.strftime("%B %d, %Y").replace(" 0", " ")
+    headline = escape(str(dynamic_headline or "Here’s what’s happening at the grocery store this week."))
+    agenda_articles = stories[:2] + recalls[:1] if recalls else stories[:3]
     agenda = "".join(
-        f'<li style="margin:0 0 5px;"><a href="{_https(item.get("url") or item.get("link")) or NEWS}" '
-        f'style="color:{GREEN};">{escape(str(item.get("title") or "Grocery story"))}</a></li>'
-        for item in agenda_items
+        f'<li style="margin:0 0 4px;"><a href="{escape(_url(article), quote=True)}" '
+        f'style="color:{GREEN};text-decoration:underline;">{_title(article)}</a></li>'
+        for article in agenda_articles
     )
-    preview = (
-        f'<p style="margin:15px 0 5px;font:700 14px/1.4 {SANS};color:{DARK};">In this edition</p>'
-        f'<ul style="margin:0;padding-left:19px;font:14px/1.5 {SANS};color:{INK};">{agenda}</ul>'
-        if agenda else ""
-    )
-    feature = _section("Top Grocery Stories", "".join(_story(article) for article in stories[:2]))
-    quick_reads = _section("Quick Reads", "".join(_story(article, compact=True) for article in stories[2:]))
-    roundup = _section("Recall Roundup", "".join(_story(article, compact=True) for article in recalls), RED)
+    intro = f'<p style="{BODY}margin:0 0 8px;"><strong>In this edition</strong></p><ul style="{BODY}margin:0;padding-left:22px;">{agenda}</ul>' if agenda else ""
+    features = "".join(_story(article) for article in stories[:3])
+    quick_reads = _quick_reads(stories[3:])
+    roundup = "".join(_story(article, "Recall Roundup", RED) for article in recalls)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -113,46 +141,56 @@ def render_youdle_newsletter_html(articles, recall_articles=None, dynamic_headli
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Youdle Grocery News</title>
 <style>
-@media screen and (max-width:540px) {{
-  .gutter {{ padding-left:16px!important; padding-right:16px!important; }}
-  .masthead {{ font-size:38px!important; }}
-  .thumb {{ width:76px!important; }}
+@media screen and (max-width:480px) {{
+  .frame {{padding:5px!important;}}
+  .masthead-text {{font-size:34px!important;}}
+  .masthead-logo {{width:90px!important;}}
 }}
 </style>
 </head>
-<body style="margin:0;padding:0;background:{CREAM};color:{INK};">
+<body style="margin:0;padding:0;background:{CREAM};">
 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:{CREAM};">
-<tr><td align="center" style="padding:12px 0 24px;">
-<!--[if mso]><table role="presentation" width="620" cellspacing="0" cellpadding="0"><tr><td><![endif]-->
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:620px;background:white;">
-<tr><td class="gutter" style="padding:11px 26px;border-top:5px solid {GOLD};border-bottom:1px solid {RULE};">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font:12px/1.5 {SANS};color:{INK};">
-    <tr><td>Week of {week}</td><td align="right"><a href="*|ARCHIVE|*" style="color:{GREEN};">View online</a></td></tr>
+<tr><td align="center" class="frame" style="padding:10px 8px 25px;">
+<!--[if mso]><table role="presentation" width="670" cellspacing="0" cellpadding="0"><tr><td><![endif]-->
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="width:100%;max-width:670px;">
+<tr><td style="{CARD}padding:15px;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font:12px/1.5 {FONT};color:{DARK};">
+    <tr>
+      <td valign="top">Week of {week}</td>
+      <td valign="top" align="right">
+        <a href="*|ARCHIVE|*" style="color:{DARK};text-decoration:none;">View online</a> &nbsp;|&nbsp;
+        <a href="*|LIST:SUBSCRIBE|*" style="color:{GREEN};font-weight:700;text-decoration:none;">Sign up</a> &nbsp;|&nbsp;
+        <a href="{NEWS}" style="color:{DARK};text-decoration:none;">Grocery news</a>
+      </td>
+    </tr>
   </table>
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-top:25px;margin-bottom:18px;">
+    <tr><td align="center" style="background:{GREEN};border-radius:8px;border-bottom:4px solid {GOLD};padding:18px 10px;">
+      <a href="{SITE}" style="display:inline-block;text-decoration:none;">
+        <img class="masthead-logo" src="{LOGO}" alt="Youdle" width="114" style="display:block;width:114px;height:auto;border:0;background:white;border-radius:6px;">
+      </a>
+      <div class="masthead-text" style="margin-top:5px;color:white;font:800 48px/1.04 Montserrat,{FONT};letter-spacing:-0.035em;">Grocery News</div>
+    </td></tr>
+  </table>
+  <p style="{BODY}margin:0 0 15px;"><strong style="color:{DARK};">Hey, shoppers.</strong> {headline}</p>
+  {intro}
+  <p style="margin:17px 0 0;">
+    <a href="*|LIST:SUBSCRIBE|*" style="display:inline-block;background:{GREEN};color:white;border-radius:6px;
+      padding:9px 14px;font:700 14px/1.4 {FONT};text-decoration:none;">Subscribe to the newsletter</a>
+  </p>
 </td></tr>
-<tr><td align="center" class="gutter" style="padding:12px 26px 15px;background:{CREAM};border-bottom:1px solid {RULE};">
-  <a href="{SITE}"><img src="{LOGO}" alt="Youdle" width="100" style="display:block;width:100px;height:auto;border:0;"></a>
-  <p class="masthead" style="margin:0 0 13px;font:700 48px/1 {SERIF};color:{DARK};">Grocery News</p>
-  <a href="*|LIST:SUBSCRIBE|*" style="display:inline-block;background:{GREEN};border-radius:6px;color:white;
-     padding:12px 17px;font:700 14px/1.4 {SANS};text-decoration:none;">Subscribe to the newsletter</a>
-</td></tr>
-<tr><td class="gutter" style="padding:22px 26px 9px;">
-  <h1 style="margin:0 0 9px;font:700 29px/1.15 {SERIF};color:{DARK};">{headline}</h1>
-  <p style="margin:0;font:15px/1.55 {SANS};color:{INK};">Here’s what’s worth knowing before your next grocery run.</p>
-  {preview}
-</td></tr>
-{feature}
+<tr><td height="7" style="font-size:0;line-height:0;">&nbsp;</td></tr>
+{features}
 {quick_reads}
 {roundup}
-<tr><td align="center" class="gutter" style="padding:20px 26px;border-top:1px solid {RULE};background:{CREAM};">
-  <a href="*|FORWARD|*" style="font:700 15px/1.4 {SANS};color:{GREEN};">Forward to a friend</a>
-  &nbsp; · &nbsp;
-  <a href="{NEWS}" style="font:700 15px/1.4 {SANS};color:{GREEN};">More grocery news</a>
+<tr><td align="center" style="{CARD}padding:22px 15px;">
+  <h2 style="margin:0 0 9px;font:700 24px/26px {FONT};color:{DARK};">Share Youdle Grocery News</h2>
+  <a href="*|FORWARD|*" style="display:inline-block;background:{GREEN};color:white;border-radius:6px;
+    padding:9px 14px;font:700 14px/1.4 {FONT};text-decoration:none;">Forward to a friend</a>
 </td></tr>
-<tr><td align="center" class="gutter" style="padding:20px 26px;background:{DARK};color:white;font:12px/1.65 {SANS};">
-  <strong>Youdle Grocery News</strong><br>
-  <a href="*|UPDATE_PROFILE|*" style="color:white;">Update preferences</a> &nbsp;·&nbsp;
-  <a href="*|UNSUB|*" style="color:white;">Unsubscribe</a><br>
+<tr><td align="center" style="padding:19px 15px 0;font:12px/18px {FONT};color:{INK};">
+  <a href="*|UPDATE_PROFILE|*" style="color:{GREEN};">Update preferences</a> &nbsp;·&nbsp;
+  <a href="*|UNSUB|*" style="color:{GREEN};">Unsubscribe</a><br>
   © {now.year} Youdle. All rights reserved.<br>*|LIST:ADDRESSLINE|*
 </td></tr>
 </table>
