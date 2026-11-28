@@ -500,14 +500,14 @@ class MailchimpCampaign:
         recall_articles: List[Dict[str, Any]] = None,
         dynamic_headline: str = None
     ) -> str:
-        """Render the existing selected stories in the approved GrocerySOS design.
+        """Render the selected stories in the Youdle Grocery News design.
 
         Visual-only change: keep story selection, photo URLs, article links,
         subject, audience, reply-to address and scheduling unchanged.
         """
-        from grocerysos_email_template import render_grocerysos_newsletter_html
+        from youdle_email_template import render_youdle_newsletter_html
 
-        return render_grocerysos_newsletter_html(
+        return render_youdle_newsletter_html(
             articles=articles,
             recall_articles=recall_articles,
             dynamic_headline=dynamic_headline,
